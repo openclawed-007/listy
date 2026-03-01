@@ -1,10 +1,12 @@
 import React from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { isFirebaseConfigured } from "../firebase";
 import { ShoppingBag, AlertTriangle } from "lucide-react";
 
 const Login: React.FC = () => {
   const { login } = useAuth();
+  const [loginError, setLoginError] = React.useState("");
+  const [isLoggingIn, setIsLoggingIn] = React.useState(false);
 
   return (
     <div className="login-container">
@@ -30,22 +32,40 @@ const Login: React.FC = () => {
             </div>
           </div>
         ) : (
-          <button
-            onClick={async () => {
-              try {
-                await login();
-              } catch (err) {
-                console.error("Login error:", err);
-              }
-            }}
-            className="login-button"
-          >
-            <img
-              src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-              alt="Google"
-            />
-            Continue with Google
-          </button>
+          <>
+            {loginError && (
+              <p className="form-error" role="alert">
+                {loginError}
+              </p>
+            )}
+            <button
+              onClick={async () => {
+                setLoginError("");
+                setIsLoggingIn(true);
+                try {
+                  await login();
+                } catch (err) {
+                  const message =
+                    err instanceof Error
+                      ? err.message
+                      : "Unable to sign in right now. Please try again.";
+                  setLoginError(message);
+                } finally {
+                  setIsLoggingIn(false);
+                }
+              }}
+              className="login-button"
+              type="button"
+              disabled={isLoggingIn}
+              aria-busy={isLoggingIn}
+            >
+              <img
+                src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+                alt="Google"
+              />
+              {isLoggingIn ? "Signing in..." : "Continue with Google"}
+            </button>
+          </>
         )}
       </div>
     </div>

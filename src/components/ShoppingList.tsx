@@ -1,42 +1,43 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { db } from "../firebase";
-import { useAuth } from "../context/AuthContext";
+import React, { useEffect, useMemo, useState } from "react";
+import type { User } from "firebase/auth";
 import {
-  collection,
   addDoc,
-  onSnapshot,
-  query,
-  where,
+  collection,
   deleteDoc,
   doc,
-  updateDoc,
+  onSnapshot,
+  query,
   serverTimestamp,
+  updateDoc,
+  where,
+  type Timestamp,
 } from "firebase/firestore";
 import {
-  Trash2,
-  Plus,
-  LogOut,
-  ShoppingBag,
-  PackageOpen,
-  Search,
-  X,
   Check,
+  LogOut,
   Moon,
-  Sun,
+  PackageOpen,
   Pencil,
+  Plus,
+  Search,
+  ShoppingBag,
+  Sun,
+  Trash2,
+  X,
 } from "lucide-react";
+import { db } from "../firebase";
+import { useAuth } from "../context/useAuth";
 
 interface ShoppingItem {
   id: string;
   text: string;
   completed: boolean;
   userId: string;
-  createdAt?: any;
+  createdAt?: Timestamp;
 }
 
 type FilterType = "all" | "active" | "done";
 
-/* ——— Dark mode hook ——— */
 function useDarkMode() {
   const [dark, setDark] = React.useState<boolean>(() => {
     return localStorage.getItem("theme") === "dark";
@@ -47,16 +48,12 @@ function useDarkMode() {
     localStorage.setItem("theme", dark ? "dark" : "light");
   }, [dark]);
 
-  return { dark, toggle: () => setDark((d) => !d) };
+  return { dark, toggle: () => setDark((value) => !value) };
 }
 
-/* ——— Swipe hook: returns touch handlers to attach to a container ——— */
 const FILTERS: FilterType[] = ["all", "active", "done"];
 
-function useSwipeTabs(
-  filter: FilterType,
-  setFilter: (f: FilterType) => void
-) {
+function useSwipeTabs(filter: FilterType, setFilter: (value: FilterType) => void) {
   const touchStartX = React.useRef<number>(0);
   const touchStartY = React.useRef<number>(0);
 
@@ -69,17 +66,15 @@ function useSwipeTabs(
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
 
-    // Only handle clearly horizontal swipes (dx > 50px, not mostly vertical)
     if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx) * 0.8) return;
 
     const idx = FILTERS.indexOf(filter);
-    if (dx < 0 && idx < FILTERS.length - 1) setFilter(FILTERS[idx + 1]); // swipe left → next
-    if (dx > 0 && idx > 0) setFilter(FILTERS[idx - 1]);                  // swipe right → prev
+    if (dx < 0 && idx < FILTERS.length - 1) setFilter(FILTERS[idx + 1]);
+    if (dx > 0 && idx > 0) setFilter(FILTERS[idx - 1]);
   };
 
   return { onTouchStart, onTouchEnd };
 }
-
 
 const ShoppingList: React.FC = () => {
   const { user, logout } = useAuth();
@@ -88,24 +83,23 @@ const ShoppingList: React.FC = () => {
   const [newItem, setNewItem] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
-  const swipeHandlers = useSwipeTabs(filter, setFilter);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [actionError, setActionError] = useState("");
+  const swipeHandlers = useSwipeTabs(filter, setFilter);
 
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, "shoppingItems"),
-      where("userId", "==", user.uid)
-    );
+    const q = query(collection(db, "shoppingItems"), where("userId", "==", user.uid));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const itemsData = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
+        setActionError("");
+        const itemsData = snapshot.docs.map((snapshotDoc) => ({
+          id: snapshotDoc.id,
+          ...snapshotDoc.data(),
         })) as ShoppingItem[];
 
         itemsData.sort((a, b) => {
@@ -118,7 +112,8 @@ const ShoppingList: React.FC = () => {
       },
       (error) => {
         console.error("Snapshot error:", error);
-      }
+        setActionError("We could not sync your list. Check your connection and try again.");
+      },
     );
 
     return unsubscribe;
@@ -129,6 +124,7 @@ const ShoppingList: React.FC = () => {
     if (!newItem.trim() || !user) return;
 
     try {
+      setActionError("");
       await addDoc(collection(db, "shoppingItems"), {
         text: newItem.trim(),
         completed: false,
@@ -138,32 +134,40 @@ const ShoppingList: React.FC = () => {
       setNewItem("");
     } catch (error) {
       console.error("Add item error:", error);
+      setActionError("Unable to add that item right now. Please try again.");
     }
   };
 
   const toggleComplete = async (id: string, completed: boolean) => {
     try {
+      setActionError("");
       await updateDoc(doc(db, "shoppingItems", id), { completed: !completed });
     } catch (error) {
       console.error("Update item error:", error);
+      setActionError("Unable to update this item right now. Please try again.");
     }
   };
 
   const deleteItem = async (id: string) => {
     try {
+      setActionError("");
       await deleteDoc(doc(db, "shoppingItems", id));
     } catch (error) {
       console.error("Delete item error:", error);
+      setActionError("Unable to remove this item right now. Please try again.");
     }
   };
 
   const updateItemText = async (id: string, text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+
     try {
+      setActionError("");
       await updateDoc(doc(db, "shoppingItems", id), { text: trimmed });
     } catch (error) {
       console.error("Update text error:", error);
+      setActionError("Unable to save your edit right now. Please try again.");
     }
   };
 
@@ -180,27 +184,33 @@ const ShoppingList: React.FC = () => {
   const cancelEdit = () => setEditingId(null);
 
   const clearCompleted = async () => {
-    const done = items.filter((i) => i.completed);
-    await Promise.all(done.map((i) => deleteItem(i.id)));
+    const done = items.filter((item) => item.completed);
+    try {
+      setActionError("");
+      await Promise.all(done.map((item) => deleteDoc(doc(db, "shoppingItems", item.id))));
+    } catch (error) {
+      console.error("Clear completed error:", error);
+      setActionError("Unable to clear completed items right now. Please try again.");
+    }
   };
 
   const filtered = useMemo(() => {
     let list = items;
 
-    if (filter === "active") list = list.filter((i) => !i.completed);
-    else if (filter === "done") list = list.filter((i) => i.completed);
+    if (filter === "active") list = list.filter((item) => !item.completed);
+    else if (filter === "done") list = list.filter((item) => item.completed);
 
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((i) => i.text.toLowerCase().includes(q));
+      const normalizedQuery = search.trim().toLowerCase();
+      list = list.filter((item) => item.text.toLowerCase().includes(normalizedQuery));
     }
 
     return list;
   }, [items, filter, search]);
 
-  const activeItems = filtered.filter((i) => !i.completed);
-  const doneItems = filtered.filter((i) => i.completed);
-  const allDoneCount = items.filter((i) => i.completed).length;
+  const activeItems = filtered.filter((item) => !item.completed);
+  const doneItems = filtered.filter((item) => item.completed);
+  const allDoneCount = items.filter((item) => item.completed).length;
 
   const filterLabels: { key: FilterType; label: string }[] = [
     { key: "all", label: "All" },
@@ -210,40 +220,45 @@ const ShoppingList: React.FC = () => {
 
   return (
     <div className="app-wrapper">
-      {/* ——— HEADER ——— */}
       <header className="navbar">
         <div className="navbar-content">
           <div className="nav-brand">
             <div className="nav-brand-icon">
               <ShoppingBag size={18} strokeWidth={2.5} />
             </div>
-            <span className="nav-brand-name">List<em>y</em></span>
+            <span className="nav-brand-name">
+              List<em>y</em>
+            </span>
           </div>
 
           <div className="user-actions">
             <div className="user-chip">
               <UserAvatar user={user} />
-              <span className="user-name">
-                {user?.displayName?.split(" ")[0]}
-              </span>
+              <span className="user-name">{user?.displayName?.split(" ")[0]}</span>
             </div>
             <button
               onClick={toggleDark}
               className="theme-toggle"
               title={dark ? "Switch to light mode" : "Switch to dark mode"}
+              type="button"
+              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
             >
               {dark ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            <button onClick={logout} className="logout-btn" title="Sign out">
+            <button
+              onClick={logout}
+              className="logout-btn"
+              title="Sign out"
+              type="button"
+              aria-label="Sign out"
+            >
               <LogOut size={16} />
             </button>
           </div>
         </div>
       </header>
 
-      {/* ——— MAIN ——— */}
       <main className="container" {...swipeHandlers}>
-        {/* Heading */}
         <div className="page-heading">
           <h1 className="page-title">My List</h1>
           <p className="page-subtitle">
@@ -251,9 +266,13 @@ const ShoppingList: React.FC = () => {
               ? "Nothing here yet."
               : `${items.length} ${items.length === 1 ? "item" : "items"} · ${allDoneCount} checked off`}
           </p>
+          {actionError && (
+            <p className="form-error inline-error" role="alert">
+              {actionError}
+            </p>
+          )}
         </div>
 
-        {/* Search */}
         <div className="search-bar">
           <span className="search-bar-icon">
             <Search size={16} />
@@ -264,15 +283,20 @@ const ShoppingList: React.FC = () => {
             placeholder="Search your list…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search items"
           />
           {search && (
-            <button className="search-clear" onClick={() => setSearch("")}>
+            <button
+              className="search-clear"
+              onClick={() => setSearch("")}
+              type="button"
+              aria-label="Clear search"
+            >
               <X size={14} />
             </button>
           )}
         </div>
 
-        {/* Add item */}
         <form onSubmit={addItem} className="add-form">
           <input
             type="text"
@@ -281,40 +305,39 @@ const ShoppingList: React.FC = () => {
             onChange={(e) => setNewItem(e.target.value)}
             placeholder="Add an item…"
             autoFocus
+            aria-label="New shopping item"
           />
-          <button type="submit" className="add-btn" title="Add item">
+          <button type="submit" className="add-btn" title="Add item" aria-label="Add item">
             <Plus size={22} strokeWidth={2.5} />
           </button>
         </form>
 
-        {/* Filter tabs + stats */}
         <div className="filter-tabs">
           {filterLabels.map(({ key, label }) => (
             <button
               key={key}
               className={`filter-tab ${filter === key ? "active" : ""}`}
               onClick={() => setFilter(key)}
+              type="button"
             >
               {label}
             </button>
           ))}
         </div>
 
-        {/* Stats + clear button */}
         {items.length > 0 && (
           <div className="stats-bar">
             <span className="stats-text">
               <strong>{activeItems.length}</strong> remaining
             </span>
             {allDoneCount > 0 && (
-              <button className="clear-done-btn" onClick={clearCompleted}>
+              <button className="clear-done-btn" onClick={clearCompleted} type="button">
                 Clear {allDoneCount} done
               </button>
             )}
           </div>
         )}
 
-        {/* List */}
         <div className="items-section">
           {filtered.length === 0 ? (
             <div className="empty-state">
@@ -332,7 +355,6 @@ const ShoppingList: React.FC = () => {
             </div>
           ) : (
             <div className="items-list">
-              {/* Active items */}
               {activeItems.length > 0 && (
                 <>
                   {doneItems.length > 0 && (
@@ -359,7 +381,6 @@ const ShoppingList: React.FC = () => {
                 </>
               )}
 
-              {/* Completed items */}
               {doneItems.length > 0 && (
                 <>
                   <div className="items-divider">
@@ -391,9 +412,8 @@ const ShoppingList: React.FC = () => {
   );
 };
 
-/* ——— User Avatar with initials fallback ——— */
 interface UserAvatarProps {
-  user: any;
+  user: User | null;
 }
 
 const UserAvatar: React.FC<UserAvatarProps> = ({ user }) => {
@@ -412,14 +432,9 @@ const UserAvatar: React.FC<UserAvatarProps> = ({ user }) => {
     );
   }
 
-  return (
-    <div className="user-avatar user-avatar-initials">
-      {initial}
-    </div>
-  );
+  return <div className="user-avatar user-avatar-initials">{initial}</div>;
 };
 
-/* ——— Single Item Row ——— */
 interface ItemRowProps {
   item: ShoppingItem;
   index: number;
@@ -428,14 +443,22 @@ interface ItemRowProps {
   isEditing: boolean;
   editText: string;
   onEditStart: (item: ShoppingItem) => void;
-  onEditChange: (val: string) => void;
+  onEditChange: (value: string) => void;
   onEditCommit: () => void;
   onEditCancel: () => void;
 }
 
 const ItemRow: React.FC<ItemRowProps> = ({
-  item, index, onToggle, onDelete,
-  isEditing, editText, onEditStart, onEditChange, onEditCommit, onEditCancel,
+  item,
+  index,
+  onToggle,
+  onDelete,
+  isEditing,
+  editText,
+  onEditStart,
+  onEditChange,
+  onEditCommit,
+  onEditCancel,
 }) => {
   const pressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = React.useRef(false);
@@ -456,6 +479,14 @@ const ItemRow: React.FC<ItemRowProps> = ({
     if (!isEditing && !didLongPress.current) onToggle(item.id, item.completed);
   };
 
+  const handleRowKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isEditing) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onToggle(item.id, item.completed);
+    }
+  };
+
   return (
     <div
       className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
@@ -466,12 +497,20 @@ const ItemRow: React.FC<ItemRowProps> = ({
       onTouchStart={startPress}
       onTouchEnd={cancelPress}
       onClick={handleClick}
+      role="button"
+      tabIndex={isEditing ? -1 : 0}
+      onKeyDown={handleRowKeyDown}
+      aria-label={`${item.completed ? "Mark as needed" : "Mark as completed"}: ${item.text}`}
     >
       <button
         className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
-        onClick={(e) => { e.stopPropagation(); if (!isEditing) onToggle(item.id, item.completed); }}
-        tabIndex={-1}
-        aria-hidden="true"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!isEditing) onToggle(item.id, item.completed);
+        }}
+        type="button"
+        aria-label={item.completed ? `Mark "${item.text}" as needed` : `Mark "${item.text}" as completed`}
+        aria-pressed={item.completed}
       >
         {item.completed && <Check size={13} strokeWidth={3} />}
       </button>
@@ -484,10 +523,17 @@ const ItemRow: React.FC<ItemRowProps> = ({
           onChange={(e) => onEditChange(e.target.value)}
           onBlur={onEditCommit}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); onEditCommit(); }
-            if (e.key === "Escape") { e.preventDefault(); onEditCancel(); }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onEditCommit();
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onEditCancel();
+            }
           }}
           onClick={(e) => e.stopPropagation()}
+          aria-label="Edit item text"
         />
       ) : (
         <span className="item-text">{item.text}</span>
@@ -496,8 +542,13 @@ const ItemRow: React.FC<ItemRowProps> = ({
       {!isEditing && (
         <button
           className="edit-btn"
-          onClick={(e) => { e.stopPropagation(); onEditStart(item); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditStart(item);
+          }}
           title="Edit item"
+          type="button"
+          aria-label={`Edit "${item.text}"`}
         >
           <Pencil size={14} />
         </button>
@@ -505,14 +556,18 @@ const ItemRow: React.FC<ItemRowProps> = ({
 
       <button
         className="delete-btn"
-        onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete(item.id);
+        }}
         title="Remove item"
+        type="button"
+        aria-label={`Remove "${item.text}"`}
       >
         <Trash2 size={15} />
       </button>
     </div>
   );
 };
-
 
 export default ShoppingList;

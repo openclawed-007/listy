@@ -1,20 +1,22 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
   signOut,
-  type User 
+  type AuthError,
+  type User,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
+import { AuthContext } from "./AuthContext.shared";
 
-interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  login: () => Promise<void>;
-  logout: () => Promise<void>;
+function getLoginErrorMessage(error: unknown): string {
+  const authError = error as Partial<AuthError> | undefined;
+  const code = authError?.code ?? "";
+  if (code === "auth/popup-closed-by-user") return "Sign-in popup was closed before completing login.";
+  if (code === "auth/cancelled-popup-request") return "Another sign-in attempt is in progress.";
+  if (code === "auth/popup-blocked") return "Browser blocked the sign-in popup. Allow popups and try again.";
+  return "Unable to sign in right now. Please try again.";
 }
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -31,9 +33,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Login Error:", error);
-      alert(`Login failed: ${error.message}`);
+      throw new Error(getLoginErrorMessage(error));
     }
   };
 
@@ -50,10 +52,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {!loading && children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within an AuthProvider");
-  return context;
 };

@@ -154,6 +154,13 @@ body.dark .navbar {
   background: rgba(20, 27, 30, 0.94);
 }
 
+button:focus-visible,
+input:focus-visible,
+.item-row:focus-visible {
+  outline: 3px solid rgba(107, 143, 113, 0.35);
+  outline-offset: 2px;
+}
+
 .navbar-content {
   max-width: 640px;
   margin: 0 auto;
@@ -879,6 +886,13 @@ body.dark .navbar {
   transform: translateY(0);
 }
 
+.login-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--shadow-sm);
+}
+
 .login-button img {
   width: 20px;
   height: 20px;
@@ -914,6 +928,23 @@ body.dark .navbar {
   border-radius: 4px;
   font-family: monospace;
   font-size: 0.85em;
+}
+
+.form-error {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid #f0b6a1;
+  background: #fff5f2;
+  color: #9a4125;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.inline-error {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
 }
 
 /* Loading state */
