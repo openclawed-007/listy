@@ -49,6 +49,36 @@ function useDarkMode() {
   return { dark, toggle: () => setDark((d) => !d) };
 }
 
+/* ——— Swipe hook: returns touch handlers to attach to a container ——— */
+const FILTERS: FilterType[] = ["all", "active", "done"];
+
+function useSwipeTabs(
+  filter: FilterType,
+  setFilter: (f: FilterType) => void
+) {
+  const touchStartX = React.useRef<number>(0);
+  const touchStartY = React.useRef<number>(0);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+
+    // Only handle clearly horizontal swipes (dx > 50px, not mostly vertical)
+    if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx) * 0.8) return;
+
+    const idx = FILTERS.indexOf(filter);
+    if (dx < 0 && idx < FILTERS.length - 1) setFilter(FILTERS[idx + 1]); // swipe left → next
+    if (dx > 0 && idx > 0) setFilter(FILTERS[idx - 1]);                  // swipe right → prev
+  };
+
+  return { onTouchStart, onTouchEnd };
+}
+
 
 const ShoppingList: React.FC = () => {
   const { user, logout } = useAuth();
@@ -57,6 +87,7 @@ const ShoppingList: React.FC = () => {
   const [newItem, setNewItem] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
+  const swipeHandlers = useSwipeTabs(filter, setFilter);
 
   useEffect(() => {
     if (!user) return;
@@ -186,7 +217,7 @@ const ShoppingList: React.FC = () => {
       </header>
 
       {/* ——— MAIN ——— */}
-      <main className="container">
+      <main className="container" {...swipeHandlers}>
         {/* Heading */}
         <div className="page-heading">
           <h1 className="page-title">My List</h1>
