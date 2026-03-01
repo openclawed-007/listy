@@ -685,8 +685,9 @@ body.dark .navbar {
 }
 
 
-/* Always visible on touch devices */
-@media (hover: none) {
+/* Always visible on touch/mobile screens */
+@media (hover: none),
+(max-width: 768px) {
 
   .delete-btn,
   .edit-btn {

@@ -467,7 +467,7 @@ const ItemRow: React.FC<ItemRowProps> = ({
     ) : (
       <span
         className="item-text"
-        onDoubleClick={(e) => { e.stopPropagation(); onEditStart(item); }}
+        onClick={(e) => { e.stopPropagation(); onEditStart(item); }}
       >
         {item.text}
       </span>
