@@ -631,31 +631,6 @@ body.dark .navbar {
   color: var(--terra);
 }
 
-/* Edit button — same pattern as delete */
-.edit-btn {
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-  border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
-  color: var(--ink-faint);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
-}
-
-.item-row:hover .edit-btn {
-  opacity: 1;
-}
-
-.edit-btn:hover {
-  background: rgba(107, 143, 113, 0.1);
-  color: var(--sage);
-}
 
 /* Inline edit input */
 .item-edit-input {
@@ -684,6 +659,32 @@ body.dark .navbar {
   box-shadow: 0 0 0 3px rgba(107, 143, 113, 0.10), var(--shadow-sm);
 }
 
+
+/* Edit button */
+.edit-btn {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.item-row:hover .edit-btn {
+  opacity: 1;
+}
+
+.edit-btn:hover {
+  background: rgba(107, 143, 113, 0.1);
+  color: var(--sage);
+}
 
 /* Always visible on touch/mobile screens */
 @media (hover: none),

@@ -436,62 +436,83 @@ interface ItemRowProps {
 const ItemRow: React.FC<ItemRowProps> = ({
   item, index, onToggle, onDelete,
   isEditing, editText, onEditStart, onEditChange, onEditCommit, onEditCancel,
-}) => (
-  <div
-    className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
-    style={{ animationDelay: `${index * 0.04}s`, cursor: isEditing ? "default" : "pointer" }}
-    onClick={() => { if (!isEditing) onToggle(item.id, item.completed); }}
-  >
-    <button
-      className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
-      onClick={(e) => { e.stopPropagation(); if (!isEditing) onToggle(item.id, item.completed); }}
-      tabIndex={-1}
-      aria-hidden="true"
+}) => {
+  const pressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didLongPress = React.useRef(false);
+
+  const startPress = () => {
+    didLongPress.current = false;
+    pressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      onEditStart(item);
+    }, 500);
+  };
+
+  const cancelPress = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+  };
+
+  const handleClick = () => {
+    if (!isEditing && !didLongPress.current) onToggle(item.id, item.completed);
+  };
+
+  return (
+    <div
+      className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
+      style={{ animationDelay: `${index * 0.04}s`, cursor: isEditing ? "default" : "pointer" }}
+      onMouseDown={startPress}
+      onMouseUp={cancelPress}
+      onMouseLeave={cancelPress}
+      onTouchStart={startPress}
+      onTouchEnd={cancelPress}
+      onClick={handleClick}
     >
-      {item.completed && <Check size={13} strokeWidth={3} />}
-    </button>
-
-    {isEditing ? (
-      <input
-        className="item-edit-input"
-        value={editText}
-        autoFocus
-        onChange={(e) => onEditChange(e.target.value)}
-        onBlur={onEditCommit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); onEditCommit(); }
-          if (e.key === "Escape") { e.preventDefault(); onEditCancel(); }
-        }}
-        onClick={(e) => e.stopPropagation()}
-      />
-    ) : (
-      <span
-        className="item-text"
-        onClick={(e) => { e.stopPropagation(); onEditStart(item); }}
-      >
-        {item.text}
-      </span>
-    )}
-
-    {!isEditing && (
       <button
-        className="edit-btn"
-        onClick={(e) => { e.stopPropagation(); onEditStart(item); }}
-        title="Edit item"
+        className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
+        onClick={(e) => { e.stopPropagation(); if (!isEditing) onToggle(item.id, item.completed); }}
+        tabIndex={-1}
+        aria-hidden="true"
       >
-        <Pencil size={14} />
+        {item.completed && <Check size={13} strokeWidth={3} />}
       </button>
-    )}
 
-    <button
-      className="delete-btn"
-      onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-      title="Remove item"
-    >
-      <Trash2 size={15} />
-    </button>
-  </div>
-);
+      {isEditing ? (
+        <input
+          className="item-edit-input"
+          value={editText}
+          autoFocus
+          onChange={(e) => onEditChange(e.target.value)}
+          onBlur={onEditCommit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); onEditCommit(); }
+            if (e.key === "Escape") { e.preventDefault(); onEditCancel(); }
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span className="item-text">{item.text}</span>
+      )}
+
+      {!isEditing && (
+        <button
+          className="edit-btn"
+          onClick={(e) => { e.stopPropagation(); onEditStart(item); }}
+          title="Edit item"
+        >
+          <Pencil size={14} />
+        </button>
+      )}
+
+      <button
+        className="delete-btn"
+        onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+        title="Remove item"
+      >
+        <Trash2 size={15} />
+      </button>
+    </div>
+  );
+};
 
 
 export default ShoppingList;
