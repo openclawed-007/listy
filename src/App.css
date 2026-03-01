@@ -627,13 +627,69 @@ body.dark .navbar {
 }
 
 .delete-btn:hover {
-  background: #fff0ed;
+  background: rgba(192, 107, 74, 0.1);
   color: var(--terra);
 }
 
+/* Edit button — same pattern as delete */
+.edit-btn {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.item-row:hover .edit-btn {
+  opacity: 1;
+}
+
+.edit-btn:hover {
+  background: rgba(107, 143, 113, 0.1);
+  color: var(--sage);
+}
+
+/* Inline edit input */
+.item-edit-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--sage);
+  border-radius: 0;
+  padding: 0.1rem 0.25rem;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.97rem;
+  font-weight: 400;
+  color: var(--ink);
+  outline: none;
+  min-width: 0;
+  transition: border-color 0.15s ease;
+}
+
+.item-edit-input:focus {
+  border-bottom-color: var(--sage-dark);
+}
+
+/* Row state while editing */
+.item-row.is-editing {
+  border-color: var(--sage-light);
+  box-shadow: 0 0 0 3px rgba(107, 143, 113, 0.10), var(--shadow-sm);
+}
+
+
 /* Always visible on touch devices */
 @media (hover: none) {
-  .delete-btn {
+
+  .delete-btn,
+  .edit-btn {
     opacity: 1;
   }
 }

@@ -23,6 +23,7 @@ import {
   Check,
   Moon,
   Sun,
+  Pencil,
 } from "lucide-react";
 
 interface ShoppingItem {
@@ -88,6 +89,8 @@ const ShoppingList: React.FC = () => {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
   const swipeHandlers = useSwipeTabs(filter, setFilter);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -153,6 +156,28 @@ const ShoppingList: React.FC = () => {
       console.error("Delete item error:", error);
     }
   };
+
+  const updateItemText = async (id: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    try {
+      await updateDoc(doc(db, "shoppingItems", id), { text: trimmed });
+    } catch (error) {
+      console.error("Update text error:", error);
+    }
+  };
+
+  const startEdit = (item: ShoppingItem) => {
+    setEditingId(item.id);
+    setEditText(item.text);
+  };
+
+  const commitEdit = async () => {
+    if (editingId) await updateItemText(editingId, editText);
+    setEditingId(null);
+  };
+
+  const cancelEdit = () => setEditingId(null);
 
   const clearCompleted = async () => {
     const done = items.filter((i) => i.completed);
@@ -323,6 +348,12 @@ const ShoppingList: React.FC = () => {
                       index={index}
                       onToggle={toggleComplete}
                       onDelete={deleteItem}
+                      isEditing={editingId === item.id}
+                      editText={editText}
+                      onEditStart={startEdit}
+                      onEditChange={setEditText}
+                      onEditCommit={commitEdit}
+                      onEditCancel={cancelEdit}
                     />
                   ))}
                 </>
@@ -342,6 +373,12 @@ const ShoppingList: React.FC = () => {
                       index={index}
                       onToggle={toggleComplete}
                       onDelete={deleteItem}
+                      isEditing={editingId === item.id}
+                      editText={editText}
+                      onEditStart={startEdit}
+                      onEditChange={setEditText}
+                      onEditCommit={commitEdit}
+                      onEditCancel={cancelEdit}
                     />
                   ))}
                 </>
@@ -388,24 +425,63 @@ interface ItemRowProps {
   index: number;
   onToggle: (id: string, completed: boolean) => void;
   onDelete: (id: string) => void;
+  isEditing: boolean;
+  editText: string;
+  onEditStart: (item: ShoppingItem) => void;
+  onEditChange: (val: string) => void;
+  onEditCommit: () => void;
+  onEditCancel: () => void;
 }
 
-const ItemRow: React.FC<ItemRowProps> = ({ item, index, onToggle, onDelete }) => (
+const ItemRow: React.FC<ItemRowProps> = ({
+  item, index, onToggle, onDelete,
+  isEditing, editText, onEditStart, onEditChange, onEditCommit, onEditCancel,
+}) => (
   <div
-    className={`item-row ${item.completed ? "completed" : ""}`}
-    style={{ animationDelay: `${index * 0.04}s`, cursor: "pointer" }}
-    onClick={() => onToggle(item.id, item.completed)}
+    className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
+    style={{ animationDelay: `${index * 0.04}s`, cursor: isEditing ? "default" : "pointer" }}
+    onClick={() => { if (!isEditing) onToggle(item.id, item.completed); }}
   >
     <button
       className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
-      onClick={(e) => { e.stopPropagation(); onToggle(item.id, item.completed); }}
+      onClick={(e) => { e.stopPropagation(); if (!isEditing) onToggle(item.id, item.completed); }}
       tabIndex={-1}
       aria-hidden="true"
     >
       {item.completed && <Check size={13} strokeWidth={3} />}
     </button>
 
-    <span className="item-text">{item.text}</span>
+    {isEditing ? (
+      <input
+        className="item-edit-input"
+        value={editText}
+        autoFocus
+        onChange={(e) => onEditChange(e.target.value)}
+        onBlur={onEditCommit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); onEditCommit(); }
+          if (e.key === "Escape") { e.preventDefault(); onEditCancel(); }
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
+    ) : (
+      <span
+        className="item-text"
+        onDoubleClick={(e) => { e.stopPropagation(); onEditStart(item); }}
+      >
+        {item.text}
+      </span>
+    )}
+
+    {!isEditing && (
+      <button
+        className="edit-btn"
+        onClick={(e) => { e.stopPropagation(); onEditStart(item); }}
+        title="Edit item"
+      >
+        <Pencil size={14} />
+      </button>
+    )}
 
     <button
       className="delete-btn"
@@ -416,5 +492,6 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, index, onToggle, onDelete }) =>
     </button>
   </div>
 );
+
 
 export default ShoppingList;
