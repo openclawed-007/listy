@@ -23,9 +23,9 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
 
 2. **Configure Firebase**
    ```bash
-   cp src/firebase.example.ts src/firebase.ts
+   cp .env.example .env.local
    ```
-   Then fill in your project credentials from the [Firebase Console](https://console.firebase.google.com).
+   Then fill in your Firebase project credentials in `.env.local` from the [Firebase Console](https://console.firebase.google.com).
 
 3. **Enable Google Sign-In** in Firebase Console → Authentication → Sign-in providers.
 

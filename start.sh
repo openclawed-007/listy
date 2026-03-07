@@ -13,8 +13,8 @@ else
 fi
 
 # 2. Check for Firebase config
-if grep -q "YOUR_API_KEY" src/firebase.ts; then
-    echo "⚠️  Note: You haven't updated your Firebase config in src/firebase.ts yet."
+if [ ! -f ".env.local" ] || grep -q "YOUR_API_KEY" .env.local; then
+    echo "⚠️  Note: Firebase config is not set in .env.local yet."
     echo "   The app will start, but login/database features will require valid keys."
 fi
 
