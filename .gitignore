@@ -24,9 +24,9 @@ dist-ssr
 *.sw?
 
 # Firebase credentials (keep secrets out of git)
-src/firebase.ts
 .env
 .env.*
+!.env.example
 
 # Firebase CLI cache
 .firebase/
