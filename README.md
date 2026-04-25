@@ -53,7 +53,7 @@ service cloud.firestore {
     }
 
     match /sharedLists/{ownerId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create, update: if request.auth != null
         && request.auth.uid == ownerId
         && request.resource.data.ownerId == request.auth.uid;

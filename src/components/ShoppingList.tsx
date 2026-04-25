@@ -126,6 +126,7 @@ const ShoppingList: React.FC = () => {
   const [actionError, setActionError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
+  const [importUrl, setImportUrl] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [importing, setImporting] = useState(false);
@@ -339,12 +340,28 @@ const ShoppingList: React.FC = () => {
     }
   };
 
+  const removeActiveSharedList = async () => {
+    if (!db || activeListId === PERSONAL_LIST_ID) return;
+
+    try {
+      setActionError("");
+      const sharedItems = items.filter((item) => getItemListId(item) === activeListId);
+      await Promise.all(sharedItems.map((item) => deleteDoc(doc(db, "shoppingItems", item.id))));
+      setActiveListId(PERSONAL_LIST_ID);
+      setImportStatus("");
+    } catch (error) {
+      console.error("Remove shared list error:", error);
+      setActionError("Unable to remove that shared list right now. Please try again.");
+    }
+  };
+
   const publishShareSnapshot = async () => {
     if (!user || !db) return;
 
     const personalItems = items.filter((item) => getItemListId(item) === PERSONAL_LIST_ID);
     const ownerName = user.displayName?.trim() || user.email?.split("@")[0] || "Shared user";
-    const nextShareUrl = `${window.location.origin}/import/${user.uid}`;
+    const nextShareUrl = `${window.location.origin}/share/${user.uid}`;
+    const nextImportUrl = `${window.location.origin}/import/${user.uid}`;
 
     try {
       setShareStatus("Preparing QR code...");
@@ -359,6 +376,7 @@ const ShoppingList: React.FC = () => {
         updatedAt: serverTimestamp(),
       });
       setShareUrl(nextShareUrl);
+      setImportUrl(nextImportUrl);
       setShareStatus("Ready to scan");
     } catch (error) {
       console.error("Share snapshot error:", error);
@@ -378,6 +396,17 @@ const ShoppingList: React.FC = () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
       setShareStatus("Link copied");
+    } catch {
+      setShareStatus("Copy failed");
+    }
+  };
+
+  const copyImportLink = async () => {
+    if (!importUrl) return;
+
+    try {
+      await navigator.clipboard.writeText(importUrl);
+      setShareStatus("Import link copied");
     } catch {
       setShareStatus("Copy failed");
     }
@@ -561,6 +590,11 @@ const ShoppingList: React.FC = () => {
                 Clear {allDoneCount} done
               </button>
             )}
+            {activeListId !== PERSONAL_LIST_ID && (
+              <button className="clear-done-btn" onClick={removeActiveSharedList} type="button">
+                Remove list
+              </button>
+            )}
           </div>
         )}
 
@@ -684,6 +718,14 @@ const ShoppingList: React.FC = () => {
                   Copy link
                 </button>
               </div>
+              <button
+                className="text-action-btn"
+                type="button"
+                onClick={copyImportLink}
+                disabled={!importUrl}
+              >
+                Copy sign-in import link
+              </button>
             </div>
           </section>
         </div>

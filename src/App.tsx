@@ -13,6 +13,7 @@ import './App.css';
 
 const ShoppingList = lazy(() => import("./components/ShoppingList"));
 const Login = lazy(() => import("./components/Login"));
+const PublicSharedList = lazy(() => import("./components/PublicSharedList"));
 
 const AppLoader: React.FC = () => (
   <div className="loading-screen">
@@ -61,6 +62,7 @@ const App: React.FC = () => {
                 </ProtectedRoute>
               }
             />
+            <Route path="/share/:shareId" element={<PublicSharedList />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </Suspense>
