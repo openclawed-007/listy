@@ -130,6 +130,8 @@ const ShoppingList: React.FC = () => {
   const [shareStatus, setShareStatus] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [importing, setImporting] = useState(false);
+  const [itemsLoaded, setItemsLoaded] = useState(false);
+  const [shareAutoPublish, setShareAutoPublish] = useState(false);
   const handledShareId = React.useRef<string | null>(null);
   const swipeHandlers = useSwipeTabs(filter, setFilter);
 
@@ -154,6 +156,7 @@ const ShoppingList: React.FC = () => {
         });
 
         setItems(itemsData);
+        setItemsLoaded(true);
       },
       (error) => {
         console.error("Snapshot error:", error);
@@ -162,6 +165,25 @@ const ShoppingList: React.FC = () => {
     );
 
     return unsubscribe;
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !db) return;
+
+    const loadShareState = async () => {
+      try {
+        const snapshot = await getDoc(doc(db, "sharedLists", user.uid));
+        if (!snapshot.exists()) return;
+
+        setShareAutoPublish(true);
+        setShareUrl(`${window.location.origin}/share/${user.uid}`);
+        setImportUrl(`${window.location.origin}/import/${user.uid}`);
+      } catch (error) {
+        console.error("Load share state error:", error);
+      }
+    };
+
+    void loadShareState();
   }, [user]);
 
   const listTabs = useMemo<ListTab[]>(() => {
@@ -183,6 +205,102 @@ const ShoppingList: React.FC = () => {
       setActiveListId(PERSONAL_LIST_ID);
     }
   }, [activeListId, listTabs]);
+
+  const personalItems = useMemo(
+    () => items.filter((item) => getItemListId(item) === PERSONAL_LIST_ID),
+    [items],
+  );
+
+  const ownerName = user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
+
+  useEffect(() => {
+    if (!shareAutoPublish || !itemsLoaded || !user || !db) return;
+
+    const timeout = window.setTimeout(() => {
+      void setDoc(doc(db, "sharedLists", user.uid), {
+        ownerId: user.uid,
+        ownerName,
+        items: personalItems.map((item) => ({
+          text: item.text,
+          completed: item.completed,
+        })),
+        updatedAt: serverTimestamp(),
+      }).catch((error) => {
+        console.error("Auto share sync error:", error);
+      });
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [itemsLoaded, ownerName, personalItems, shareAutoPublish, user]);
+
+  const importedOwnerIds = useMemo(() => {
+    const ownerIds = new Set<string>();
+
+    items.forEach((item) => {
+      if (item.sharedFromUserId) ownerIds.add(item.sharedFromUserId);
+      else if (item.listId?.startsWith("shared:")) ownerIds.add(item.listId.slice("shared:".length));
+    });
+
+    ownerIds.delete(user?.uid ?? "");
+    return Array.from(ownerIds).sort();
+  }, [items, user]);
+
+  useEffect(() => {
+    if (!user || !db || importedOwnerIds.length === 0) return;
+
+    const syncImportedSnapshot = async (data: SharedListSnapshot) => {
+      const sharedItems = Array.isArray(data.items)
+        ? data.items.filter((item) => item.text.trim())
+        : [];
+      const importedListId = `shared:${data.ownerId}`;
+      const existingItems = items.filter((item) => getItemListId(item) === importedListId);
+      const alreadySynced =
+        existingItems.length === sharedItems.length &&
+        existingItems.every((item, index) => {
+          const sharedItem = sharedItems[index];
+          return (
+            item.text === sharedItem.text.trim() &&
+            item.completed === sharedItem.completed &&
+            getItemListName(item) === data.ownerName
+          );
+        });
+
+      if (alreadySynced) return;
+
+      const batch = writeBatch(db);
+      existingItems.forEach((item) => batch.delete(doc(db, "shoppingItems", item.id)));
+      sharedItems.forEach((item) => {
+        batch.set(doc(collection(db, "shoppingItems")), {
+          text: item.text.trim(),
+          completed: item.completed,
+          userId: user.uid,
+          listId: importedListId,
+          listName: data.ownerName,
+          sharedFromUserId: data.ownerId,
+          createdAt: serverTimestamp(),
+        });
+      });
+
+      await batch.commit();
+    };
+
+    const unsubscribes = importedOwnerIds.map((ownerId) =>
+      onSnapshot(
+        doc(db, "sharedLists", ownerId),
+        (snapshot) => {
+          if (!snapshot.exists()) return;
+          void syncImportedSnapshot(snapshot.data() as SharedListSnapshot).catch((error) => {
+            console.error("Imported list sync error:", error);
+          });
+        },
+        (error) => {
+          console.error("Imported list listener error:", error);
+        },
+      ),
+    );
+
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, [importedOwnerIds, items, user]);
 
   useEffect(() => {
     if (!shareId || !user || !db || importing || handledShareId.current === shareId) return;
@@ -358,8 +476,6 @@ const ShoppingList: React.FC = () => {
   const publishShareSnapshot = async () => {
     if (!user || !db) return;
 
-    const personalItems = items.filter((item) => getItemListId(item) === PERSONAL_LIST_ID);
-    const ownerName = user.displayName?.trim() || user.email?.split("@")[0] || "Shared user";
     const nextShareUrl = `${window.location.origin}/share/${user.uid}`;
     const nextImportUrl = `${window.location.origin}/import/${user.uid}`;
 
@@ -375,6 +491,7 @@ const ShoppingList: React.FC = () => {
         })),
         updatedAt: serverTimestamp(),
       });
+      setShareAutoPublish(true);
       setShareUrl(nextShareUrl);
       setImportUrl(nextImportUrl);
       setShareStatus("Ready to scan");

@@ -14,6 +14,7 @@ interface MockDoc {
 let autoDocId = 0;
 let snapshotDocs: MockDoc[] = [];
 let queryDocs: MockDoc[] = [];
+let sharedSnapshots = new Map<string, Record<string, unknown>>();
 
 const {
   mockDb,
@@ -110,10 +111,21 @@ beforeEach(() => {
   autoDocId = 0;
   snapshotDocs = [];
   queryDocs = [];
+  sharedSnapshots = new Map();
   vi.clearAllMocks();
   localStorage.clear();
 
-  mockOnSnapshot.mockImplementation((_query, next) => {
+  mockOnSnapshot.mockImplementation((target, next) => {
+    if (target?.path?.startsWith("sharedLists/")) {
+      const ownerId = target.path.replace("sharedLists/", "");
+      const data = sharedSnapshots.get(ownerId);
+      next({
+        exists: () => Boolean(data),
+        data: () => data,
+      });
+      return vi.fn();
+    }
+
     next({
       docs: snapshotDocs,
     });
@@ -260,5 +272,47 @@ describe("ShoppingList sharing", () => {
       expect(mockDeleteDoc).toHaveBeenCalledWith({ path: "shoppingItems/shared-1" });
       expect(mockDeleteDoc).toHaveBeenCalledWith({ path: "shoppingItems/shared-2" });
     });
+  });
+
+  it("syncs an already imported list when the owner updates their shared snapshot", async () => {
+    snapshotDocs = [
+      makeDoc("shared-1", {
+        text: "Old apples",
+        completed: false,
+        userId: user.uid,
+        listId: "shared:alex-uid",
+        listName: "Alex",
+        sharedFromUserId: "alex-uid",
+      }),
+    ];
+    sharedSnapshots.set("alex-uid", {
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      items: [
+        { text: "New apples", completed: false },
+        { text: "Bread", completed: false },
+      ],
+    });
+
+    renderShoppingList();
+
+    await waitFor(() => expect(mockBatchCommit).toHaveBeenCalled());
+
+    expect(mockBatchDelete).toHaveBeenCalledWith({ path: "shoppingItems/shared-1" });
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      { path: "shoppingItems/auto-1" },
+      expect.objectContaining({
+        text: "New apples",
+        listId: "shared:alex-uid",
+        sharedFromUserId: "alex-uid",
+      }),
+    );
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      { path: "shoppingItems/auto-2" },
+      expect.objectContaining({
+        text: "Bread",
+        listId: "shared:alex-uid",
+      }),
+    );
   });
 });
