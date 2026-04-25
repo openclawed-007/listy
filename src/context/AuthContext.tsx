@@ -20,9 +20,11 @@ function getLoginErrorMessage(error: unknown): string {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(auth));
 
   useEffect(() => {
+    if (!auth) return undefined;
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setLoading(false);
@@ -31,6 +33,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async () => {
+    if (!auth || !googleProvider) {
+      throw new Error("Firebase credentials are not configured yet.");
+    }
+
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
@@ -40,6 +46,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    if (!auth) return;
+
     try {
       await signOut(auth);
     } catch (error) {

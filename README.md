@@ -43,10 +43,22 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /shoppingItems/{itemId} {
-      allow read, update, delete: if request.auth != null
+      allow read, delete: if request.auth != null
         && request.auth.uid == resource.data.userId;
       allow create: if request.auth != null
         && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null
+        && request.auth.uid == resource.data.userId
+        && request.resource.data.userId == resource.data.userId;
+    }
+
+    match /sharedLists/{ownerId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.auth.uid == ownerId
+        && request.resource.data.ownerId == request.auth.uid;
+      allow delete: if request.auth != null
+        && request.auth.uid == ownerId;
     }
   }
 }

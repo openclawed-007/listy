@@ -4,6 +4,7 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./context/useAuth";
@@ -21,8 +22,12 @@ const AppLoader: React.FC = () => (
 
 const AuthRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
+  const requestedRedirect = new URLSearchParams(location.search).get("redirect") || "/";
+  const redirect = requestedRedirect.startsWith("/") ? requestedRedirect : "/";
+
   if (loading) return <AppLoader />;
-  if (user) return <Navigate to="/" />;
+  if (user) return <Navigate to={redirect} replace />;
   return <>{children}</>;
 };
 
@@ -42,6 +47,14 @@ const App: React.FC = () => {
             />
             <Route
               path="/"
+              element={
+                <ProtectedRoute>
+                  <ShoppingList />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/import/:shareId"
               element={
                 <ProtectedRoute>
                   <ShoppingList />
