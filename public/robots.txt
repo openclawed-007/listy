@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /$
+Allow: /privacy
+Allow: /terms
+Disallow: /share/
+Disallow: /import/
+
+Sitemap: https://cartlink.co.uk/sitemap.xml

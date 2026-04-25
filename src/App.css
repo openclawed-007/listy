@@ -1302,6 +1302,146 @@ body.dark .modal-backdrop {
 }
 
 /* ===========================
+   LEGAL / NOT-FOUND / ERROR
+   =========================== */
+.legal-wrapper {
+  min-height: 100vh;
+  background: var(--cream);
+  color: var(--ink);
+}
+
+.legal-header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--cream-deep);
+}
+
+.legal-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.legal-content {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 5rem;
+  line-height: 1.6;
+}
+
+.legal-content h1 {
+  font-family: 'Fraunces', serif;
+  font-size: 2.2rem;
+  margin: 0 0 0.4rem;
+  letter-spacing: -0.01em;
+}
+
+.legal-content h2 {
+  font-family: 'Fraunces', serif;
+  font-size: 1.25rem;
+  margin: 2rem 0 0.6rem;
+  color: var(--ink);
+}
+
+.legal-content p,
+.legal-content li {
+  color: var(--ink-muted);
+  font-size: 0.96rem;
+}
+
+.legal-content ul {
+  padding-left: 1.25rem;
+}
+
+.legal-content li {
+  margin-bottom: 0.4rem;
+}
+
+.legal-content a {
+  color: var(--sage-dark);
+  text-decoration: underline;
+}
+
+.legal-content a:hover {
+  color: var(--sage);
+}
+
+.legal-meta {
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  margin: 0 0 2rem;
+}
+
+.legal-back {
+  margin-top: 3rem;
+  font-size: 0.9rem;
+}
+
+.not-found-wrapper,
+.error-boundary {
+  min-height: 100vh;
+  background: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.not-found-card,
+.error-boundary-card {
+  max-width: 420px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--cream-deep);
+  border-radius: var(--radius);
+  padding: 2.5rem 2rem;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.not-found-card h1,
+.error-boundary-card h1 {
+  font-family: 'Fraunces', serif;
+  font-size: 1.7rem;
+  margin: 0;
+  color: var(--ink);
+}
+
+.not-found-card p,
+.error-boundary-card p {
+  color: var(--ink-muted);
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.not-found-card .empty-icon {
+  color: var(--ink-faint);
+}
+
+.error-boundary-card svg {
+  color: var(--terra);
+}
+
+.not-found-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.error-boundary-card a {
+  color: var(--sage-dark);
+  text-decoration: underline;
+}
+
+/* ===========================
    RESPONSIVE
    =========================== */
 @media (max-width: 600px) {

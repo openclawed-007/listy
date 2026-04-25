@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { isFirebaseConfigured } from "../firebase";
 import { ShoppingBag, AlertTriangle } from "lucide-react";
@@ -65,6 +66,11 @@ const Login: React.FC = () => {
               />
               {isLoggingIn ? "Signing in..." : "Continue with Google"}
             </button>
+            <p className="recaptcha-notice">
+              By continuing you agree to our{" "}
+              <Link to="/terms">Terms</Link> and{" "}
+              <Link to="/privacy">Privacy Policy</Link>.
+            </p>
             <p className="recaptcha-notice">
               Protected by reCAPTCHA and the Google{" "}
               <a
