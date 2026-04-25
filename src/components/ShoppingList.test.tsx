@@ -183,6 +183,19 @@ describe("ShoppingList sharing", () => {
     );
   });
 
+  it("shows when changes are being saved offline for later sync", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+
+    renderShoppingList();
+
+    expect(
+      await screen.findByText("Offline - changes will sync when online"),
+    ).toBeInTheDocument();
+  });
+
   it("imports a shared list into the signed-in account under the sharer's tab", async () => {
     snapshotDocs = [
       makeDoc("personal-1", {

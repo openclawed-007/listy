@@ -349,6 +349,28 @@ input:focus-visible,
   letter-spacing: 0.01em;
 }
 
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  margin-top: 0.85rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.sync-status.online {
+  background: rgba(107, 143, 113, 0.12);
+  color: var(--sage-dark);
+}
+
+.sync-status.offline {
+  background: #fff0ed;
+  color: var(--terra);
+}
+
 /* ===========================
    SEARCH / FILTER BAR
    =========================== */

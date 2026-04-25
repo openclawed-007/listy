@@ -11,6 +11,7 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
 - 🔍 Search & filter (All / Needed / Got it)
 - 🌙 Dark mode with persistent preference
 - 📱 Fully responsive
+- 📶 Offline-ready with local changes synced when the connection returns
 
 ## Setup
 

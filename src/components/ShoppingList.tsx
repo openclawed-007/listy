@@ -35,6 +35,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import { useAuth } from "../context/useAuth";
+import { useOnlineStatus } from "../hooks/useOnlineStatus";
 
 interface ShoppingItem {
   id: string;
@@ -116,6 +117,7 @@ const ShoppingList: React.FC = () => {
   const { shareId } = useParams();
   const navigate = useNavigate();
   const { dark, toggle: toggleDark } = useDarkMode();
+  const online = useOnlineStatus();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [newItem, setNewItem] = useState("");
   const [search, setSearch] = useState("");
@@ -624,6 +626,9 @@ const ShoppingList: React.FC = () => {
               {actionError}
             </p>
           )}
+          <p className={`sync-status ${online ? "online" : "offline"}`} role="status">
+            {online ? "Online - changes sync automatically" : "Offline - changes will sync when online"}
+          </p>
         </div>
 
         <div className="search-bar">
