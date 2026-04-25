@@ -5,7 +5,15 @@ import { useAuth } from "../context/useAuth";
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner" />
+      </div>
+    );
+  }
+
   if (!user) return <Navigate to="/login" />;
   return <>{children}</>;
 };
