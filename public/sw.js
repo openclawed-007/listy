@@ -1,5 +1,11 @@
-const CACHE_NAME = "cartlink-shell-v2";
-const APP_SHELL = ["/", "/index.html", "/vite.svg"];
+const CACHE_NAME = "cartlink-shell-v3";
+const APP_SHELL = [
+  "/",
+  "/index.html",
+  "/favicon.svg",
+  "/favicon-32.png",
+  "/apple-touch-icon.png",
+];
 
 const offlineFallback = () =>
   new Response("", {
