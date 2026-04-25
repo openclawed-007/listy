@@ -25,10 +25,11 @@ import {
   Pencil,
   Plus,
   Search,
-  Settings,
+  Share2,
   ShoppingBag,
   Sun,
   Trash2,
+  WifiOff,
   X,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -47,8 +48,6 @@ interface ShoppingItem {
   sharedFromUserId?: string;
   createdAt?: Timestamp;
 }
-
-type FilterType = "all" | "active" | "done";
 
 interface SharedListSnapshot {
   ownerId: string;
@@ -87,30 +86,7 @@ function useDarkMode() {
   return { dark, toggle: () => setDark((value) => !value) };
 }
 
-const FILTERS: FilterType[] = ["all", "active", "done"];
-
-function useSwipeTabs(filter: FilterType, setFilter: (value: FilterType) => void) {
-  const touchStartX = React.useRef<number>(0);
-  const touchStartY = React.useRef<number>(0);
-
-  const onTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  };
-
-  const onTouchEnd = (e: React.TouchEvent) => {
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
-    const dy = e.changedTouches[0].clientY - touchStartY.current;
-
-    if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx) * 0.8) return;
-
-    const idx = FILTERS.indexOf(filter);
-    if (dx < 0 && idx < FILTERS.length - 1) setFilter(FILTERS[idx + 1]);
-    if (dx > 0 && idx > 0) setFilter(FILTERS[idx - 1]);
-  };
-
-  return { onTouchStart, onTouchEnd };
-}
+const SEARCH_VISIBILITY_THRESHOLD = 15;
 
 const ShoppingList: React.FC = () => {
   const { user, logout } = useAuth();
@@ -121,21 +97,19 @@ const ShoppingList: React.FC = () => {
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [newItem, setNewItem] = useState("");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<FilterType>("all");
   const [activeListId, setActiveListId] = useState(PERSONAL_LIST_ID);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [actionError, setActionError] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
-  const [importUrl, setImportUrl] = useState("");
   const [shareStatus, setShareStatus] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
   const [importStatus, setImportStatus] = useState("");
   const [importing, setImporting] = useState(false);
   const [itemsLoaded, setItemsLoaded] = useState(false);
-  const [shareAutoPublish, setShareAutoPublish] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const handledShareId = React.useRef<string | null>(null);
-  const swipeHandlers = useSwipeTabs(filter, setFilter);
 
   useEffect(() => {
     if (!user || !db) return;
@@ -177,9 +151,8 @@ const ShoppingList: React.FC = () => {
         const snapshot = await getDoc(doc(db, "sharedLists", user.uid));
         if (!snapshot.exists()) return;
 
-        setShareAutoPublish(true);
+        setIsSharing(true);
         setShareUrl(`${window.location.origin}/share/${user.uid}`);
-        setImportUrl(`${window.location.origin}/import/${user.uid}`);
       } catch (error) {
         console.error("Load share state error:", error);
       }
@@ -216,7 +189,7 @@ const ShoppingList: React.FC = () => {
   const ownerName = user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
 
   useEffect(() => {
-    if (!shareAutoPublish || !itemsLoaded || !user || !db) return;
+    if (!isSharing || !itemsLoaded || !user || !db) return;
 
     const timeout = window.setTimeout(() => {
       void setDoc(doc(db, "sharedLists", user.uid), {
@@ -233,76 +206,7 @@ const ShoppingList: React.FC = () => {
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [itemsLoaded, ownerName, personalItems, shareAutoPublish, user]);
-
-  const importedOwnerIds = useMemo(() => {
-    const ownerIds = new Set<string>();
-
-    items.forEach((item) => {
-      if (item.sharedFromUserId) ownerIds.add(item.sharedFromUserId);
-      else if (item.listId?.startsWith("shared:")) ownerIds.add(item.listId.slice("shared:".length));
-    });
-
-    ownerIds.delete(user?.uid ?? "");
-    return Array.from(ownerIds).sort();
-  }, [items, user]);
-
-  useEffect(() => {
-    if (!user || !db || importedOwnerIds.length === 0) return;
-
-    const syncImportedSnapshot = async (data: SharedListSnapshot) => {
-      const sharedItems = Array.isArray(data.items)
-        ? data.items.filter((item) => item.text.trim())
-        : [];
-      const importedListId = `shared:${data.ownerId}`;
-      const existingItems = items.filter((item) => getItemListId(item) === importedListId);
-      const alreadySynced =
-        existingItems.length === sharedItems.length &&
-        existingItems.every((item, index) => {
-          const sharedItem = sharedItems[index];
-          return (
-            item.text === sharedItem.text.trim() &&
-            item.completed === sharedItem.completed &&
-            getItemListName(item) === data.ownerName
-          );
-        });
-
-      if (alreadySynced) return;
-
-      const batch = writeBatch(db);
-      existingItems.forEach((item) => batch.delete(doc(db, "shoppingItems", item.id)));
-      sharedItems.forEach((item) => {
-        batch.set(doc(collection(db, "shoppingItems")), {
-          text: item.text.trim(),
-          completed: item.completed,
-          userId: user.uid,
-          listId: importedListId,
-          listName: data.ownerName,
-          sharedFromUserId: data.ownerId,
-          createdAt: serverTimestamp(),
-        });
-      });
-
-      await batch.commit();
-    };
-
-    const unsubscribes = importedOwnerIds.map((ownerId) =>
-      onSnapshot(
-        doc(db, "sharedLists", ownerId),
-        (snapshot) => {
-          if (!snapshot.exists()) return;
-          void syncImportedSnapshot(snapshot.data() as SharedListSnapshot).catch((error) => {
-            console.error("Imported list sync error:", error);
-          });
-        },
-        (error) => {
-          console.error("Imported list listener error:", error);
-        },
-      ),
-    );
-
-    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
-  }, [importedOwnerIds, items, user]);
+  }, [itemsLoaded, ownerName, personalItems, isSharing, user]);
 
   useEffect(() => {
     if (!shareId || !user || !db || importing || handledShareId.current === shareId) return;
@@ -475,15 +379,14 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const publishShareSnapshot = async () => {
-    if (!user || !db) return;
+  const startSharing = async () => {
+    if (!user || !db || shareBusy) return;
 
-    const nextShareUrl = `${window.location.origin}/share/${user.uid}`;
-    const nextImportUrl = `${window.location.origin}/import/${user.uid}`;
+    setShareBusy(true);
+    setShareStatus("Preparing QR code…");
+    setActionError("");
 
     try {
-      setShareStatus("Preparing QR code...");
-      setActionError("");
       await setDoc(doc(db, "sharedLists", user.uid), {
         ownerId: user.uid,
         ownerName,
@@ -493,20 +396,35 @@ const ShoppingList: React.FC = () => {
         })),
         updatedAt: serverTimestamp(),
       });
-      setShareAutoPublish(true);
-      setShareUrl(nextShareUrl);
-      setImportUrl(nextImportUrl);
-      setShareStatus("Ready to scan");
+      setIsSharing(true);
+      setShareUrl(`${window.location.origin}/share/${user.uid}`);
+      setShareStatus("");
     } catch (error) {
       console.error("Share snapshot error:", error);
       setShareStatus("");
-      setActionError("Unable to prepare your share code right now. Please try again.");
+      setActionError("Unable to start sharing right now. Please try again.");
+    } finally {
+      setShareBusy(false);
     }
   };
 
-  const openSettings = () => {
-    setSettingsOpen(true);
-    void publishShareSnapshot();
+  const stopSharing = async () => {
+    if (!user || !db || shareBusy) return;
+
+    setShareBusy(true);
+    setShareStatus("");
+    setActionError("");
+
+    try {
+      await deleteDoc(doc(db, "sharedLists", user.uid));
+      setIsSharing(false);
+      setShareUrl("");
+    } catch (error) {
+      console.error("Stop sharing error:", error);
+      setActionError("Unable to stop sharing right now. Please try again.");
+    } finally {
+      setShareBusy(false);
+    }
   };
 
   const copyShareLink = async () => {
@@ -520,22 +438,8 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const copyImportLink = async () => {
-    if (!importUrl) return;
-
-    try {
-      await navigator.clipboard.writeText(importUrl);
-      setShareStatus("Import link copied");
-    } catch {
-      setShareStatus("Copy failed");
-    }
-  };
-
   const filtered = useMemo(() => {
     let list = items.filter((item) => getItemListId(item) === activeListId);
-
-    if (filter === "active") list = list.filter((item) => !item.completed);
-    else if (filter === "done") list = list.filter((item) => item.completed);
 
     if (search.trim()) {
       const normalizedQuery = search.trim().toLowerCase();
@@ -543,19 +447,14 @@ const ShoppingList: React.FC = () => {
     }
 
     return list;
-  }, [activeListId, items, filter, search]);
+  }, [activeListId, items, search]);
 
   const activeItems = filtered.filter((item) => !item.completed);
   const doneItems = filtered.filter((item) => item.completed);
   const currentListItems = items.filter((item) => getItemListId(item) === activeListId);
   const allDoneCount = currentListItems.filter((item) => item.completed).length;
   const activeTabName = listTabs.find((tab) => tab.id === activeListId)?.name ?? "My List";
-
-  const filterLabels: { key: FilterType; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "active", label: "Needed" },
-    { key: "done", label: "Got it" },
-  ];
+  const showSearch = currentListItems.length > SEARCH_VISIBILITY_THRESHOLD || search.length > 0;
 
   return (
     <div className="app-wrapper">
@@ -571,6 +470,17 @@ const ShoppingList: React.FC = () => {
           </div>
 
           <div className="user-actions">
+            {!online && (
+              <span
+                className="offline-pill"
+                role="status"
+                title="Offline — changes will sync when online"
+                aria-label="Offline — changes will sync when online"
+              >
+                <WifiOff size={13} strokeWidth={2.5} />
+                <span className="offline-pill-text">Offline</span>
+              </span>
+            )}
             <div className="user-chip">
               <UserAvatar user={user} />
               <span className="user-name">{user?.displayName?.split(" ")[0]}</span>
@@ -585,13 +495,14 @@ const ShoppingList: React.FC = () => {
               {dark ? <Sun size={16} /> : <Moon size={16} />}
             </button>
             <button
-              onClick={openSettings}
-              className="theme-toggle"
-              title="Settings"
+              onClick={() => setShareOpen(true)}
+              className={`theme-toggle share-button ${isSharing ? "is-sharing" : ""}`}
+              title={isSharing ? "Sharing is on" : "Share list"}
               type="button"
-              aria-label="Settings"
+              aria-label={isSharing ? "Share list (sharing is on)" : "Share list"}
             >
-              <Settings size={16} />
+              <Share2 size={16} />
+              {isSharing && <span className="share-button-dot" aria-hidden="true" />}
             </button>
             <button
               onClick={logout}
@@ -606,16 +517,9 @@ const ShoppingList: React.FC = () => {
         </div>
       </header>
 
-      <main className="container" {...swipeHandlers}>
+      <main className="container">
         <div className="page-heading">
-          <h1 className="page-title">My List</h1>
-          <p className="page-subtitle">
-            {currentListItems.length === 0
-              ? "Nothing here yet."
-              : `${currentListItems.length} ${
-                  currentListItems.length === 1 ? "item" : "items"
-                } · ${allDoneCount} checked off`}
-          </p>
+          <h1 className="page-title">{activeTabName}</h1>
           {importStatus && (
             <p className="form-success inline-error" role="status">
               {importStatus}
@@ -626,34 +530,33 @@ const ShoppingList: React.FC = () => {
               {actionError}
             </p>
           )}
-          <p className={`sync-status ${online ? "online" : "offline"}`} role="status">
-            {online ? "Online - changes sync automatically" : "Offline - changes will sync when online"}
-          </p>
         </div>
 
-        <div className="search-bar">
-          <span className="search-bar-icon">
-            <Search size={16} />
-          </span>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search your list…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search items"
-          />
-          {search && (
-            <button
-              className="search-clear"
-              onClick={() => setSearch("")}
-              type="button"
-              aria-label="Clear search"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
+        {showSearch && (
+          <div className="search-bar">
+            <span className="search-bar-icon">
+              <Search size={16} />
+            </span>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search your list…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search items"
+            />
+            {search && (
+              <button
+                className="search-clear"
+                onClick={() => setSearch("")}
+                type="button"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
 
         <form onSubmit={addItem} className="add-form">
           <input
@@ -678,7 +581,6 @@ const ShoppingList: React.FC = () => {
                 className={`list-tab ${activeListId === tab.id ? "active" : ""}`}
                 onClick={() => {
                   setActiveListId(tab.id);
-                  setFilter("all");
                   setSearch("");
                 }}
                 type="button"
@@ -688,19 +590,6 @@ const ShoppingList: React.FC = () => {
             ))}
           </div>
         )}
-
-        <div className="filter-tabs">
-          {filterLabels.map(({ key, label }) => (
-            <button
-              key={key}
-              className={`filter-tab ${filter === key ? "active" : ""}`}
-              onClick={() => setFilter(key)}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
 
         {currentListItems.length > 0 && (
           <div className="stats-bar">
@@ -730,9 +619,7 @@ const ShoppingList: React.FC = () => {
               <p className="empty-text">
                 {search
                   ? "Try a different search term."
-                  : currentListItems.length === 0
-                    ? `Add your first item to ${activeTabName}.`
-                    : "Switch filters to see other items."}
+                  : `Add your first item to ${activeTabName}.`}
               </p>
             </div>
           ) : (
@@ -791,63 +678,91 @@ const ShoppingList: React.FC = () => {
         </div>
       </main>
 
-      {settingsOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
+      {shareOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShareOpen(false)}>
           <section
             className="settings-modal"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="settings-title"
+            aria-labelledby="share-title"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
               <div>
-                <h2 id="settings-title">Settings</h2>
-                <p>Share your list with a QR code.</p>
+                <h2 id="share-title">Share list</h2>
+                <p>
+                  {isSharing
+                    ? "Anyone with the link or QR code can view your list."
+                    : "Publish your list to a public link or QR code."}
+                </p>
               </div>
               <button
                 className="modal-close"
                 type="button"
-                onClick={() => setSettingsOpen(false)}
-                aria-label="Close settings"
+                onClick={() => setShareOpen(false)}
+                aria-label="Close share dialog"
               >
                 <X size={18} />
               </button>
             </div>
 
             <div className="share-panel">
-              <div className="qr-frame">
-                {shareUrl ? (
-                  <QRCodeSVG value={shareUrl} size={184} marginSize={2} />
-                ) : (
-                  <div className="qr-placeholder" />
-                )}
-              </div>
-              <p className="share-status" role="status">
-                {shareStatus || "Open settings to prepare your QR code"}
-              </p>
-              <div className="share-actions">
-                <button className="secondary-btn" type="button" onClick={publishShareSnapshot}>
-                  Refresh
-                </button>
-                <button
-                  className="secondary-btn"
-                  type="button"
-                  onClick={copyShareLink}
-                  disabled={!shareUrl}
-                >
-                  <Copy size={15} />
-                  Copy link
-                </button>
-              </div>
-              <button
-                className="text-action-btn"
-                type="button"
-                onClick={copyImportLink}
-                disabled={!importUrl}
-              >
-                Copy sign-in import link
-              </button>
+              {isSharing ? (
+                <>
+                  <div className="qr-frame">
+                    {shareUrl ? (
+                      <QRCodeSVG value={shareUrl} size={184} marginSize={2} />
+                    ) : (
+                      <div className="qr-placeholder" />
+                    )}
+                  </div>
+                  <p className="share-status" role="status">
+                    {shareStatus || "Live - changes publish automatically"}
+                  </p>
+                  <div className="share-actions">
+                    <button
+                      className="secondary-btn"
+                      type="button"
+                      onClick={copyShareLink}
+                      disabled={!shareUrl}
+                    >
+                      <Copy size={15} />
+                      Copy link
+                    </button>
+                  </div>
+                  <button
+                    className="text-action-btn danger"
+                    type="button"
+                    onClick={stopSharing}
+                    disabled={shareBusy}
+                  >
+                    {shareBusy ? "Stopping..." : "Stop sharing"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="share-empty">
+                    <Share2 size={36} strokeWidth={1.5} />
+                    <p>Sharing is off.</p>
+                    <p className="share-empty-text">
+                      Anyone with the link can view (not edit) your list.
+                    </p>
+                  </div>
+                  {shareStatus && (
+                    <p className="share-status" role="status">
+                      {shareStatus}
+                    </p>
+                  )}
+                  <button
+                    className="primary-btn"
+                    type="button"
+                    onClick={startSharing}
+                    disabled={shareBusy}
+                  >
+                    {shareBusy ? "Starting..." : "Start sharing"}
+                  </button>
+                </>
+              )}
             </div>
           </section>
         </div>
@@ -904,23 +819,8 @@ const ItemRow: React.FC<ItemRowProps> = ({
   onEditCommit,
   onEditCancel,
 }) => {
-  const pressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const didLongPress = React.useRef(false);
-
-  const startPress = () => {
-    didLongPress.current = false;
-    pressTimer.current = setTimeout(() => {
-      didLongPress.current = true;
-      onEditStart(item);
-    }, 500);
-  };
-
-  const cancelPress = () => {
-    if (pressTimer.current) clearTimeout(pressTimer.current);
-  };
-
   const handleClick = () => {
-    if (!isEditing && !didLongPress.current) onToggle(item.id, item.completed);
+    if (!isEditing) onToggle(item.id, item.completed);
   };
 
   const handleRowKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -934,12 +834,10 @@ const ItemRow: React.FC<ItemRowProps> = ({
   return (
     <div
       className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
-      style={{ animationDelay: `${index * 0.04}s`, cursor: isEditing ? "default" : "pointer" }}
-      onMouseDown={startPress}
-      onMouseUp={cancelPress}
-      onMouseLeave={cancelPress}
-      onTouchStart={startPress}
-      onTouchEnd={cancelPress}
+      style={{
+        animationDelay: `${Math.min(index, 8) * 0.04}s`,
+        cursor: isEditing ? "default" : "pointer",
+      }}
       onClick={handleClick}
       role="button"
       tabIndex={isEditing ? -1 : 0}

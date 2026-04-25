@@ -142,7 +142,7 @@ beforeEach(() => {
 });
 
 describe("ShoppingList sharing", () => {
-  it("publishes a public share snapshot and copies the public share link", async () => {
+  it("publishes a public share snapshot only after the user opts in, and copies the share link", async () => {
     snapshotDocs = [
       makeDoc("personal-1", {
         text: "Milk",
@@ -158,10 +158,15 @@ describe("ShoppingList sharing", () => {
         listName: "Alex",
       }),
     ];
+    mockGetDoc.mockResolvedValue({ exists: () => false, data: () => undefined });
 
     renderShoppingList();
 
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Share list" }));
+
+    expect(mockSetDoc).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Start sharing" }));
 
     await waitFor(() => {
       expect(mockSetDoc).toHaveBeenCalledWith(
@@ -174,8 +179,6 @@ describe("ShoppingList sharing", () => {
       );
     });
 
-    expect(await screen.findByText("Ready to scan")).toBeInTheDocument();
-
     await userEvent.click(screen.getByRole("button", { name: "Copy link" }));
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
@@ -183,7 +186,38 @@ describe("ShoppingList sharing", () => {
     );
   });
 
-  it("shows when changes are being saved offline for later sync", async () => {
+  it("stops sharing by deleting the public share doc when the user clicks stop", async () => {
+    snapshotDocs = [
+      makeDoc("personal-1", {
+        text: "Milk",
+        completed: false,
+        userId: user.uid,
+        listId: "personal",
+      }),
+    ];
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({
+        ownerId: user.uid,
+        ownerName: "Brad Owner",
+        items: [{ text: "Milk", completed: false }],
+      }),
+    });
+
+    renderShoppingList();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /share list \(sharing is on\)/i }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
+
+    await waitFor(() => {
+      expect(mockDeleteDoc).toHaveBeenCalledWith({ path: "sharedLists/owner-uid" });
+    });
+  });
+
+  it("shows an offline indicator in the navbar when offline", async () => {
     Object.defineProperty(navigator, "onLine", {
       configurable: true,
       value: false,
@@ -191,9 +225,11 @@ describe("ShoppingList sharing", () => {
 
     renderShoppingList();
 
-    expect(
-      await screen.findByText("Offline - changes will sync when online"),
-    ).toBeInTheDocument();
+    const pill = await screen.findByRole("status", {
+      name: /offline.*changes will sync when online/i,
+    });
+    expect(pill).toBeInTheDocument();
+    expect(pill).toHaveClass("offline-pill");
   });
 
   it("imports a shared list into the signed-in account under the sharer's tab", async () => {
@@ -287,7 +323,7 @@ describe("ShoppingList sharing", () => {
     });
   });
 
-  it("syncs an already imported list when the owner updates their shared snapshot", async () => {
+  it("does not live-resync an imported list when the owner updates their snapshot (one-shot import only)", async () => {
     snapshotDocs = [
       makeDoc("shared-1", {
         text: "Old apples",
@@ -309,23 +345,11 @@ describe("ShoppingList sharing", () => {
 
     renderShoppingList();
 
-    await waitFor(() => expect(mockBatchCommit).toHaveBeenCalled());
+    // Allow effects to settle.
+    await screen.findByRole("button", { name: "Alex" });
 
-    expect(mockBatchDelete).toHaveBeenCalledWith({ path: "shoppingItems/shared-1" });
-    expect(mockBatchSet).toHaveBeenCalledWith(
-      { path: "shoppingItems/auto-1" },
-      expect.objectContaining({
-        text: "New apples",
-        listId: "shared:alex-uid",
-        sharedFromUserId: "alex-uid",
-      }),
-    );
-    expect(mockBatchSet).toHaveBeenCalledWith(
-      { path: "shoppingItems/auto-2" },
-      expect.objectContaining({
-        text: "Bread",
-        listId: "shared:alex-uid",
-      }),
-    );
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+    expect(mockBatchDelete).not.toHaveBeenCalled();
+    expect(mockBatchSet).not.toHaveBeenCalled();
   });
 });

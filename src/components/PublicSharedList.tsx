@@ -125,7 +125,7 @@ const PublicSharedList: React.FC = () => {
                 <button
                   key={item.id}
                   className={`item-row public-item-row ${item.completed ? "completed" : ""}`}
-                  style={{ animationDelay: `${index * 0.04}s` }}
+                  style={{ animationDelay: `${Math.min(index, 8) * 0.04}s` }}
                   onClick={() => toggleItem(item.id)}
                   type="button"
                   aria-pressed={item.completed}
