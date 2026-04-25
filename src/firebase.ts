@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
 import {
   initializeFirestore,
@@ -16,9 +17,28 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID ?? "",
 };
 
+const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY ?? "";
+const appCheckDebugToken = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN ?? "";
+
 export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
 
 const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
+
+if (app && recaptchaSiteKey && typeof window !== "undefined") {
+  if (appCheckDebugToken && !import.meta.env.PROD) {
+    (window as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN?: string | boolean })
+      .FIREBASE_APPCHECK_DEBUG_TOKEN = appCheckDebugToken;
+  }
+
+  try {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(recaptchaSiteKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+  } catch (error) {
+    console.error("App Check initialization failed:", error);
+  }
+}
 
 export const auth: Auth | null = app ? getAuth(app) : null;
 export const googleProvider = isFirebaseConfigured ? new GoogleAuthProvider() : null;

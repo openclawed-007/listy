@@ -1,21 +1,44 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isShoppingItemValid(data) {
+      return data.userId is string
+        && data.text is string
+        && data.text.size() > 0
+        && data.text.size() <= 500
+        && data.completed is bool
+        && (!('listId' in data) || (data.listId is string && data.listId.size() <= 200))
+        && (!('listName' in data) || (data.listName is string && data.listName.size() <= 120))
+        && (!('sharedFromUserId' in data) || (data.sharedFromUserId is string && data.sharedFromUserId.size() <= 128));
+    }
+
     match /shoppingItems/{itemId} {
       allow read, delete: if request.auth != null
         && request.auth.uid == resource.data.userId;
       allow create: if request.auth != null
-        && request.auth.uid == request.resource.data.userId;
+        && request.auth.uid == request.resource.data.userId
+        && isShoppingItemValid(request.resource.data);
       allow update: if request.auth != null
         && request.auth.uid == resource.data.userId
-        && request.resource.data.userId == resource.data.userId;
+        && request.resource.data.userId == resource.data.userId
+        && isShoppingItemValid(request.resource.data);
+    }
+
+    function isSharedListValid(data, ownerId) {
+      return data.ownerId == ownerId
+        && data.ownerName is string
+        && data.ownerName.size() <= 120
+        && data.items is list
+        && data.items.size() <= 500;
     }
 
     match /sharedLists/{ownerId} {
       allow read: if true;
       allow create, update: if request.auth != null
         && request.auth.uid == ownerId
-        && request.resource.data.ownerId == request.auth.uid;
+        && request.resource.data.ownerId == request.auth.uid
+        && isSharedListValid(request.resource.data, ownerId);
       allow delete: if request.auth != null
         && request.auth.uid == ownerId;
     }
