@@ -564,7 +564,7 @@ const ShoppingList: React.FC = () => {
               <ShoppingBag size={18} strokeWidth={2.5} />
             </div>
             <span className="nav-brand-name">
-              List<em>y</em>
+              Cart<em>Link</em>
             </span>
           </div>
 

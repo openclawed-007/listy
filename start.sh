@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Shopping List - Easy Start Script
+# CartLink - Easy Start Script
 
-echo "🚀 Starting Shopping List Setup..."
+echo "Starting CartLink setup..."
 
 # 1. Check if node_modules exists, if not install
 if [ ! -d "node_modules" ]; then

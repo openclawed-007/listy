@@ -1,4 +1,4 @@
-# Listy 🛍️
+# CartLink
 
 A clean, minimal shopping list app with Google sign-in and real-time sync.
 
@@ -17,7 +17,7 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
 1. **Clone and install**
    ```bash
    git clone <repo-url>
-   cd listy
+   cd cartlink
    npm install
    ```
 

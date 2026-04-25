@@ -15,7 +15,7 @@ const Login: React.FC = () => {
           <ShoppingBag size={28} strokeWidth={2} />
         </div>
 
-        <h1 className="login-title">Listy</h1>
+        <h1 className="login-title">CartLink</h1>
         <p className="login-subtitle">
           Your simple, beautiful shopping companion.
         </p>
