@@ -76,4 +76,24 @@ describe("PublicSharedList", () => {
     });
     expect(screen.getByText("Ask the owner to refresh their share link.")).toBeInTheDocument();
   });
+
+  it("shows an empty state for a valid shared list with no items", async () => {
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({
+        ownerId: "alex-uid",
+        ownerName: "Alex",
+        items: [],
+      }),
+    });
+
+    renderPublicSharedList();
+
+    expect(await screen.findByRole("heading", { name: "Alex" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Bag is empty")).toBeInTheDocument();
+    expect(
+      screen.getByText("This shared list does not have any items yet."),
+    ).toBeInTheDocument();
+  });
 });

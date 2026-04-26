@@ -65,6 +65,10 @@ const PublicSharedList: React.FC = () => {
   }, [shareId]);
 
   const remainingCount = useMemo(() => items.filter((item) => !item.completed).length, [items]);
+  const emptyTitle = error ? "List unavailable" : "Bag is empty";
+  const emptyText = error
+    ? "Ask the owner to refresh their share link."
+    : "This shared list does not have any items yet.";
 
   const toggleItem = (id: string) => {
     setItems((currentItems) =>
@@ -115,8 +119,8 @@ const PublicSharedList: React.FC = () => {
         {items.length === 0 ? (
           <div className="empty-state">
             <PackageOpen size={56} className="empty-icon" strokeWidth={1} />
-            <p className="empty-title">List unavailable</p>
-            <p className="empty-text">Ask the owner to refresh their share link.</p>
+            <p className="empty-title">{emptyTitle}</p>
+            <p className="empty-text">{emptyText}</p>
           </div>
         ) : (
           <>
