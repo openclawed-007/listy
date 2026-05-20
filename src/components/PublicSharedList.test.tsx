@@ -4,9 +4,9 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PublicSharedList from "./PublicSharedList";
 
-const { mockDb, mockGetDoc } = vi.hoisted(() => ({
+const { mockDb, mockOnSnapshot } = vi.hoisted(() => ({
   mockDb: { app: "test" },
-  mockGetDoc: vi.fn(),
+  mockOnSnapshot: vi.fn(),
 }));
 
 vi.mock("../firebase", () => ({
@@ -14,9 +14,21 @@ vi.mock("../firebase", () => ({
 }));
 
 vi.mock("firebase/firestore", () => ({
-  doc: vi.fn((_db: unknown, ...segments: string[]) => ({ path: segments.join("/") })),
-  getDoc: mockGetDoc,
+  doc: vi.fn((_db: unknown, ...segments: string[]) => ({
+    path: segments.join("/"),
+  })),
+  onSnapshot: mockOnSnapshot,
 }));
+
+function emitSharedSnapshot(data: Record<string, unknown> | null) {
+  mockOnSnapshot.mockImplementation((_doc, next) => {
+    next({
+      exists: () => Boolean(data),
+      data: () => data,
+    });
+    return vi.fn();
+  });
+}
 
 function renderPublicSharedList(path = "/share/alex-uid") {
   return render(
@@ -34,21 +46,20 @@ beforeEach(() => {
 
 describe("PublicSharedList", () => {
   it("loads a shared list without auth and lets visitors tick items locally", async () => {
-    mockGetDoc.mockResolvedValue({
-      exists: () => true,
-      data: () => ({
-        ownerId: "alex-uid",
-        ownerName: "Alex",
-        items: [
-          { text: "Apples", completed: false },
-          { text: "Tea", completed: true },
-        ],
-      }),
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      items: [
+        { text: "Apples", completed: false },
+        { text: "Tea", completed: true },
+      ],
     });
 
     renderPublicSharedList();
 
-    expect(await screen.findByRole("heading", { name: "Alex" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Alex" }),
+    ).toBeInTheDocument();
 
     const apples = screen.getByRole("button", { name: "Apples" });
     expect(apples).toHaveAttribute("aria-pressed", "false");
@@ -56,16 +67,13 @@ describe("PublicSharedList", () => {
     await userEvent.click(apples);
 
     expect(apples).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("link", { name: "Sign in to save this list" })).toHaveAttribute(
-      "href",
-      "/import/alex-uid",
-    );
+    expect(
+      screen.getByRole("link", { name: "Sign in to save this list" }),
+    ).toHaveAttribute("href", "/import/alex-uid");
   });
 
   it("shows an unavailable state when the shared snapshot is missing", async () => {
-    mockGetDoc.mockResolvedValue({
-      exists: () => false,
-    });
+    emitSharedSnapshot(null);
 
     renderPublicSharedList();
 
@@ -74,26 +82,74 @@ describe("PublicSharedList", () => {
         "This shared list is no longer available.",
       );
     });
-    expect(screen.getByText("Ask the owner to refresh their share link.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Ask the owner to refresh their share link."),
+    ).toBeInTheDocument();
   });
 
   it("shows an empty state for a valid shared list with no items", async () => {
-    mockGetDoc.mockResolvedValue({
-      exists: () => true,
-      data: () => ({
-        ownerId: "alex-uid",
-        ownerName: "Alex",
-        items: [],
-      }),
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      items: [],
     });
 
     renderPublicSharedList();
 
-    expect(await screen.findByRole("heading", { name: "Alex" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Alex" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByText("Bag is empty")).toBeInTheDocument();
     expect(
       screen.getByText("This shared list does not have any items yet."),
     ).toBeInTheDocument();
+  });
+
+  it("updates the public list while the share page is open", async () => {
+    let listener:
+      | ((snapshot: {
+          exists: () => boolean;
+          data: () => Record<string, unknown>;
+        }) => void)
+      | null = null;
+    mockOnSnapshot.mockImplementation((_doc, next) => {
+      listener = next;
+      next({
+        exists: () => true,
+        data: () => ({
+          ownerId: "alex-uid",
+          ownerName: "Alex",
+          items: [{ text: "Apples", completed: false }],
+        }),
+      });
+      return vi.fn();
+    });
+
+    renderPublicSharedList();
+
+    expect(
+      await screen.findByRole("button", { name: "Apples" }),
+    ).toBeInTheDocument();
+
+    listener?.({
+      exists: () => true,
+      data: () => ({
+        ownerId: "alex-uid",
+        ownerName: "Alex",
+        items: [
+          { text: "Apples", completed: true },
+          { text: "Bread", completed: false },
+        ],
+      }),
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Bread" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apples" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });

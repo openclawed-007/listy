@@ -10,7 +10,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./context/useAuth";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
-import './App.css';
+import "./App.css";
 
 const ShoppingList = lazy(() => import("./components/ShoppingList"));
 const Login = lazy(() => import("./components/Login"));
@@ -29,11 +29,19 @@ const AppLoader: React.FC = () => (
   </div>
 );
 
-const AuthRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+function getSafeRedirectPath(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
+  return value;
+}
+
+const AuthRedirect: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { user, loading } = useAuth();
   const location = useLocation();
-  const requestedRedirect = new URLSearchParams(location.search).get("redirect") || "/";
-  const redirect = requestedRedirect.startsWith("/") ? requestedRedirect : "/";
+  const redirect = getSafeRedirectPath(
+    new URLSearchParams(location.search).get("redirect"),
+  );
 
   if (loading) return <AppLoader />;
   if (user) return <Navigate to={redirect} replace />;

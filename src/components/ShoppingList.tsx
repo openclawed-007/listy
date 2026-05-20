@@ -14,7 +14,9 @@ import {
   updateDoc,
   where,
   writeBatch,
+  type Firestore,
   type Timestamp,
+  type WriteBatch,
 } from "firebase/firestore";
 import {
   Check,
@@ -64,6 +66,8 @@ interface ListTab {
 }
 
 const PERSONAL_LIST_ID = "personal";
+const MAX_ITEM_TEXT_LENGTH = 500;
+const MAX_FIRESTORE_BATCH_WRITES = 450;
 
 function getItemListId(item: ShoppingItem) {
   return item.listId ?? PERSONAL_LIST_ID;
@@ -73,14 +77,66 @@ function getItemListName(item: ShoppingItem) {
   return item.listName ?? "My List";
 }
 
+function getSafeOwnerName(value: unknown) {
+  return typeof value === "string" && value.trim()
+    ? value.trim().slice(0, 120)
+    : "Shared user";
+}
+
+function normalizeSharedItems(items: unknown) {
+  if (!Array.isArray(items)) return [];
+
+  return items.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+
+    const { text, completed } = item as { text?: unknown; completed?: unknown };
+    if (typeof text !== "string") return [];
+
+    const trimmed = text.trim();
+    if (!trimmed) return [];
+
+    return [
+      {
+        text: trimmed.slice(0, MAX_ITEM_TEXT_LENGTH),
+        completed: completed === true,
+      },
+    ];
+  });
+}
+
+async function commitBatchOperations(
+  firestore: Firestore,
+  operations: Array<(batch: WriteBatch) => void>,
+) {
+  for (
+    let index = 0;
+    index < operations.length;
+    index += MAX_FIRESTORE_BATCH_WRITES
+  ) {
+    const batch = writeBatch(firestore);
+    operations
+      .slice(index, index + MAX_FIRESTORE_BATCH_WRITES)
+      .forEach((operation) => operation(batch));
+    await batch.commit();
+  }
+}
+
 function useDarkMode() {
   const [dark, setDark] = React.useState<boolean>(() => {
-    return localStorage.getItem("theme") === "dark";
+    try {
+      return localStorage.getItem("theme") === "dark";
+    } catch {
+      return false;
+    }
   });
 
   React.useEffect(() => {
     document.body.classList.toggle("dark", dark);
-    localStorage.setItem("theme", dark ? "dark" : "light");
+    try {
+      localStorage.setItem("theme", dark ? "dark" : "light");
+    } catch {
+      // Some browser privacy modes can block localStorage.
+    }
   }, [dark]);
 
   return { dark, toggle: () => setDark((value) => !value) };
@@ -114,7 +170,10 @@ const ShoppingList: React.FC = () => {
   useEffect(() => {
     if (!user || !db) return;
 
-    const q = query(collection(db, "shoppingItems"), where("userId", "==", user.uid));
+    const q = query(
+      collection(db, "shoppingItems"),
+      where("userId", "==", user.uid),
+    );
 
     const unsubscribe = onSnapshot(
       q,
@@ -136,7 +195,9 @@ const ShoppingList: React.FC = () => {
       },
       (error) => {
         console.error("Snapshot error:", error);
-        setActionError("We could not sync your list. Check your connection and try again.");
+        setActionError(
+          "We could not sync your list. Check your connection and try again.",
+        );
       },
     );
 
@@ -166,7 +227,8 @@ const ShoppingList: React.FC = () => {
 
     items.forEach((item) => {
       const listId = getItemListId(item);
-      if (listId !== PERSONAL_LIST_ID) sharedTabs.set(listId, getItemListName(item));
+      if (listId !== PERSONAL_LIST_ID)
+        sharedTabs.set(listId, getItemListName(item));
     });
 
     return [
@@ -186,7 +248,8 @@ const ShoppingList: React.FC = () => {
     [items],
   );
 
-  const ownerName = user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
+  const ownerName =
+    user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
 
   useEffect(() => {
     if (!isSharing || !itemsLoaded || !user || !db) return;
@@ -209,7 +272,14 @@ const ShoppingList: React.FC = () => {
   }, [itemsLoaded, ownerName, personalItems, isSharing, user]);
 
   useEffect(() => {
-    if (!shareId || !user || !db || importing || handledShareId.current === shareId) return;
+    if (
+      !shareId ||
+      !user ||
+      !db ||
+      importing ||
+      handledShareId.current === shareId
+    )
+      return;
 
     const importSharedList = async () => {
       handledShareId.current = shareId;
@@ -226,7 +296,8 @@ const ShoppingList: React.FC = () => {
         }
 
         const data = snapshot.data() as SharedListSnapshot;
-        const sharedItems = Array.isArray(data.items) ? data.items : [];
+        const ownerName = getSafeOwnerName(data.ownerName);
+        const sharedItems = normalizeSharedItems(data.items);
         if (data.ownerId === user.uid) {
           setActionError("This is your own share code.");
           navigate("/", { replace: true });
@@ -235,41 +306,47 @@ const ShoppingList: React.FC = () => {
 
         const importedListId = `shared:${data.ownerId}`;
         const existingItems = await getDocs(
-          query(collection(db, "shoppingItems"), where("userId", "==", user.uid)),
+          query(
+            collection(db, "shoppingItems"),
+            where("userId", "==", user.uid),
+          ),
         );
 
-        const batch = writeBatch(db);
-        let writeCount = 0;
+        const operations: Array<(batch: WriteBatch) => void> = [];
         existingItems.forEach((itemDoc) => {
-          if (getItemListId(itemDoc.data() as ShoppingItem) === importedListId) {
-            batch.delete(doc(db, "shoppingItems", itemDoc.id));
-            writeCount += 1;
+          if (
+            getItemListId(itemDoc.data() as ShoppingItem) === importedListId
+          ) {
+            operations.push((batch) =>
+              batch.delete(doc(db, "shoppingItems", itemDoc.id)),
+            );
           }
         });
 
         sharedItems.forEach((item) => {
-          if (!item.text.trim()) return;
-
           const itemRef = doc(collection(db, "shoppingItems"));
-          batch.set(itemRef, {
-            text: item.text.trim(),
-            completed: item.completed,
-            userId: user.uid,
-            listId: importedListId,
-            listName: data.ownerName,
-            sharedFromUserId: data.ownerId,
-            createdAt: serverTimestamp(),
-          });
-          writeCount += 1;
+          operations.push((batch) =>
+            batch.set(itemRef, {
+              text: item.text,
+              completed: item.completed,
+              userId: user.uid,
+              listId: importedListId,
+              listName: ownerName,
+              sharedFromUserId: data.ownerId,
+              createdAt: serverTimestamp(),
+            }),
+          );
         });
 
-        if (writeCount > 0) await batch.commit();
+        await commitBatchOperations(db, operations);
         setActiveListId(importedListId);
-        setImportStatus(`${data.ownerName}'s list was added to your tabs.`);
+        setImportStatus(`${ownerName}'s list was added to your tabs.`);
         navigate("/", { replace: true });
       } catch (error) {
         console.error("Import shared list error:", error);
-        setActionError("Unable to import that shared list right now. Please try again.");
+        setActionError(
+          "Unable to import that shared list right now. Please try again.",
+        );
         navigate("/", { replace: true });
       } finally {
         setImporting(false);
@@ -281,14 +358,21 @@ const ShoppingList: React.FC = () => {
 
   const addItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItem.trim() || !user || !db) return;
+    const trimmed = newItem.trim();
+    if (!trimmed || !user || !db) return;
+    if (trimmed.length > MAX_ITEM_TEXT_LENGTH) {
+      setActionError(
+        `Keep items to ${MAX_ITEM_TEXT_LENGTH} characters or fewer.`,
+      );
+      return;
+    }
 
     const activeTab = listTabs.find((tab) => tab.id === activeListId);
 
     try {
       setActionError("");
       await addDoc(collection(db, "shoppingItems"), {
-        text: newItem.trim(),
+        text: trimmed,
         completed: false,
         userId: user.uid,
         listId: activeListId,
@@ -329,6 +413,12 @@ const ShoppingList: React.FC = () => {
   const updateItemText = async (id: string, text: string) => {
     const trimmed = text.trim();
     if (!trimmed || !db) return;
+    if (trimmed.length > MAX_ITEM_TEXT_LENGTH) {
+      setActionError(
+        `Keep items to ${MAX_ITEM_TEXT_LENGTH} characters or fewer.`,
+      );
+      return;
+    }
 
     try {
       setActionError("");
@@ -354,13 +444,19 @@ const ShoppingList: React.FC = () => {
   const clearCompleted = async () => {
     if (!db) return;
 
-    const done = items.filter((item) => item.completed && getItemListId(item) === activeListId);
+    const done = items.filter(
+      (item) => item.completed && getItemListId(item) === activeListId,
+    );
     try {
       setActionError("");
-      await Promise.all(done.map((item) => deleteDoc(doc(db, "shoppingItems", item.id))));
+      await Promise.all(
+        done.map((item) => deleteDoc(doc(db, "shoppingItems", item.id))),
+      );
     } catch (error) {
       console.error("Clear completed error:", error);
-      setActionError("Unable to clear completed items right now. Please try again.");
+      setActionError(
+        "Unable to clear completed items right now. Please try again.",
+      );
     }
   };
 
@@ -369,13 +465,19 @@ const ShoppingList: React.FC = () => {
 
     try {
       setActionError("");
-      const sharedItems = items.filter((item) => getItemListId(item) === activeListId);
-      await Promise.all(sharedItems.map((item) => deleteDoc(doc(db, "shoppingItems", item.id))));
+      const sharedItems = items.filter(
+        (item) => getItemListId(item) === activeListId,
+      );
+      await Promise.all(
+        sharedItems.map((item) => deleteDoc(doc(db, "shoppingItems", item.id))),
+      );
       setActiveListId(PERSONAL_LIST_ID);
       setImportStatus("");
     } catch (error) {
       console.error("Remove shared list error:", error);
-      setActionError("Unable to remove that shared list right now. Please try again.");
+      setActionError(
+        "Unable to remove that shared list right now. Please try again.",
+      );
     }
   };
 
@@ -443,7 +545,9 @@ const ShoppingList: React.FC = () => {
 
     if (search.trim()) {
       const normalizedQuery = search.trim().toLowerCase();
-      list = list.filter((item) => item.text.toLowerCase().includes(normalizedQuery));
+      list = list.filter((item) =>
+        item.text.toLowerCase().includes(normalizedQuery),
+      );
     }
 
     return list;
@@ -451,10 +555,14 @@ const ShoppingList: React.FC = () => {
 
   const activeItems = filtered.filter((item) => !item.completed);
   const doneItems = filtered.filter((item) => item.completed);
-  const currentListItems = items.filter((item) => getItemListId(item) === activeListId);
+  const currentListItems = items.filter(
+    (item) => getItemListId(item) === activeListId,
+  );
   const allDoneCount = currentListItems.filter((item) => item.completed).length;
-  const activeTabName = listTabs.find((tab) => tab.id === activeListId)?.name ?? "My List";
-  const showSearch = currentListItems.length > SEARCH_VISIBILITY_THRESHOLD || search.length > 0;
+  const activeTabName =
+    listTabs.find((tab) => tab.id === activeListId)?.name ?? "My List";
+  const showSearch =
+    currentListItems.length > SEARCH_VISIBILITY_THRESHOLD || search.length > 0;
 
   return (
     <div className="app-wrapper">
@@ -483,7 +591,9 @@ const ShoppingList: React.FC = () => {
             )}
             <div className="user-chip">
               <UserAvatar user={user} />
-              <span className="user-name">{user?.displayName?.split(" ")[0]}</span>
+              <span className="user-name">
+                {user?.displayName?.split(" ")[0]}
+              </span>
             </div>
             <button
               onClick={toggleDark}
@@ -499,10 +609,14 @@ const ShoppingList: React.FC = () => {
               className={`theme-toggle share-button ${isSharing ? "is-sharing" : ""}`}
               title={isSharing ? "Sharing is on" : "Share list"}
               type="button"
-              aria-label={isSharing ? "Share list (sharing is on)" : "Share list"}
+              aria-label={
+                isSharing ? "Share list (sharing is on)" : "Share list"
+              }
             >
               <Share2 size={16} />
-              {isSharing && <span className="share-button-dot" aria-hidden="true" />}
+              {isSharing && (
+                <span className="share-button-dot" aria-hidden="true" />
+              )}
             </button>
             <button
               onClick={logout}
@@ -567,8 +681,14 @@ const ShoppingList: React.FC = () => {
             placeholder="Add an item…"
             autoFocus
             aria-label="New shopping item"
+            maxLength={MAX_ITEM_TEXT_LENGTH}
           />
-          <button type="submit" className="add-btn" title="Add item" aria-label="Add item">
+          <button
+            type="submit"
+            className="add-btn"
+            title="Add item"
+            aria-label="Add item"
+          >
             <Plus size={22} strokeWidth={2.5} />
           </button>
         </form>
@@ -597,12 +717,20 @@ const ShoppingList: React.FC = () => {
               <strong>{activeItems.length}</strong> remaining
             </span>
             {allDoneCount > 0 && (
-              <button className="clear-done-btn" onClick={clearCompleted} type="button">
+              <button
+                className="clear-done-btn"
+                onClick={clearCompleted}
+                type="button"
+              >
                 Clear {allDoneCount} done
               </button>
             )}
             {activeListId !== PERSONAL_LIST_ID && (
-              <button className="clear-done-btn" onClick={removeActiveSharedList} type="button">
+              <button
+                className="clear-done-btn"
+                onClick={removeActiveSharedList}
+                type="button"
+              >
                 Remove list
               </button>
             )}
@@ -614,7 +742,11 @@ const ShoppingList: React.FC = () => {
             <div className="empty-state">
               <PackageOpen size={56} className="empty-icon" strokeWidth={1} />
               <p className="empty-title">
-                {search ? "No matches" : currentListItems.length === 0 ? "Bag is empty" : "Nothing here"}
+                {search
+                  ? "No matches"
+                  : currentListItems.length === 0
+                    ? "Bag is empty"
+                    : "Nothing here"}
               </p>
               <p className="empty-text">
                 {search
@@ -679,7 +811,11 @@ const ShoppingList: React.FC = () => {
       </main>
 
       {shareOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShareOpen(false)}>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setShareOpen(false)}
+        >
           <section
             className="settings-modal"
             role="dialog"
@@ -851,7 +987,11 @@ const ItemRow: React.FC<ItemRowProps> = ({
           if (!isEditing) onToggle(item.id, item.completed);
         }}
         type="button"
-        aria-label={item.completed ? `Mark "${item.text}" as needed` : `Mark "${item.text}" as completed`}
+        aria-label={
+          item.completed
+            ? `Mark "${item.text}" as needed`
+            : `Mark "${item.text}" as completed`
+        }
         aria-pressed={item.completed}
       >
         {item.completed && <Check size={13} strokeWidth={3} />}
@@ -863,6 +1003,7 @@ const ItemRow: React.FC<ItemRowProps> = ({
           value={editText}
           autoFocus
           onChange={(e) => onEditChange(e.target.value)}
+          maxLength={MAX_ITEM_TEXT_LENGTH}
           onBlur={onEditCommit}
           onKeyDown={(e) => {
             if (e.key === "Enter") {

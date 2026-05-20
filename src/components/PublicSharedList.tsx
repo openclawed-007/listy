@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { Check, PackageOpen, ShoppingBag } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { db } from "../firebase";
@@ -19,6 +19,34 @@ interface PublicItem {
   completed: boolean;
 }
 
+function getSafeOwnerName(value: unknown) {
+  return typeof value === "string" && value.trim()
+    ? value.trim().slice(0, 120)
+    : "Shared list";
+}
+
+function normalizeSharedItems(items: unknown): PublicItem[] {
+  if (!Array.isArray(items)) return [];
+
+  return items.flatMap((item, index) => {
+    if (!item || typeof item !== "object") return [];
+
+    const { text, completed } = item as { text?: unknown; completed?: unknown };
+    if (typeof text !== "string") return [];
+
+    const trimmed = text.trim();
+    if (!trimmed) return [];
+
+    return [
+      {
+        id: `${index}-${trimmed}`,
+        text: trimmed,
+        completed: completed === true,
+      },
+    ];
+  });
+}
+
 const PublicSharedList: React.FC = () => {
   const { shareId } = useParams();
   const [ownerName, setOwnerName] = useState("Shared list");
@@ -27,46 +55,43 @@ const PublicSharedList: React.FC = () => {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!shareId || !db) {
-      setError("This shared list is not available.");
-      setLoading(false);
-      return;
-    }
+    if (!shareId || !db) return;
 
-    const loadSharedList = async () => {
-      try {
-        const snapshot = await getDoc(doc(db, "sharedLists", shareId));
+    const unsubscribe = onSnapshot(
+      doc(db, "sharedLists", shareId),
+      (snapshot) => {
         if (!snapshot.exists()) {
           setError("This shared list is no longer available.");
+          setItems([]);
+          setLoading(false);
           return;
         }
 
         const data = snapshot.data() as SharedListSnapshot;
-        const sharedItems = Array.isArray(data.items) ? data.items : [];
-        setOwnerName(data.ownerName || "Shared list");
-        setItems(
-          sharedItems
-            .filter((item) => item.text.trim())
-            .map((item, index) => ({
-              id: `${index}-${item.text}`,
-              text: item.text.trim(),
-              completed: item.completed,
-            })),
-        );
-      } catch (loadError) {
+        setError("");
+        setOwnerName(getSafeOwnerName(data.ownerName));
+        setItems(normalizeSharedItems(data.items));
+        setLoading(false);
+      },
+      (loadError) => {
         console.error("Load public shared list error:", loadError);
         setError("Unable to load this shared list right now.");
-      } finally {
         setLoading(false);
-      }
-    };
+      },
+    );
 
-    void loadSharedList();
+    return unsubscribe;
   }, [shareId]);
 
-  const remainingCount = useMemo(() => items.filter((item) => !item.completed).length, [items]);
-  const emptyTitle = error ? "List unavailable" : "Bag is empty";
-  const emptyText = error
+  const remainingCount = useMemo(
+    () => items.filter((item) => !item.completed).length,
+    [items],
+  );
+  const unavailableError =
+    !shareId || !db ? "This shared list is not available." : "";
+  const displayError = unavailableError || error;
+  const emptyTitle = displayError ? "List unavailable" : "Bag is empty";
+  const emptyText = displayError
     ? "Ask the owner to refresh their share link."
     : "This shared list does not have any items yet.";
 
@@ -78,7 +103,7 @@ const PublicSharedList: React.FC = () => {
     );
   };
 
-  if (loading) {
+  if (loading && !unavailableError) {
     return (
       <div className="loading-screen">
         <div className="loading-spinner" />
@@ -109,9 +134,9 @@ const PublicSharedList: React.FC = () => {
               ? "Nothing here yet."
               : `${items.length} ${items.length === 1 ? "item" : "items"} · ${remainingCount} remaining`}
           </p>
-          {error && (
+          {displayError && (
             <p className="form-error inline-error" role="alert">
-              {error}
+              {displayError}
             </p>
           )}
         </div>
@@ -134,7 +159,9 @@ const PublicSharedList: React.FC = () => {
                   type="button"
                   aria-pressed={item.completed}
                 >
-                  <span className={`toggle-btn ${item.completed ? "is-checked" : ""}`}>
+                  <span
+                    className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
+                  >
                     {item.completed && <Check size={13} strokeWidth={3} />}
                   </span>
                   <span className="item-text">{item.text}</span>

@@ -27,8 +27,8 @@ const Login: React.FC = () => {
             <div>
               <strong>Setup required</strong>
               <p>
-                Update <code>src/firebase.ts</code> with your Firebase
-                credentials to enable sign-in.
+                Create <code>.env.local</code> from <code>.env.example</code>{" "}
+                and add your Firebase credentials to enable sign-in.
               </p>
             </div>
           </div>
@@ -67,8 +67,7 @@ const Login: React.FC = () => {
               {isLoggingIn ? "Signing in..." : "Continue with Google"}
             </button>
             <p className="recaptcha-notice">
-              By continuing you agree to our{" "}
-              <Link to="/terms">Terms</Link> and{" "}
+              By continuing you agree to our <Link to="/terms">Terms</Link> and{" "}
               <Link to="/privacy">Privacy Policy</Link>.
             </p>
             <p className="recaptcha-notice">
