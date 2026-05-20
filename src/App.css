@@ -180,18 +180,24 @@ input:focus-visible,
 .nav-brand-icon {
   width: 34px;
   height: 34px;
-  background: var(--sage);
+  background: transparent;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
   flex-shrink: 0;
-  transition: transform 0.2s ease, background 0.2s ease;
+  transition: transform 0.2s ease;
+}
+
+.brand-mark {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  object-fit: contain;
 }
 
 .nav-brand:hover .nav-brand-icon {
-  background: var(--sage-dark);
   transform: rotate(-5deg) scale(1.05);
 }
 
@@ -899,14 +905,17 @@ input:focus-visible,
 .login-logo {
   width: 60px;
   height: 60px;
-  background: var(--sage);
-  border-radius: 16px;
+  background: transparent;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 1.75rem;
-  color: white;
   box-shadow: 0 6px 20px rgba(107, 143, 113, 0.35);
+}
+
+.login-brand-mark {
+  filter: drop-shadow(0 2px 4px rgba(42, 37, 32, 0.08));
 }
 
 .login-title {

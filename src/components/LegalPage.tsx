@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ShoppingBag } from "lucide-react";
+import BrandMark from "./BrandMark";
 
 interface LegalPageProps {
   title: string;
@@ -14,7 +14,7 @@ const LegalPage: React.FC<LegalPageProps> = ({ title, updated, children }) => {
       <header className="legal-header">
         <Link to="/" className="legal-brand" aria-label="Back to CartLink">
           <span className="nav-brand-icon">
-            <ShoppingBag size={18} strokeWidth={2.5} />
+            <BrandMark className="brand-mark" />
           </span>
           <span className="nav-brand-name">
             Cart<em>Link</em>

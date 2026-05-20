@@ -2,7 +2,8 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { isFirebaseConfigured } from "../firebase";
-import { ShoppingBag, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
+import BrandMark from "./BrandMark";
 
 const Login: React.FC = () => {
   const { login } = useAuth();
@@ -13,7 +14,7 @@ const Login: React.FC = () => {
     <div className="login-container">
       <div className="login-card">
         <div className="login-logo">
-          <ShoppingBag size={28} strokeWidth={2} />
+          <BrandMark className="brand-mark login-brand-mark" />
         </div>
 
         <h1 className="login-title">CartLink</h1>

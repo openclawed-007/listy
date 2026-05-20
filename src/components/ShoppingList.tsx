@@ -28,7 +28,6 @@ import {
   Plus,
   Search,
   Share2,
-  ShoppingBag,
   Sun,
   Trash2,
   WifiOff,
@@ -39,6 +38,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import { useAuth } from "../context/useAuth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import BrandMark from "./BrandMark";
 
 interface ShoppingItem {
   id: string;
@@ -570,7 +570,7 @@ const ShoppingList: React.FC = () => {
         <div className="navbar-content">
           <div className="nav-brand">
             <div className="nav-brand-icon">
-              <ShoppingBag size={18} strokeWidth={2.5} />
+              <BrandMark className="brand-mark" />
             </div>
             <span className="nav-brand-name">
               Cart<em>Link</em>

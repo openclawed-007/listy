@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
-import { Check, PackageOpen, ShoppingBag } from "lucide-react";
+import { Check, PackageOpen } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { db } from "../firebase";
+import BrandMark from "./BrandMark";
 
 interface SharedListSnapshot {
   ownerId: string;
@@ -117,7 +118,7 @@ const PublicSharedList: React.FC = () => {
         <div className="navbar-content">
           <div className="nav-brand">
             <div className="nav-brand-icon">
-              <ShoppingBag size={18} strokeWidth={2.5} />
+              <BrandMark className="brand-mark" />
             </div>
             <span className="nav-brand-name">
               Cart<em>Link</em>
