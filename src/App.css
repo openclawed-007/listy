@@ -178,8 +178,8 @@ input:focus-visible,
 }
 
 .nav-brand-icon {
-  width: 34px;
-  height: 34px;
+  width: 37.4px;
+  height: 37.4px;
   background: transparent;
   border-radius: var(--radius-sm);
   display: flex;
@@ -903,8 +903,8 @@ input:focus-visible,
 }
 
 .login-logo {
-  width: 60px;
-  height: 60px;
+  width: 66px;
+  height: 66px;
   background: transparent;
   border-radius: 18px;
   display: flex;
