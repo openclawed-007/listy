@@ -37,6 +37,12 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
+import {
+  hasAnyPermission,
+  NO_PERMISSIONS,
+  normalizeSharePermissions,
+  type SharePermissions,
+} from "../lib/sharePermissions";
 import { useAuth } from "../context/useAuth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import BrandMark from "./BrandMark";
@@ -241,7 +247,9 @@ const ShoppingList: React.FC = () => {
   const [shareUrl, setShareUrl] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [shareBusy, setShareBusy] = useState(false);
-  const [allowEdits, setAllowEdits] = useState(false);
+  const [permissions, setPermissions] =
+    useState<SharePermissions>(NO_PERMISSIONS);
+  const allowEdits = hasAnyPermission(permissions);
   const [importStatus, setImportStatus] = useState("");
   const [importing, setImporting] = useState(false);
   const [itemsLoaded, setItemsLoaded] = useState(false);
@@ -313,7 +321,7 @@ const ShoppingList: React.FC = () => {
 
         const data = snapshot.data();
         setIsSharing(true);
-        setAllowEdits(data?.allowEdits === true);
+        setPermissions(normalizeSharePermissions(data?.permissions));
         setShareUrl(`${window.location.origin}/share/${user.uid}`);
       } catch (error) {
         console.error("Load share state error:", error);
@@ -361,6 +369,7 @@ const ShoppingList: React.FC = () => {
           ownerId: user.uid,
           ownerName,
           allowEdits,
+          permissions,
           items: personalItems.map((item) => ({
             text: item.text,
             completed: item.completed,
@@ -375,10 +384,11 @@ const ShoppingList: React.FC = () => {
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [allowEdits, itemsLoaded, ownerName, personalItems, isSharing, user]);
+  }, [allowEdits, permissions, itemsLoaded, ownerName, personalItems, isSharing, user]);
 
-  // When collaborators are allowed to edit, reflect their completion changes
-  // (made on the public shared doc) back into the owner's own items.
+  // When collaborators can edit, reconcile the changes they make on the public
+  // shared doc back into the owner's own items: toggle completion, add new
+  // items and remove deleted ones, gated by the granted permissions.
   useEffect(() => {
     if (!isSharing || !allowEdits || !user || !db) return;
 
@@ -390,22 +400,60 @@ const ShoppingList: React.FC = () => {
         const shared = normalizeSharedListSnapshot(snapshot.data());
         if (!shared) return;
 
-        const completedByKey = new Map<string, boolean>();
+        const sharedByKey = new Map<string, (typeof shared.items)[number]>();
         shared.items.forEach((sharedItem) => {
-          completedByKey.set(getSharedItemKey(sharedItem), sharedItem.completed);
+          sharedByKey.set(getSharedItemKey(sharedItem), sharedItem);
         });
 
+        const personalByKey = new Map<string, ShoppingItem>();
         personalItems.forEach((item) => {
-          const sharedCompleted = completedByKey.get(getSharedItemKey(item));
-          if (sharedCompleted === undefined || sharedCompleted === item.completed)
-            return;
-
-          updateDoc(doc(db, "shoppingItems", item.id), {
-            completed: sharedCompleted,
-          }).catch((error) => {
-            console.error("Collaborator sync-back error:", error);
-          });
+          personalByKey.set(getSharedItemKey(item), item);
         });
+
+        // Toggle: same item, different completion state.
+        if (permissions.toggle) {
+          personalItems.forEach((item) => {
+            const sharedItem = sharedByKey.get(getSharedItemKey(item));
+            if (!sharedItem || sharedItem.completed === item.completed) return;
+
+            updateDoc(doc(db, "shoppingItems", item.id), {
+              completed: sharedItem.completed,
+            }).catch((error) => {
+              console.error("Collaborator toggle sync-back error:", error);
+            });
+          });
+        }
+
+        // Add: shared item that has no matching personal item yet.
+        if (permissions.add) {
+          shared.items.forEach((sharedItem) => {
+            if (personalByKey.has(getSharedItemKey(sharedItem))) return;
+
+            addDoc(collection(db, "shoppingItems"), {
+              text: sharedItem.text,
+              completed: sharedItem.completed,
+              userId: user.uid,
+              ...(sharedItem.quantity ? { quantity: sharedItem.quantity } : {}),
+              ...(sharedItem.category ? { category: sharedItem.category } : {}),
+              listId: PERSONAL_LIST_ID,
+              listName: "My List",
+              createdAt: serverTimestamp(),
+            }).catch((error) => {
+              console.error("Collaborator add sync-back error:", error);
+            });
+          });
+        }
+
+        // Remove: personal item no longer present in the shared list.
+        if (permissions.remove) {
+          personalItems.forEach((item) => {
+            if (sharedByKey.has(getSharedItemKey(item))) return;
+
+            deleteDoc(doc(db, "shoppingItems", item.id)).catch((error) => {
+              console.error("Collaborator remove sync-back error:", error);
+            });
+          });
+        }
       },
       (error) => {
         console.error("Collaborator listener error:", error);
@@ -413,7 +461,7 @@ const ShoppingList: React.FC = () => {
     );
 
     return unsubscribe;
-  }, [allowEdits, isSharing, personalItems, user]);
+  }, [allowEdits, permissions, isSharing, personalItems, user]);
 
   useEffect(() => {
     if (
@@ -716,6 +764,7 @@ const ShoppingList: React.FC = () => {
         ownerId: user.uid,
         ownerName,
         allowEdits,
+        permissions,
         items: personalItems.map((item) => ({
           text: item.text,
           completed: item.completed,
@@ -736,22 +785,28 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const toggleAllowEdits = async (nextAllowEdits: boolean) => {
-    setAllowEdits(nextAllowEdits);
+  const togglePermission = async (
+    key: keyof SharePermissions,
+    nextValue: boolean,
+  ) => {
+    const previous = permissions;
+    const nextPermissions = { ...permissions, [key]: nextValue };
+    setPermissions(nextPermissions);
 
     if (!user || !db || !isSharing) return;
 
     try {
       setActionError("");
       await updateDoc(doc(db, "sharedLists", user.uid), {
-        allowEdits: nextAllowEdits,
+        allowEdits: hasAnyPermission(nextPermissions),
+        permissions: nextPermissions,
         updatedAt: serverTimestamp(),
       });
     } catch (error) {
-      console.error("Toggle allow edits error:", error);
-      setAllowEdits(!nextAllowEdits);
+      console.error("Toggle permission error:", error);
+      setPermissions(previous);
       setActionError(
-        "Unable to update editing permissions right now. Please try again.",
+        "Unable to update sharing permissions right now. Please try again.",
       );
     }
   };
@@ -766,7 +821,7 @@ const ShoppingList: React.FC = () => {
     try {
       await deleteDoc(doc(db, "sharedLists", user.uid));
       setIsSharing(false);
-      setAllowEdits(false);
+      setPermissions(NO_PERMISSIONS);
       setShareUrl("");
       setShareOpen(false);
     } catch (error) {
@@ -1176,23 +1231,67 @@ const ShoppingList: React.FC = () => {
                       Copy link
                     </button>
                   </div>
-                  <label className="share-edit-toggle">
-                    <input
-                      type="checkbox"
-                      checked={allowEdits}
-                      onChange={(e) => toggleAllowEdits(e.target.checked)}
-                    />
-                    <span className="share-edit-toggle-text">
-                      <span className="share-edit-toggle-title">
-                        Allow others to edit
+                  <div className="share-perms">
+                    <p className="share-perms-title">
+                      What can signed-in visitors do?
+                    </p>
+                    <label className="share-edit-toggle">
+                      <input
+                        type="checkbox"
+                        checked={permissions.toggle}
+                        onChange={(e) =>
+                          togglePermission("toggle", e.target.checked)
+                        }
+                      />
+                      <span className="share-edit-toggle-text">
+                        <span className="share-edit-toggle-title">
+                          Check items off
+                        </span>
+                        <span className="share-edit-toggle-hint">
+                          Mark items as bought or still needed.
+                        </span>
                       </span>
-                      <span className="share-edit-toggle-hint">
-                        {allowEdits
-                          ? "Signed-in visitors can check items off your list."
-                          : "Visitors can only view your list."}
+                    </label>
+                    <label className="share-edit-toggle">
+                      <input
+                        type="checkbox"
+                        checked={permissions.add}
+                        onChange={(e) =>
+                          togglePermission("add", e.target.checked)
+                        }
+                      />
+                      <span className="share-edit-toggle-text">
+                        <span className="share-edit-toggle-title">
+                          Add items
+                        </span>
+                        <span className="share-edit-toggle-hint">
+                          Add new items to your list.
+                        </span>
                       </span>
-                    </span>
-                  </label>
+                    </label>
+                    <label className="share-edit-toggle">
+                      <input
+                        type="checkbox"
+                        checked={permissions.remove}
+                        onChange={(e) =>
+                          togglePermission("remove", e.target.checked)
+                        }
+                      />
+                      <span className="share-edit-toggle-text">
+                        <span className="share-edit-toggle-title">
+                          Remove items
+                        </span>
+                        <span className="share-edit-toggle-hint">
+                          Delete items from your list.
+                        </span>
+                      </span>
+                    </label>
+                    <p className="share-perms-note">
+                      {allowEdits
+                        ? "Visitors must sign in before they can make changes."
+                        : "Sharing is view-only until you enable a permission."}
+                    </p>
+                  </div>
                   <button
                     className="text-action-btn danger"
                     type="button"

@@ -1,10 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
-import { Check, PackageOpen, Pencil } from "lucide-react";
+import { Check, PackageOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { db } from "../firebase";
+import {
+  hasAnyPermission,
+  NO_PERMISSIONS,
+  normalizeSharePermissions,
+  type SharePermissions,
+} from "../lib/sharePermissions";
 import { useAuth } from "../context/useAuth";
 import BrandMark from "./BrandMark";
+
+const MAX_ITEM_TEXT_LENGTH = 500;
+const MAX_ITEMS = 500;
 
 interface SharedItemData {
   text: string;
@@ -17,6 +26,7 @@ interface SharedListSnapshot {
   ownerId: string;
   ownerName: string;
   allowEdits: boolean;
+  permissions: SharePermissions;
   items: SharedItemData[];
 }
 
@@ -37,6 +47,19 @@ function getSafeOwnerName(value: unknown) {
   return typeof value === "string" && value.trim()
     ? value.trim().slice(0, 120)
     : "Shared list";
+}
+
+// Human-readable summary of the granted permissions, e.g.
+// "check items off, add and remove items".
+function describePermissions(perms: SharePermissions): string {
+  const parts: string[] = [];
+  if (perms.toggle) parts.push("check items off");
+  if (perms.add) parts.push("add items");
+  if (perms.remove) parts.push("remove items");
+
+  if (parts.length === 0) return "view this list";
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
 function normalizeSharedItems(items: unknown): PublicItem[] {
@@ -70,41 +93,71 @@ function normalizeSharedItems(items: unknown): PublicItem[] {
 function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
   if (!isRecord(data) || typeof data.ownerId !== "string") return null;
 
+  const permissions = normalizeSharePermissions(data.permissions);
+
   return {
     ownerId: data.ownerId,
     ownerName: getSafeOwnerName(data.ownerName),
-    allowEdits: data.allowEdits === true,
+    allowEdits: data.allowEdits === true && hasAnyPermission(permissions),
+    permissions,
     items: normalizeSharedItems(data.items),
   };
 }
 
-// Rebuild the raw items array the way the owner stored it, so a collaborator
-// write keeps the same length, order and fields the security rules expect.
-function buildItemsPayload(
+// Map a single raw stored item into the clean payload shape, dropping empty
+// optional fields so writes stay consistent with what the owner stores.
+function toPayloadItem(item: unknown, override?: Partial<SharedItemData>): SharedItemData {
+  const record = isRecord(item) ? item : {};
+  const base: SharedItemData = {
+    text: typeof record.text === "string" ? record.text : "",
+    completed: record.completed === true,
+    ...(typeof record.quantity === "string" && record.quantity
+      ? { quantity: record.quantity }
+      : {}),
+    ...(typeof record.category === "string" && record.category
+      ? { category: record.category }
+      : {}),
+  };
+
+  return { ...base, ...override };
+}
+
+// Rebuild the items array from the owner's raw data, toggling one item.
+function buildToggledPayload(
   rawItems: unknown,
   toggledIndex: number,
 ): SharedItemData[] {
   if (!Array.isArray(rawItems)) return [];
 
-  return rawItems.map((item, index) => {
-    const record = isRecord(item) ? item : {};
-    const text = typeof record.text === "string" ? record.text : "";
-    const completed =
-      index === toggledIndex
-        ? !(record.completed === true)
-        : record.completed === true;
+  return rawItems.map((item, index) =>
+    index === toggledIndex
+      ? toPayloadItem(item, { completed: !(isRecord(item) && item.completed === true) })
+      : toPayloadItem(item),
+  );
+}
 
-    return {
-      text,
-      completed,
-      ...(typeof record.quantity === "string" && record.quantity
-        ? { quantity: record.quantity }
-        : {}),
-      ...(typeof record.category === "string" && record.category
-        ? { category: record.category }
-        : {}),
-    };
-  });
+// Rebuild the items array, removing one item by index.
+function buildRemovedPayload(
+  rawItems: unknown,
+  removedIndex: number,
+): SharedItemData[] {
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems
+    .filter((_item, index) => index !== removedIndex)
+    .map((item) => toPayloadItem(item));
+}
+
+// Rebuild the items array, appending a new item.
+function buildAddedPayload(
+  rawItems: unknown,
+  newItem: SharedItemData,
+): SharedItemData[] {
+  const existing = Array.isArray(rawItems)
+    ? rawItems.map((item) => toPayloadItem(item))
+    : [];
+
+  return [...existing, newItem];
 }
 
 const PublicSharedList: React.FC = () => {
@@ -112,12 +165,15 @@ const PublicSharedList: React.FC = () => {
   const { user } = useAuth();
   const [ownerName, setOwnerName] = useState("Shared list");
   const [items, setItems] = useState<PublicItem[]>([]);
-  const [allowEdits, setAllowEdits] = useState(false);
+  const [permissions, setPermissions] =
+    useState<SharePermissions>(NO_PERMISSIONS);
   const [ownerId, setOwnerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [newItemText, setNewItemText] = useState("");
   const rawItemsRef = React.useRef<unknown>([]);
+  const allowEdits = hasAnyPermission(permissions);
 
   useEffect(() => {
     if (!shareId || !db) return;
@@ -145,7 +201,7 @@ const PublicSharedList: React.FC = () => {
         setError("");
         setOwnerName(data.ownerName);
         setOwnerId(data.ownerId);
-        setAllowEdits(data.allowEdits);
+        setPermissions(data.permissions);
         setItems(data.items);
         setLoading(false);
       },
@@ -171,29 +227,28 @@ const PublicSharedList: React.FC = () => {
     ? "Ask the owner to refresh their share link."
     : "This shared list does not have any items yet.";
 
-  const canEdit = allowEdits && Boolean(user) && Boolean(db) && Boolean(shareId);
+  const signedIn = Boolean(user) && Boolean(db) && Boolean(shareId);
+  const canEdit = allowEdits && signedIn;
+  const canToggle = signedIn && permissions.toggle;
+  const canAdd = signedIn && permissions.add;
+  const canRemove = signedIn && permissions.remove;
   const isOwnerViewing = Boolean(user) && user?.uid === ownerId;
 
-  const toggleItem = (item: PublicItem) => {
-    // Always reflect the change locally for instant feedback.
-    setItems((currentItems) =>
-      currentItems.map((current) =>
-        current.id === item.id
-          ? { ...current, completed: !current.completed }
-          : current,
-      ),
-    );
-
-    if (!canEdit || !db || !shareId) return;
-
-    const payload = buildItemsPayload(rawItemsRef.current, item.index);
+  const persistItems = (payload: SharedItemData[], onError: () => void) => {
+    if (!db || !shareId) return;
 
     updateDoc(doc(db, "sharedLists", shareId), {
       items: payload,
       updatedAt: serverTimestamp(),
     }).catch((updateError) => {
       console.error("Collaborator update error:", updateError);
-      // Revert the optimistic toggle on failure.
+      onError();
+      setSaveError("Couldn't save that change. Please try again.");
+    });
+  };
+
+  const toggleItem = (item: PublicItem) => {
+    const flip = () =>
       setItems((currentItems) =>
         currentItems.map((current) =>
           current.id === item.id
@@ -201,8 +256,56 @@ const PublicSharedList: React.FC = () => {
             : current,
         ),
       );
-      setSaveError("Couldn't save that change. Please try again.");
-    });
+
+    // Optimistic local feedback first.
+    flip();
+
+    if (!canToggle) return;
+
+    setSaveError("");
+    persistItems(buildToggledPayload(rawItemsRef.current, item.index), flip);
+  };
+
+  const removeItem = (item: PublicItem) => {
+    if (!canRemove) return;
+
+    const previousItems = items;
+    setItems((currentItems) =>
+      currentItems.filter((current) => current.id !== item.id),
+    );
+    setSaveError("");
+    persistItems(buildRemovedPayload(rawItemsRef.current, item.index), () =>
+      setItems(previousItems),
+    );
+  };
+
+  const addItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newItemText.trim().slice(0, MAX_ITEM_TEXT_LENGTH);
+    if (!trimmed || !canAdd) return;
+    if (items.length >= MAX_ITEMS) {
+      setSaveError("This list is full.");
+      return;
+    }
+
+    const newItem: SharedItemData = { text: trimmed, completed: false };
+    const previousItems = items;
+    const nextIndex = items.length;
+
+    setItems((currentItems) => [
+      ...currentItems,
+      {
+        id: `${nextIndex}-${trimmed}`,
+        index: nextIndex,
+        text: trimmed,
+        completed: false,
+      },
+    ]);
+    setNewItemText("");
+    setSaveError("");
+    persistItems(buildAddedPayload(rawItemsRef.current, newItem), () =>
+      setItems(previousItems),
+    );
   };
 
   if (loading && !unavailableError) {
@@ -250,8 +353,8 @@ const PublicSharedList: React.FC = () => {
               {canEdit
                 ? isOwnerViewing
                   ? "Editing is on. Your changes sync to your list."
-                  : "Editing is on. You can check items off this list."
-                : "The owner allows editing. Sign in to check items off."}
+                  : `You can ${describePermissions(permissions)} on this list.`
+                : `The owner lets visitors ${describePermissions(permissions)}. Sign in to make changes.`}
             </p>
           )}
           {saveError && (
@@ -260,6 +363,29 @@ const PublicSharedList: React.FC = () => {
             </p>
           )}
         </div>
+
+        {canAdd && (
+          <form onSubmit={addItem} className="add-form">
+            <input
+              type="text"
+              className="add-input"
+              value={newItemText}
+              onChange={(e) => setNewItemText(e.target.value)}
+              placeholder="Add an item…"
+              aria-label="Add an item to the shared list"
+              maxLength={MAX_ITEM_TEXT_LENGTH}
+            />
+            <button
+              type="submit"
+              className="add-btn"
+              title="Add item"
+              aria-label="Add item"
+              disabled={!newItemText.trim()}
+            >
+              <Plus size={22} strokeWidth={2.5} />
+            </button>
+          </form>
+        )}
 
         {items.length === 0 ? (
           <div className="empty-state">
@@ -271,20 +397,32 @@ const PublicSharedList: React.FC = () => {
           <>
             <div className="items-list">
               {items.map((item, index) => (
-                <button
+                <div
                   key={item.id}
-                  className={`item-row public-item-row ${item.completed ? "completed" : ""} ${canEdit ? "is-editable" : ""}`}
+                  className={`item-row public-item-row ${item.completed ? "completed" : ""} ${canToggle ? "is-editable" : ""}`}
                   style={{ animationDelay: `${Math.min(index, 8) * 0.04}s` }}
-                  onClick={() => toggleItem(item)}
-                  type="button"
-                  aria-pressed={item.completed}
                 >
-                  <span
+                  <button
                     className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
+                    onClick={() => toggleItem(item)}
+                    type="button"
+                    aria-pressed={item.completed}
+                    aria-label={
+                      item.completed
+                        ? `Mark "${item.text}" as needed`
+                        : `Mark "${item.text}" as completed`
+                    }
+                    disabled={!canToggle && signedIn}
                   >
                     {item.completed && <Check size={13} strokeWidth={3} />}
-                  </span>
-                  <span className="item-content">
+                  </button>
+                  <button
+                    className="item-content public-item-content"
+                    onClick={() => toggleItem(item)}
+                    type="button"
+                    aria-pressed={item.completed}
+                    aria-label={item.text}
+                  >
                     <span className="item-text">{item.text}</span>
                     {(item.quantity || item.category) && (
                       <span className="item-meta">
@@ -292,8 +430,19 @@ const PublicSharedList: React.FC = () => {
                         {item.category && <span>{item.category}</span>}
                       </span>
                     )}
-                  </span>
-                </button>
+                  </button>
+                  {canRemove && (
+                    <button
+                      className="delete-btn"
+                      onClick={() => removeItem(item)}
+                      title="Remove item"
+                      type="button"
+                      aria-label={`Remove "${item.text}"`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
 

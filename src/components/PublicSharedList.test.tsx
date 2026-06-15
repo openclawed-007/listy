@@ -180,15 +180,14 @@ describe("PublicSharedList", () => {
       ownerId: "alex-uid",
       ownerName: "Alex",
       allowEdits: true,
+      permissions: { toggle: true },
       items: [{ text: "Apples", completed: false }],
     });
 
     renderPublicSharedList();
 
     expect(
-      await screen.findByText(
-        "The owner allows editing. Sign in to check items off.",
-      ),
+      await screen.findByText(/Sign in to make changes\./),
     ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Apples" }));
@@ -198,11 +197,12 @@ describe("PublicSharedList", () => {
     ).toHaveAttribute("href", "/import/alex-uid");
   });
 
-  it("lets a signed-in collaborator save a completion change when editing is allowed", async () => {
+  it("lets a collaborator with toggle permission save a completion change", async () => {
     emitSharedSnapshot({
       ownerId: "alex-uid",
       ownerName: "Alex",
       allowEdits: true,
+      permissions: { toggle: true },
       items: [
         { text: "Apples", completed: false, quantity: "2", category: "Fruit" },
         { text: "Tea", completed: false },
@@ -211,8 +211,7 @@ describe("PublicSharedList", () => {
 
     renderPublicSharedList("/share/alex-uid", visitor);
 
-    const apples = await screen.findByRole("button", { name: /Apples/ });
-    await userEvent.click(apples);
+    await userEvent.click(await screen.findByRole("button", { name: "Apples" }));
 
     await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
     const [, payload] = mockUpdateDoc.mock.calls[0];
@@ -222,11 +221,80 @@ describe("PublicSharedList", () => {
     ]);
   });
 
-  it("does not write back when editing is disabled", async () => {
+  it("lets a collaborator with add permission append an item", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      permissions: { add: true },
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", visitor);
+
+    const input = await screen.findByLabelText(
+      "Add an item to the shared list",
+    );
+    await userEvent.type(input, "Bread");
+    await userEvent.click(screen.getByRole("button", { name: "Add item" }));
+
+    await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
+    const [, payload] = mockUpdateDoc.mock.calls[0];
+    expect(payload.items).toEqual([
+      { text: "Apples", completed: false },
+      { text: "Bread", completed: false },
+    ]);
+  });
+
+  it("lets a collaborator with remove permission delete an item", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      permissions: { remove: true },
+      items: [
+        { text: "Apples", completed: false },
+        { text: "Tea", completed: false },
+      ],
+    });
+
+    renderPublicSharedList("/share/alex-uid", visitor);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: 'Remove "Apples"' }),
+    );
+
+    await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
+    const [, payload] = mockUpdateDoc.mock.calls[0];
+    expect(payload.items).toEqual([{ text: "Tea", completed: false }]);
+  });
+
+  it("hides add/remove controls a collaborator lacks permission for", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      permissions: { toggle: true },
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", visitor);
+
+    await screen.findByRole("button", { name: "Apples" });
+    expect(
+      screen.queryByLabelText("Add an item to the shared list"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: 'Remove "Apples"' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not write back when no permissions are granted", async () => {
     emitSharedSnapshot({
       ownerId: "alex-uid",
       ownerName: "Alex",
       allowEdits: false,
+      permissions: {},
       items: [{ text: "Apples", completed: false }],
     });
 

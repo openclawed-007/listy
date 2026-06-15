@@ -27,26 +27,46 @@ service cloud.firestore {
         && isShoppingItemValid(request.resource.data);
     }
 
+    function arePermissionsValid(perms) {
+      return perms is map
+        && (!('toggle' in perms) || perms.toggle is bool)
+        && (!('add' in perms) || perms.add is bool)
+        && (!('remove' in perms) || perms.remove is bool);
+    }
+
     function isSharedListValid(data, ownerId) {
       return data.ownerId == ownerId
         && data.ownerName is string
         && data.ownerName.size() <= 120
         && data.items is list
         && data.items.size() <= 500
-        && (!('allowEdits' in data) || data.allowEdits is bool);
+        && (!('allowEdits' in data) || data.allowEdits is bool)
+        && (!('permissions' in data) || arePermissionsValid(data.permissions));
     }
 
-    // A collaborator (signed-in, non-owner) may only flip the `completed`
-    // flags of existing items while edits are enabled. Everything else
-    // (ownerId, ownerName, allowEdits, item text/quantity/category and the
-    // item count) must stay exactly as the owner left it.
-    function isCollaboratorCompletionUpdate(existing, incoming) {
-      return existing.allowEdits == true
-        && incoming.allowEdits == true
+    // Whether collaborators are allowed to do anything at all on this list.
+    function collaboratorsEnabled(data) {
+      return data.allowEdits == true
+        && 'permissions' in data
+        && data.permissions is map;
+    }
+
+    // A collaborator (signed-in, non-owner) may change the `items` array while
+    // sharing + editing is enabled. The owner identity, name and the
+    // permissions map must stay exactly as the owner left them; only `items`
+    // and `updatedAt` may change, and the list must stay well-formed.
+    // Granular limits (toggle vs add vs remove) are enforced in the client;
+    // the rules guarantee a collaborator cannot take ownership, change the
+    // permission set, or write a malformed list.
+    function isCollaboratorListUpdate(existing, incoming) {
+      return collaboratorsEnabled(existing)
+        && collaboratorsEnabled(incoming)
         && incoming.ownerId == existing.ownerId
         && incoming.ownerName == existing.ownerName
+        && incoming.permissions == existing.permissions
+        && incoming.allowEdits == existing.allowEdits
         && incoming.items is list
-        && incoming.items.size() == existing.items.size()
+        && incoming.items.size() <= 500
         && incoming.diff(existing).affectedKeys().hasOnly(['items', 'updatedAt']);
     }
 
@@ -66,7 +86,7 @@ service cloud.firestore {
           )
           || (
             request.auth.uid != ownerId
-            && isCollaboratorCompletionUpdate(resource.data, request.resource.data)
+            && isCollaboratorListUpdate(resource.data, request.resource.data)
           )
         );
       allow delete: if request.auth != null
