@@ -1,12 +1,15 @@
+import type { User } from "firebase/auth";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthContext } from "../context/AuthContext.shared";
 import PublicSharedList from "./PublicSharedList";
 
-const { mockDb, mockOnSnapshot } = vi.hoisted(() => ({
+const { mockDb, mockOnSnapshot, mockUpdateDoc } = vi.hoisted(() => ({
   mockDb: { app: "test" },
   mockOnSnapshot: vi.fn(),
+  mockUpdateDoc: vi.fn(),
 }));
 
 vi.mock("../firebase", () => ({
@@ -18,7 +21,16 @@ vi.mock("firebase/firestore", () => ({
     path: segments.join("/"),
   })),
   onSnapshot: mockOnSnapshot,
+  updateDoc: mockUpdateDoc,
+  serverTimestamp: vi.fn(() => "server-time"),
 }));
+
+const visitor = {
+  uid: "visitor-uid",
+  displayName: "Visitor",
+  email: "visitor@example.com",
+  photoURL: null,
+} as User;
 
 function emitSharedSnapshot(data: Record<string, unknown> | null) {
   mockOnSnapshot.mockImplementation((_doc, next) => {
@@ -30,18 +42,28 @@ function emitSharedSnapshot(data: Record<string, unknown> | null) {
   });
 }
 
-function renderPublicSharedList(path = "/share/alex-uid") {
+function renderPublicSharedList(path = "/share/alex-uid", user: User | null = null) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/share/:shareId" element={<PublicSharedList />} />
-      </Routes>
-    </MemoryRouter>,
+    <AuthContext.Provider
+      value={{
+        user,
+        loading: false,
+        login: vi.fn(),
+        logout: vi.fn(),
+      }}
+    >
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/share/:shareId" element={<PublicSharedList />} />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
   );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockUpdateDoc.mockResolvedValue(undefined);
 });
 
 describe("PublicSharedList", () => {
@@ -151,5 +173,69 @@ describe("PublicSharedList", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  it("prompts anonymous visitors to sign in when editing is allowed", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList();
+
+    expect(
+      await screen.findByText(
+        "The owner allows editing. Sign in to check items off.",
+      ),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Apples" }));
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("link", { name: "Sign in to edit this list" }),
+    ).toHaveAttribute("href", "/import/alex-uid");
+  });
+
+  it("lets a signed-in collaborator save a completion change when editing is allowed", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      items: [
+        { text: "Apples", completed: false, quantity: "2", category: "Fruit" },
+        { text: "Tea", completed: false },
+      ],
+    });
+
+    renderPublicSharedList("/share/alex-uid", visitor);
+
+    const apples = await screen.findByRole("button", { name: /Apples/ });
+    await userEvent.click(apples);
+
+    await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
+    const [, payload] = mockUpdateDoc.mock.calls[0];
+    expect(payload.items).toEqual([
+      { text: "Apples", completed: true, quantity: "2", category: "Fruit" },
+      { text: "Tea", completed: false },
+    ]);
+  });
+
+  it("does not write back when editing is disabled", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: false,
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", visitor);
+
+    const apples = await screen.findByRole("button", { name: "Apples" });
+    await userEvent.click(apples);
+
+    expect(apples).toHaveAttribute("aria-pressed", "true");
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 });

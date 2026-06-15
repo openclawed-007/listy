@@ -1296,6 +1296,75 @@ body.dark .modal-backdrop {
   width: 100%;
 }
 
+.share-edit-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1.5px solid var(--cream-deep);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.share-edit-toggle:hover {
+  border-color: var(--sage-light);
+  background: var(--cream-dark);
+}
+
+.share-edit-toggle input {
+  margin-top: 0.15rem;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--sage);
+  cursor: pointer;
+}
+
+.share-edit-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+}
+
+.share-edit-toggle-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.share-edit-toggle-hint {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+  line-height: 1.35;
+}
+
+.share-edit-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-pill);
+  background: var(--cream-dark);
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.share-edit-banner.is-active {
+  background: rgba(107, 143, 113, 0.14);
+  color: var(--sage-dark);
+}
+
+.public-item-row.is-editable {
+  cursor: pointer;
+}
+
 .secondary-btn {
   min-height: 42px;
   flex: 1;

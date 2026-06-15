@@ -32,16 +32,43 @@ service cloud.firestore {
         && data.ownerName is string
         && data.ownerName.size() <= 120
         && data.items is list
-        && data.items.size() <= 500;
+        && data.items.size() <= 500
+        && (!('allowEdits' in data) || data.allowEdits is bool);
+    }
+
+    // A collaborator (signed-in, non-owner) may only flip the `completed`
+    // flags of existing items while edits are enabled. Everything else
+    // (ownerId, ownerName, allowEdits, item text/quantity/category and the
+    // item count) must stay exactly as the owner left it.
+    function isCollaboratorCompletionUpdate(existing, incoming) {
+      return existing.allowEdits == true
+        && incoming.allowEdits == true
+        && incoming.ownerId == existing.ownerId
+        && incoming.ownerName == existing.ownerName
+        && incoming.items is list
+        && incoming.items.size() == existing.items.size()
+        && incoming.diff(existing).affectedKeys().hasOnly(['items', 'updatedAt']);
     }
 
     match /sharedLists/{ownerId} {
       allow get: if true;
       allow list: if false;
-      allow create, update: if request.auth != null
+      allow create: if request.auth != null
         && request.auth.uid == ownerId
         && request.resource.data.ownerId == request.auth.uid
         && isSharedListValid(request.resource.data, ownerId);
+      allow update: if request.auth != null
+        && (
+          (
+            request.auth.uid == ownerId
+            && request.resource.data.ownerId == ownerId
+            && isSharedListValid(request.resource.data, ownerId)
+          )
+          || (
+            request.auth.uid != ownerId
+            && isCollaboratorCompletionUpdate(resource.data, request.resource.data)
+          )
+        );
       allow delete: if request.auth != null
         && request.auth.uid == ownerId;
     }

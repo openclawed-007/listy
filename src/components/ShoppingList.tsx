@@ -96,6 +96,15 @@ function getItemCategory(item: ShoppingItem) {
   return item.category ?? DEFAULT_CATEGORY;
 }
 
+// Stable identity for matching a personal item to its shared-doc counterpart.
+function getSharedItemKey(item: {
+  text: string;
+  quantity?: string;
+  category?: string;
+}) {
+  return [item.text, item.quantity ?? "", item.category ?? ""].join("\u0000");
+}
+
 function getSafeOwnerName(value: unknown) {
   return typeof value === "string" && value.trim()
     ? value.trim().slice(0, 120)
@@ -232,6 +241,7 @@ const ShoppingList: React.FC = () => {
   const [shareUrl, setShareUrl] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [shareBusy, setShareBusy] = useState(false);
+  const [allowEdits, setAllowEdits] = useState(false);
   const [importStatus, setImportStatus] = useState("");
   const [importing, setImporting] = useState(false);
   const [itemsLoaded, setItemsLoaded] = useState(false);
@@ -301,7 +311,9 @@ const ShoppingList: React.FC = () => {
         const snapshot = await getDoc(doc(db, "sharedLists", user.uid));
         if (!snapshot.exists()) return;
 
+        const data = snapshot.data();
         setIsSharing(true);
+        setAllowEdits(data?.allowEdits === true);
         setShareUrl(`${window.location.origin}/share/${user.uid}`);
       } catch (error) {
         console.error("Load share state error:", error);
@@ -348,6 +360,7 @@ const ShoppingList: React.FC = () => {
         setDoc(doc(db, "sharedLists", user.uid), {
           ownerId: user.uid,
           ownerName,
+          allowEdits,
           items: personalItems.map((item) => ({
             text: item.text,
             completed: item.completed,
@@ -362,7 +375,45 @@ const ShoppingList: React.FC = () => {
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [itemsLoaded, ownerName, personalItems, isSharing, user]);
+  }, [allowEdits, itemsLoaded, ownerName, personalItems, isSharing, user]);
+
+  // When collaborators are allowed to edit, reflect their completion changes
+  // (made on the public shared doc) back into the owner's own items.
+  useEffect(() => {
+    if (!isSharing || !allowEdits || !user || !db) return;
+
+    const unsubscribe = onSnapshot(
+      doc(db, "sharedLists", user.uid),
+      (snapshot) => {
+        if (!snapshot.exists()) return;
+
+        const shared = normalizeSharedListSnapshot(snapshot.data());
+        if (!shared) return;
+
+        const completedByKey = new Map<string, boolean>();
+        shared.items.forEach((sharedItem) => {
+          completedByKey.set(getSharedItemKey(sharedItem), sharedItem.completed);
+        });
+
+        personalItems.forEach((item) => {
+          const sharedCompleted = completedByKey.get(getSharedItemKey(item));
+          if (sharedCompleted === undefined || sharedCompleted === item.completed)
+            return;
+
+          updateDoc(doc(db, "shoppingItems", item.id), {
+            completed: sharedCompleted,
+          }).catch((error) => {
+            console.error("Collaborator sync-back error:", error);
+          });
+        });
+      },
+      (error) => {
+        console.error("Collaborator listener error:", error);
+      },
+    );
+
+    return unsubscribe;
+  }, [allowEdits, isSharing, personalItems, user]);
 
   useEffect(() => {
     if (
@@ -664,6 +715,7 @@ const ShoppingList: React.FC = () => {
       await setDoc(doc(db, "sharedLists", user.uid), {
         ownerId: user.uid,
         ownerName,
+        allowEdits,
         items: personalItems.map((item) => ({
           text: item.text,
           completed: item.completed,
@@ -684,6 +736,26 @@ const ShoppingList: React.FC = () => {
     }
   };
 
+  const toggleAllowEdits = async (nextAllowEdits: boolean) => {
+    setAllowEdits(nextAllowEdits);
+
+    if (!user || !db || !isSharing) return;
+
+    try {
+      setActionError("");
+      await updateDoc(doc(db, "sharedLists", user.uid), {
+        allowEdits: nextAllowEdits,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Toggle allow edits error:", error);
+      setAllowEdits(!nextAllowEdits);
+      setActionError(
+        "Unable to update editing permissions right now. Please try again.",
+      );
+    }
+  };
+
   const stopSharing = async () => {
     if (!user || !db || shareBusy) return;
 
@@ -694,6 +766,7 @@ const ShoppingList: React.FC = () => {
     try {
       await deleteDoc(doc(db, "sharedLists", user.uid));
       setIsSharing(false);
+      setAllowEdits(false);
       setShareUrl("");
       setShareOpen(false);
     } catch (error) {
@@ -1103,6 +1176,23 @@ const ShoppingList: React.FC = () => {
                       Copy link
                     </button>
                   </div>
+                  <label className="share-edit-toggle">
+                    <input
+                      type="checkbox"
+                      checked={allowEdits}
+                      onChange={(e) => toggleAllowEdits(e.target.checked)}
+                    />
+                    <span className="share-edit-toggle-text">
+                      <span className="share-edit-toggle-title">
+                        Allow others to edit
+                      </span>
+                      <span className="share-edit-toggle-hint">
+                        {allowEdits
+                          ? "Signed-in visitors can check items off your list."
+                          : "Visitors can only view your list."}
+                      </span>
+                    </span>
+                  </label>
                   <button
                     className="text-action-btn danger"
                     type="button"

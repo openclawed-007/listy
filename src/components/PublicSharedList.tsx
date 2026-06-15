@@ -1,23 +1,28 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
-import { Check, PackageOpen } from "lucide-react";
+import { doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { Check, PackageOpen, Pencil } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { db } from "../firebase";
+import { useAuth } from "../context/useAuth";
 import BrandMark from "./BrandMark";
+
+interface SharedItemData {
+  text: string;
+  completed: boolean;
+  quantity?: string;
+  category?: string;
+}
 
 interface SharedListSnapshot {
   ownerId: string;
   ownerName: string;
-  items: Array<{
-    text: string;
-    completed: boolean;
-    quantity?: string;
-    category?: string;
-  }>;
+  allowEdits: boolean;
+  items: SharedItemData[];
 }
 
 interface PublicItem {
   id: string;
+  index: number;
   text: string;
   completed: boolean;
   quantity?: string;
@@ -46,6 +51,7 @@ function normalizeSharedItems(items: unknown): PublicItem[] {
     return [
       {
         id: `${index}-${trimmed}`,
+        index,
         text: trimmed.slice(0, 500),
         completed: item.completed === true,
         quantity:
@@ -67,16 +73,51 @@ function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
   return {
     ownerId: data.ownerId,
     ownerName: getSafeOwnerName(data.ownerName),
+    allowEdits: data.allowEdits === true,
     items: normalizeSharedItems(data.items),
   };
 }
 
+// Rebuild the raw items array the way the owner stored it, so a collaborator
+// write keeps the same length, order and fields the security rules expect.
+function buildItemsPayload(
+  rawItems: unknown,
+  toggledIndex: number,
+): SharedItemData[] {
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems.map((item, index) => {
+    const record = isRecord(item) ? item : {};
+    const text = typeof record.text === "string" ? record.text : "";
+    const completed =
+      index === toggledIndex
+        ? !(record.completed === true)
+        : record.completed === true;
+
+    return {
+      text,
+      completed,
+      ...(typeof record.quantity === "string" && record.quantity
+        ? { quantity: record.quantity }
+        : {}),
+      ...(typeof record.category === "string" && record.category
+        ? { category: record.category }
+        : {}),
+    };
+  });
+}
+
 const PublicSharedList: React.FC = () => {
   const { shareId } = useParams();
+  const { user } = useAuth();
   const [ownerName, setOwnerName] = useState("Shared list");
   const [items, setItems] = useState<PublicItem[]>([]);
+  const [allowEdits, setAllowEdits] = useState(false);
+  const [ownerId, setOwnerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const rawItemsRef = React.useRef<unknown>([]);
 
   useEffect(() => {
     if (!shareId || !db) return;
@@ -91,7 +132,8 @@ const PublicSharedList: React.FC = () => {
           return;
         }
 
-        const data = normalizeSharedListSnapshot(snapshot.data());
+        const raw = snapshot.data();
+        const data = normalizeSharedListSnapshot(raw);
         if (!data) {
           setError("This shared list is not available.");
           setItems([]);
@@ -99,8 +141,11 @@ const PublicSharedList: React.FC = () => {
           return;
         }
 
+        rawItemsRef.current = isRecord(raw) ? raw.items : [];
         setError("");
         setOwnerName(data.ownerName);
+        setOwnerId(data.ownerId);
+        setAllowEdits(data.allowEdits);
         setItems(data.items);
         setLoading(false);
       },
@@ -126,12 +171,38 @@ const PublicSharedList: React.FC = () => {
     ? "Ask the owner to refresh their share link."
     : "This shared list does not have any items yet.";
 
-  const toggleItem = (id: string) => {
+  const canEdit = allowEdits && Boolean(user) && Boolean(db) && Boolean(shareId);
+  const isOwnerViewing = Boolean(user) && user?.uid === ownerId;
+
+  const toggleItem = (item: PublicItem) => {
+    // Always reflect the change locally for instant feedback.
     setItems((currentItems) =>
-      currentItems.map((item) =>
-        item.id === id ? { ...item, completed: !item.completed } : item,
+      currentItems.map((current) =>
+        current.id === item.id
+          ? { ...current, completed: !current.completed }
+          : current,
       ),
     );
+
+    if (!canEdit || !db || !shareId) return;
+
+    const payload = buildItemsPayload(rawItemsRef.current, item.index);
+
+    updateDoc(doc(db, "sharedLists", shareId), {
+      items: payload,
+      updatedAt: serverTimestamp(),
+    }).catch((updateError) => {
+      console.error("Collaborator update error:", updateError);
+      // Revert the optimistic toggle on failure.
+      setItems((currentItems) =>
+        currentItems.map((current) =>
+          current.id === item.id
+            ? { ...current, completed: !current.completed }
+            : current,
+        ),
+      );
+      setSaveError("Couldn't save that change. Please try again.");
+    });
   };
 
   if (loading && !unavailableError) {
@@ -170,6 +241,24 @@ const PublicSharedList: React.FC = () => {
               {displayError}
             </p>
           )}
+          {!displayError && allowEdits && (
+            <p
+              className={`share-edit-banner ${canEdit ? "is-active" : ""}`}
+              role="status"
+            >
+              <Pencil size={14} strokeWidth={2.5} />
+              {canEdit
+                ? isOwnerViewing
+                  ? "Editing is on. Your changes sync to your list."
+                  : "Editing is on. You can check items off this list."
+                : "The owner allows editing. Sign in to check items off."}
+            </p>
+          )}
+          {saveError && (
+            <p className="form-error inline-error" role="alert">
+              {saveError}
+            </p>
+          )}
         </div>
 
         {items.length === 0 ? (
@@ -184,9 +273,9 @@ const PublicSharedList: React.FC = () => {
               {items.map((item, index) => (
                 <button
                   key={item.id}
-                  className={`item-row public-item-row ${item.completed ? "completed" : ""}`}
+                  className={`item-row public-item-row ${item.completed ? "completed" : ""} ${canEdit ? "is-editable" : ""}`}
                   style={{ animationDelay: `${Math.min(index, 8) * 0.04}s` }}
-                  onClick={() => toggleItem(item.id)}
+                  onClick={() => toggleItem(item)}
                   type="button"
                   aria-pressed={item.completed}
                 >
@@ -208,9 +297,11 @@ const PublicSharedList: React.FC = () => {
               ))}
             </div>
 
-            {shareId && (
+            {shareId && !isOwnerViewing && (
               <Link className="import-link-btn" to={`/import/${shareId}`}>
-                Sign in to save this list
+                {allowEdits && !user
+                  ? "Sign in to edit this list"
+                  : "Sign in to save this list"}
               </Link>
             )}
           </>
