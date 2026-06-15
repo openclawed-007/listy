@@ -452,6 +452,7 @@ input:focus-visible,
    =========================== */
 .add-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
   margin-bottom: 2rem;
   animation: slide-up 0.5s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -471,6 +472,35 @@ input:focus-visible,
 
 .category-input {
   width: 130px;
+}
+
+/* On small screens the three large inputs crowd the row, leaving the main
+   "Add an item" field too narrow. Keep the primary input + add button on the
+   first row, and drop the optional Qty/Category fields onto a compact second
+   row so they take less perceived space. */
+@media (max-width: 480px) {
+  .add-form {
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .add-form .add-input:first-child {
+    flex: 1 1 auto;
+    /* Reserve room so the add button stays on the first row beside it. */
+    min-width: 0;
+  }
+
+  .add-meta-input {
+    flex: 1 1 0;
+    width: auto;
+    height: 44px;
+    /* Push both meta inputs onto their own row below the main input. */
+    order: 3;
+  }
+
+  .add-form .add-btn {
+    order: 2;
+  }
 }
 
 .add-input {
@@ -1296,68 +1326,118 @@ body.dark .modal-backdrop {
   width: 100%;
 }
 
-.share-edit-toggle {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-  width: 100%;
-  padding: 0.75rem 0.85rem;
-  border: 1.5px solid var(--cream-deep);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease;
-}
-
-.share-edit-toggle:hover {
-  border-color: var(--sage-light);
-  background: var(--cream-dark);
-}
-
-.share-edit-toggle input {
-  margin-top: 0.15rem;
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  accent-color: var(--sage);
-  cursor: pointer;
-}
-
-.share-edit-toggle-text {
+.share-perms {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  text-align: left;
+  gap: 0.5rem;
+  width: 100%;
 }
 
-.share-edit-toggle-title {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.share-edit-toggle-hint {
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--ink-muted);
-  line-height: 1.35;
-}
-
-.share-edit-banner {
-  display: inline-flex;
+.share-perms-head {
+  display: flex;
   align-items: center;
-  gap: 0.45rem;
-  margin-top: 0.75rem;
-  padding: 0.45rem 0.85rem;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.share-perms-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+}
+
+.share-perms-state {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
   border-radius: var(--radius-pill);
   background: var(--cream-dark);
   color: var(--ink-muted);
-  font-size: 0.82rem;
-  font-weight: 600;
 }
 
-.share-edit-banner.is-active {
-  background: rgba(107, 143, 113, 0.14);
+.perm-chips {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.perm-chip {
+  flex: 1;
+  min-height: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.4rem 0.3rem;
+  border: 1.5px solid var(--cream-deep);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.74rem;
+  font-weight: 700;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.perm-chip:hover {
+  border-color: var(--sage-light);
+  transform: translateY(-1px);
+}
+
+.perm-chip.is-on {
+  border-color: var(--sage);
+  background: rgba(107, 143, 113, 0.12);
+  color: var(--sage-dark);
+}
+
+.share-caps {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.4rem 0.6rem 0.4rem 0.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--cream-dark);
+}
+
+.share-caps-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+
+.share-caps.is-active .share-caps-label {
+  color: var(--sage-dark);
+}
+
+.share-caps-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.share-cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.share-caps.is-active .share-cap {
+  background: rgba(107, 143, 113, 0.16);
   color: var(--sage-dark);
 }
 

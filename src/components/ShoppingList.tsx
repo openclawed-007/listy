@@ -570,6 +570,13 @@ const ShoppingList: React.FC = () => {
 
     const activeTab = listTabs.find((tab) => tab.id === activeListId);
 
+    // When adding into an imported (shared) tab, carry the owner id so the new
+    // item behaves like other shared items (toggle/remove propagate too) and so
+    // we can push the addition back to the owner's shared list below.
+    const sharedFromUserId = activeListId.startsWith("shared:")
+      ? activeListId.slice("shared:".length)
+      : undefined;
+
     try {
       setActionError("");
       await addDoc(collection(db, "shoppingItems"), {
@@ -580,8 +587,23 @@ const ShoppingList: React.FC = () => {
         ...(category ? { category } : {}),
         listId: activeListId,
         listName: activeTab?.name ?? "My List",
+        ...(sharedFromUserId ? { sharedFromUserId } : {}),
         createdAt: serverTimestamp(),
       });
+      if (sharedFromUserId) {
+        void propagateToSharedOwner(
+          {
+            id: "",
+            text: trimmed,
+            completed: false,
+            userId: user.uid,
+            quantity: quantity || undefined,
+            category: category || undefined,
+            sharedFromUserId,
+          },
+          "add",
+        );
+      }
       setNewItem("");
       setNewQuantity("");
       setNewCategory("");
@@ -591,12 +613,119 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const toggleComplete = async (id: string, completed: boolean) => {
+  // Propagate a change made on an imported (shared) item back to the owner's
+  // shared list document, so collaboration works the same whether you're
+  // signed in (editing via a tab) or signed out (editing the public page).
+  // Honors the owner's current permissions; silently no-ops if not allowed.
+  const propagateToSharedOwner = async (
+    item: ShoppingItem,
+    change: "toggle" | "remove" | "add",
+  ) => {
+    if (!db || !item.sharedFromUserId) return;
+
+    try {
+      const ownerRef = doc(db, "sharedLists", item.sharedFromUserId);
+      const snapshot = await getDoc(ownerRef);
+      if (!snapshot.exists()) return;
+
+      const raw = snapshot.data();
+
+      // Permissions live on the raw doc; the local snapshot normalizer drops
+      // them, so read them directly here to honor the owner's current settings.
+      const permissions = normalizeSharePermissions(
+        isRecord(raw) ? raw.permissions : undefined,
+      );
+      const allowEdits = raw?.allowEdits === true && hasAnyPermission(permissions);
+      const permitted =
+        change === "toggle"
+          ? permissions.toggle
+          : change === "add"
+            ? permissions.add
+            : permissions.remove;
+      if (!allowEdits || !permitted) return;
+
+      const rawItems = Array.isArray(raw?.items) ? raw.items : [];
+      const itemKey = getSharedItemKey(item);
+      const matchIndex = rawItems.findIndex((rawItem) => {
+        const record = isRecord(rawItem) ? rawItem : {};
+        return (
+          getSharedItemKey({
+            text: typeof record.text === "string" ? record.text : "",
+            quantity:
+              typeof record.quantity === "string" ? record.quantity : undefined,
+            category:
+              typeof record.category === "string" ? record.category : undefined,
+          }) === itemKey
+        );
+      });
+
+      // Toggle/remove need an existing match; add appends a brand new entry and
+      // bails out if the item somehow already exists to avoid duplicates.
+      if (change === "add") {
+        if (matchIndex !== -1) return;
+      } else if (matchIndex === -1) {
+        return;
+      }
+
+      let workingItems: unknown[];
+      if (change === "remove") {
+        workingItems = rawItems.filter((_raw, index) => index !== matchIndex);
+      } else if (change === "add") {
+        workingItems = [
+          ...rawItems,
+          {
+            text: item.text,
+            completed: item.completed,
+            ...(item.quantity ? { quantity: item.quantity } : {}),
+            ...(item.category ? { category: item.category } : {}),
+          },
+        ];
+      } else {
+        workingItems = rawItems.map((rawItem, index) =>
+          index === matchIndex
+            ? { ...(rawItem as object), completed: !item.completed }
+            : rawItem,
+        );
+      }
+
+      const nextItems = workingItems.map((rawItem) => {
+        const record = (
+          rawItem && typeof rawItem === "object" ? rawItem : {}
+        ) as Record<string, unknown>;
+        return {
+          text: typeof record.text === "string" ? record.text : "",
+          completed: record.completed === true,
+          ...(typeof record.quantity === "string" && record.quantity
+            ? { quantity: record.quantity }
+            : {}),
+          ...(typeof record.category === "string" && record.category
+            ? { category: record.category }
+            : {}),
+        };
+      });
+
+      await updateDoc(ownerRef, {
+        items: nextItems,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Propagate to shared owner error:", error);
+    }
+  };
+
+  const toggleComplete = async (
+    id: string,
+    completed: boolean,
+    item?: ShoppingItem,
+  ) => {
     if (!db) return;
 
     try {
       setActionError("");
       await updateDoc(doc(db, "shoppingItems", id), { completed: !completed });
+      if (item?.sharedFromUserId) {
+        void propagateToSharedOwner(item, "toggle");
+      }
     } catch (error) {
       console.error("Update item error:", error);
       setActionError("Unable to update this item right now. Please try again.");
@@ -617,6 +746,9 @@ const ShoppingList: React.FC = () => {
     try {
       setActionError("");
       await deleteDoc(doc(db, "shoppingItems", id));
+      if (item.sharedFromUserId) {
+        void propagateToSharedOwner(item, "remove");
+      }
       const timeoutId = window.setTimeout(() => {
         setPendingDelete((current) =>
           current?.item.id === id ? null : current,
@@ -1232,65 +1364,56 @@ const ShoppingList: React.FC = () => {
                     </button>
                   </div>
                   <div className="share-perms">
-                    <p className="share-perms-title">
-                      What can signed-in visitors do?
-                    </p>
-                    <label className="share-edit-toggle">
-                      <input
-                        type="checkbox"
-                        checked={permissions.toggle}
-                        onChange={(e) =>
-                          togglePermission("toggle", e.target.checked)
-                        }
-                      />
-                      <span className="share-edit-toggle-text">
-                        <span className="share-edit-toggle-title">
-                          Check items off
-                        </span>
-                        <span className="share-edit-toggle-hint">
-                          Mark items as bought or still needed.
-                        </span>
+                    <div className="share-perms-head">
+                      <span className="share-perms-title">
+                        Visitor permissions
                       </span>
-                    </label>
-                    <label className="share-edit-toggle">
-                      <input
-                        type="checkbox"
-                        checked={permissions.add}
-                        onChange={(e) =>
-                          togglePermission("add", e.target.checked)
-                        }
-                      />
-                      <span className="share-edit-toggle-text">
-                        <span className="share-edit-toggle-title">
-                          Add items
-                        </span>
-                        <span className="share-edit-toggle-hint">
-                          Add new items to your list.
-                        </span>
+                      <span className="share-perms-state">
+                        {allowEdits ? "Can edit" : "View only"}
                       </span>
-                    </label>
-                    <label className="share-edit-toggle">
-                      <input
-                        type="checkbox"
-                        checked={permissions.remove}
-                        onChange={(e) =>
-                          togglePermission("remove", e.target.checked)
+                    </div>
+                    <div
+                      className="perm-chips"
+                      role="group"
+                      aria-label="Visitor permissions"
+                    >
+                      <button
+                        type="button"
+                        className={`perm-chip ${permissions.toggle ? "is-on" : ""}`}
+                        aria-pressed={permissions.toggle}
+                        title="Let visitors check items off"
+                        onClick={() =>
+                          togglePermission("toggle", !permissions.toggle)
                         }
-                      />
-                      <span className="share-edit-toggle-text">
-                        <span className="share-edit-toggle-title">
-                          Remove items
-                        </span>
-                        <span className="share-edit-toggle-hint">
-                          Delete items from your list.
-                        </span>
-                      </span>
-                    </label>
-                    <p className="share-perms-note">
-                      {allowEdits
-                        ? "Visitors must sign in before they can make changes."
-                        : "Sharing is view-only until you enable a permission."}
-                    </p>
+                      >
+                        <Check size={15} strokeWidth={2.5} />
+                        Check off
+                      </button>
+                      <button
+                        type="button"
+                        className={`perm-chip ${permissions.add ? "is-on" : ""}`}
+                        aria-pressed={permissions.add}
+                        title="Let visitors add items"
+                        onClick={() =>
+                          togglePermission("add", !permissions.add)
+                        }
+                      >
+                        <Plus size={15} strokeWidth={2.5} />
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        className={`perm-chip ${permissions.remove ? "is-on" : ""}`}
+                        aria-pressed={permissions.remove}
+                        title="Let visitors remove items"
+                        onClick={() =>
+                          togglePermission("remove", !permissions.remove)
+                        }
+                      >
+                        <Trash2 size={14} strokeWidth={2.5} />
+                        Remove
+                      </button>
+                    </div>
                   </div>
                   <button
                     className="text-action-btn danger"
@@ -1484,7 +1607,7 @@ const UserAvatar: React.FC<UserAvatarProps> = ({ user }) => {
 
 interface CategoryGroupProps {
   group: { category: string; items: ShoppingItem[] };
-  onToggle: (id: string, completed: boolean) => void;
+  onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
   onDelete: (id: string) => void;
   editingId: string | null;
   editText: string;
@@ -1540,7 +1663,7 @@ const CategoryGroup: React.FC<CategoryGroupProps> = ({
 interface ItemRowProps {
   item: ShoppingItem;
   index: number;
-  onToggle: (id: string, completed: boolean) => void;
+  onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
   onDelete: (id: string) => void;
   isEditing: boolean;
   editText: string;
@@ -1571,14 +1694,14 @@ const ItemRow: React.FC<ItemRowProps> = ({
   onEditCancel,
 }) => {
   const handleClick = () => {
-    if (!isEditing) onToggle(item.id, item.completed);
+    if (!isEditing) onToggle(item.id, item.completed, item);
   };
 
   const handleRowKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isEditing) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      onToggle(item.id, item.completed);
+      onToggle(item.id, item.completed, item);
     }
   };
 
@@ -1599,7 +1722,7 @@ const ItemRow: React.FC<ItemRowProps> = ({
         className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
         onClick={(e) => {
           e.stopPropagation();
-          if (!isEditing) onToggle(item.id, item.completed);
+          if (!isEditing) onToggle(item.id, item.completed, item);
         }}
         type="button"
         aria-label={

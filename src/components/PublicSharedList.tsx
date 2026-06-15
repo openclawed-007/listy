@@ -49,19 +49,6 @@ function getSafeOwnerName(value: unknown) {
     : "Shared list";
 }
 
-// Human-readable summary of the granted permissions, e.g.
-// "check items off, add and remove items".
-function describePermissions(perms: SharePermissions): string {
-  const parts: string[] = [];
-  if (perms.toggle) parts.push("check items off");
-  if (perms.add) parts.push("add items");
-  if (perms.remove) parts.push("remove items");
-
-  if (parts.length === 0) return "view this list";
-  if (parts.length === 1) return parts[0];
-  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
-}
-
 function normalizeSharedItems(items: unknown): PublicItem[] {
   if (!Array.isArray(items)) return [];
 
@@ -345,17 +332,35 @@ const PublicSharedList: React.FC = () => {
             </p>
           )}
           {!displayError && allowEdits && (
-            <p
-              className={`share-edit-banner ${canEdit ? "is-active" : ""}`}
+            <div
+              className={`share-caps ${canEdit ? "is-active" : ""}`}
               role="status"
             >
-              <Pencil size={14} strokeWidth={2.5} />
-              {canEdit
-                ? isOwnerViewing
-                  ? "Editing is on. Your changes sync to your list."
-                  : `You can ${describePermissions(permissions)} on this list.`
-                : `The owner lets visitors ${describePermissions(permissions)}. Sign in to make changes.`}
-            </p>
+              <span className="share-caps-label">
+                <Pencil size={13} strokeWidth={2.5} />
+                {canEdit ? "You can" : "Sign in to"}
+              </span>
+              <span className="share-caps-chips">
+                {permissions.toggle && (
+                  <span className="share-cap" title="Check items off">
+                    <Check size={13} strokeWidth={2.75} />
+                    Check off
+                  </span>
+                )}
+                {permissions.add && (
+                  <span className="share-cap" title="Add items">
+                    <Plus size={13} strokeWidth={2.75} />
+                    Add
+                  </span>
+                )}
+                {permissions.remove && (
+                  <span className="share-cap" title="Remove items">
+                    <Trash2 size={12} strokeWidth={2.75} />
+                    Remove
+                  </span>
+                )}
+              </span>
+            </div>
           )}
           {saveError && (
             <p className="form-error inline-error" role="alert">

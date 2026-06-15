@@ -186,9 +186,7 @@ describe("PublicSharedList", () => {
 
     renderPublicSharedList();
 
-    expect(
-      await screen.findByText(/Sign in to make changes\./),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Sign in to")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Apples" }));
     expect(mockUpdateDoc).not.toHaveBeenCalled();
