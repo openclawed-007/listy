@@ -285,6 +285,14 @@ const ShoppingList: React.FC = () => {
   // the auto-sync to avoid re-publishing (and thereby reverting) an inbound
   // collaborator change before the sync-back has updated local state.
   const sharedItemsSignatureRef = React.useRef<string | null>(null);
+  // Set when the shared doc receives a collaborator-originated items change that
+  // has not yet been reconciled into the owner's private shoppingItems. While
+  // this is set, auto-sync must not publish stale local state over it.
+  const pendingInboundSharedSignatureRef = React.useRef<string | null>(null);
+  // Keep the latest personal items available to the shared-doc listener without
+  // re-subscribing on every local item change. Re-subscribing emits the current
+  // (often stale) shared snapshot and can revert owner-originated toggles.
+  const personalItemsRef = React.useRef<ShoppingItem[]>([]);
 
   useEffect(() => {
     return () => {
@@ -386,6 +394,10 @@ const ShoppingList: React.FC = () => {
     [items],
   );
 
+  useEffect(() => {
+    personalItemsRef.current = personalItems;
+  }, [personalItems]);
+
   const ownerName =
     user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
 
@@ -405,8 +417,23 @@ const ShoppingList: React.FC = () => {
     // change made from stale state, so skip the write. Owner-originated edits
     // change the signature and still publish normally.
     const localSignature = getItemsSignature(payloadItems);
-    if (allowEdits && sharedItemsSignatureRef.current === localSignature) {
-      return;
+    if (allowEdits) {
+      const pendingInboundSignature = pendingInboundSharedSignatureRef.current;
+
+      if (pendingInboundSignature) {
+        // A collaborator change is waiting to be applied locally. Do not let an
+        // older owner-local snapshot overwrite it. Once local state catches up,
+        // clear the pending marker and skip because both sides already match.
+        if (localSignature === pendingInboundSignature) {
+          pendingInboundSharedSignatureRef.current = null;
+          sharedItemsSignatureRef.current = localSignature;
+        }
+        return;
+      }
+
+      if (sharedItemsSignatureRef.current === localSignature) {
+        return;
+      }
     }
 
     const timeout = window.setTimeout(() => {
@@ -443,9 +470,24 @@ const ShoppingList: React.FC = () => {
         const shared = normalizeSharedListSnapshot(snapshot.data());
         if (!shared) return;
 
-        // Record what the shared doc currently holds so the auto-sync can tell
-        // an inbound collaborator change from an owner-originated one.
-        sharedItemsSignatureRef.current = getItemsSignature(shared.items);
+        const currentPersonalItems = personalItemsRef.current;
+        const sharedSignature = getItemsSignature(shared.items);
+        const localSignature = getItemsSignature(
+          currentPersonalItems.map((item) => ({
+            text: item.text,
+            completed: item.completed,
+            ...(item.quantity ? { quantity: item.quantity } : {}),
+            ...(item.category ? { category: item.category } : {}),
+          })),
+        );
+
+        // Record what the shared doc currently holds. If it differs from the
+        // latest local list, treat it as an inbound collaborator change and
+        // temporarily pause auto-sync so stale local state cannot overwrite it.
+        sharedItemsSignatureRef.current = sharedSignature;
+        if (sharedSignature !== localSignature) {
+          pendingInboundSharedSignatureRef.current = sharedSignature;
+        }
 
         const sharedByKey = new Map<string, (typeof shared.items)[number]>();
         shared.items.forEach((sharedItem) => {
@@ -453,13 +495,13 @@ const ShoppingList: React.FC = () => {
         });
 
         const personalByKey = new Map<string, ShoppingItem>();
-        personalItems.forEach((item) => {
+        currentPersonalItems.forEach((item) => {
           personalByKey.set(getSharedItemKey(item), item);
         });
 
         // Toggle: same item, different completion state.
         if (permissions.toggle) {
-          personalItems.forEach((item) => {
+          currentPersonalItems.forEach((item) => {
             const sharedItem = sharedByKey.get(getSharedItemKey(item));
             if (!sharedItem || sharedItem.completed === item.completed) return;
 
@@ -493,7 +535,7 @@ const ShoppingList: React.FC = () => {
 
         // Remove: personal item no longer present in the shared list.
         if (permissions.remove) {
-          personalItems.forEach((item) => {
+          currentPersonalItems.forEach((item) => {
             if (sharedByKey.has(getSharedItemKey(item))) return;
 
             deleteDoc(doc(db, "shoppingItems", item.id)).catch((error) => {
@@ -508,7 +550,7 @@ const ShoppingList: React.FC = () => {
     );
 
     return unsubscribe;
-  }, [allowEdits, permissions, isSharing, personalItems, user]);
+  }, [allowEdits, permissions, isSharing, user]);
 
   useEffect(() => {
     if (
