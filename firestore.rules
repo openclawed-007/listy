@@ -8,6 +8,8 @@ service cloud.firestore {
         && data.text.size() > 0
         && data.text.size() <= 500
         && data.completed is bool
+        && (!('quantity' in data) || (data.quantity is string && data.quantity.size() <= 40))
+        && (!('category' in data) || (data.category is string && data.category.size() <= 80))
         && (!('listId' in data) || (data.listId is string && data.listId.size() <= 200))
         && (!('listName' in data) || (data.listName is string && data.listName.size() <= 120))
         && (!('sharedFromUserId' in data) || (data.sharedFromUserId is string && data.sharedFromUserId.size() <= 128));

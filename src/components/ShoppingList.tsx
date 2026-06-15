@@ -45,6 +45,8 @@ interface ShoppingItem {
   text: string;
   completed: boolean;
   userId: string;
+  quantity?: string;
+  category?: string;
   listId?: string;
   listName?: string;
   sharedFromUserId?: string;
@@ -57,6 +59,8 @@ interface SharedListSnapshot {
   items: Array<{
     text: string;
     completed: boolean;
+    quantity?: string;
+    category?: string;
   }>;
 }
 
@@ -74,7 +78,10 @@ type ConfirmAction = "clearCompleted" | "removeSharedList" | "stopSharing";
 
 const PERSONAL_LIST_ID = "personal";
 const MAX_ITEM_TEXT_LENGTH = 500;
+const MAX_QUANTITY_LENGTH = 40;
+const MAX_CATEGORY_LENGTH = 80;
 const MAX_FIRESTORE_BATCH_WRITES = 450;
+const DEFAULT_CATEGORY = "General";
 
 function getItemListId(item: ShoppingItem) {
   return item.listId ?? PERSONAL_LIST_ID;
@@ -82,6 +89,10 @@ function getItemListId(item: ShoppingItem) {
 
 function getItemListName(item: ShoppingItem) {
   return item.listName ?? "My List";
+}
+
+function getItemCategory(item: ShoppingItem) {
+  return item.category ?? DEFAULT_CATEGORY;
 }
 
 function getSafeOwnerName(value: unknown) {
@@ -112,6 +123,8 @@ function normalizeShoppingItem(id: string, data: unknown): ShoppingItem | null {
     text,
     completed: data.completed,
     userId,
+    quantity: normalizeOptionalString(data.quantity, MAX_QUANTITY_LENGTH),
+    category: normalizeOptionalString(data.category, MAX_CATEGORY_LENGTH),
     listId: normalizeOptionalString(data.listId, 200),
     listName: normalizeOptionalString(data.listName, 120),
     sharedFromUserId: normalizeOptionalString(data.sharedFromUserId, 128),
@@ -137,6 +150,8 @@ function normalizeSharedItems(items: unknown) {
       {
         text,
         completed: item.completed === true,
+        quantity: normalizeOptionalString(item.quantity, MAX_QUANTITY_LENGTH),
+        category: normalizeOptionalString(item.category, MAX_CATEGORY_LENGTH),
       },
     ];
   });
@@ -203,10 +218,14 @@ const ShoppingList: React.FC = () => {
   const online = useOnlineStatus();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [newItem, setNewItem] = useState("");
+  const [newQuantity, setNewQuantity] = useState("");
+  const [newCategory, setNewCategory] = useState("");
   const [search, setSearch] = useState("");
   const [activeListId, setActiveListId] = useState(PERSONAL_LIST_ID);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [editQuantity, setEditQuantity] = useState("");
+  const [editCategory, setEditCategory] = useState("");
   const [actionError, setActionError] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
@@ -331,6 +350,8 @@ const ShoppingList: React.FC = () => {
           items: personalItems.map((item) => ({
             text: item.text,
             completed: item.completed,
+            ...(item.quantity ? { quantity: item.quantity } : {}),
+            ...(item.category ? { category: item.category } : {}),
           })),
           updatedAt: serverTimestamp(),
         }),
@@ -406,6 +427,8 @@ const ShoppingList: React.FC = () => {
               text: item.text,
               completed: item.completed,
               userId: user.uid,
+              ...(item.quantity ? { quantity: item.quantity } : {}),
+              ...(item.category ? { category: item.category } : {}),
               listId: importedListId,
               listName: ownerName,
               sharedFromUserId: data.ownerId,
@@ -435,6 +458,8 @@ const ShoppingList: React.FC = () => {
   const addItem = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = newItem.trim();
+    const quantity = newQuantity.trim().slice(0, MAX_QUANTITY_LENGTH);
+    const category = newCategory.trim().slice(0, MAX_CATEGORY_LENGTH);
     if (!trimmed || !user || !db) return;
     if (trimmed.length > MAX_ITEM_TEXT_LENGTH) {
       setActionError(
@@ -451,11 +476,15 @@ const ShoppingList: React.FC = () => {
         text: trimmed,
         completed: false,
         userId: user.uid,
+        ...(quantity ? { quantity } : {}),
+        ...(category ? { category } : {}),
         listId: activeListId,
         listName: activeTab?.name ?? "My List",
         createdAt: serverTimestamp(),
       });
       setNewItem("");
+      setNewQuantity("");
+      setNewCategory("");
     } catch (error) {
       console.error("Add item error:", error);
       setActionError("Unable to add that item right now. Please try again.");
@@ -513,6 +542,8 @@ const ShoppingList: React.FC = () => {
         text: item.text,
         completed: item.completed,
         userId: item.userId,
+        ...(item.quantity ? { quantity: item.quantity } : {}),
+        ...(item.category ? { category: item.category } : {}),
         listId: getItemListId(item),
         listName: getItemListName(item),
         ...(item.sharedFromUserId
@@ -526,8 +557,15 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const updateItemText = async (id: string, text: string) => {
+  const updateItemDetails = async (
+    id: string,
+    text: string,
+    quantity: string,
+    category: string,
+  ) => {
     const trimmed = text.trim();
+    const normalizedQuantity = quantity.trim().slice(0, MAX_QUANTITY_LENGTH);
+    const normalizedCategory = category.trim().slice(0, MAX_CATEGORY_LENGTH);
     if (!trimmed || !db) return;
     if (trimmed.length > MAX_ITEM_TEXT_LENGTH) {
       setActionError(
@@ -538,9 +576,13 @@ const ShoppingList: React.FC = () => {
 
     try {
       setActionError("");
-      await updateDoc(doc(db, "shoppingItems", id), { text: trimmed });
+      await updateDoc(doc(db, "shoppingItems", id), {
+        text: trimmed,
+        quantity: normalizedQuantity,
+        category: normalizedCategory,
+      });
     } catch (error) {
-      console.error("Update text error:", error);
+      console.error("Update item details error:", error);
       setActionError("Unable to save your edit right now. Please try again.");
     }
   };
@@ -548,10 +590,13 @@ const ShoppingList: React.FC = () => {
   const startEdit = (item: ShoppingItem) => {
     setEditingId(item.id);
     setEditText(item.text);
+    setEditQuantity(item.quantity ?? "");
+    setEditCategory(item.category ?? "");
   };
 
   const commitEdit = async () => {
-    if (editingId) await updateItemText(editingId, editText);
+    if (editingId)
+      await updateItemDetails(editingId, editText, editQuantity, editCategory);
     setEditingId(null);
   };
 
@@ -682,7 +727,11 @@ const ShoppingList: React.FC = () => {
     if (search.trim()) {
       const normalizedQuery = search.trim().toLowerCase();
       list = list.filter((item) =>
-        item.text.toLowerCase().includes(normalizedQuery),
+        [item.text, item.quantity, item.category]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedQuery),
       );
     }
 
@@ -691,6 +740,8 @@ const ShoppingList: React.FC = () => {
 
   const activeItems = filtered.filter((item) => !item.completed);
   const doneItems = filtered.filter((item) => item.completed);
+  const groupedActiveItems = groupItemsByCategory(activeItems);
+  const groupedDoneItems = groupItemsByCategory(doneItems);
   const currentListItems = items.filter(
     (item) => getItemListId(item) === activeListId,
   );
@@ -812,7 +863,7 @@ const ShoppingList: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={addItem} className="add-form">
+        <form onSubmit={addItem} className="add-form enhanced-add-form">
           <input
             type="text"
             className="add-input"
@@ -821,6 +872,24 @@ const ShoppingList: React.FC = () => {
             placeholder="Add an item…"
             aria-label="New shopping item"
             maxLength={MAX_ITEM_TEXT_LENGTH}
+          />
+          <input
+            type="text"
+            className="add-input add-meta-input quantity-input"
+            value={newQuantity}
+            onChange={(e) => setNewQuantity(e.target.value)}
+            placeholder="Qty"
+            aria-label="Item quantity"
+            maxLength={MAX_QUANTITY_LENGTH}
+          />
+          <input
+            type="text"
+            className="add-input add-meta-input category-input"
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            placeholder="Category"
+            aria-label="Item category or aisle"
+            maxLength={MAX_CATEGORY_LENGTH}
           />
           <button
             type="submit"
@@ -903,17 +972,20 @@ const ShoppingList: React.FC = () => {
                       <div className="items-divider-line" />
                     </div>
                   )}
-                  {activeItems.map((item, index) => (
-                    <ItemRow
-                      key={item.id}
-                      item={item}
-                      index={index}
+                  {groupedActiveItems.map((group) => (
+                    <CategoryGroup
+                      key={group.category}
+                      group={group}
                       onToggle={toggleComplete}
                       onDelete={deleteItem}
-                      isEditing={editingId === item.id}
+                      editingId={editingId}
                       editText={editText}
+                      editQuantity={editQuantity}
+                      editCategory={editCategory}
                       onEditStart={startEdit}
-                      onEditChange={setEditText}
+                      onEditTextChange={setEditText}
+                      onEditQuantityChange={setEditQuantity}
+                      onEditCategoryChange={setEditCategory}
                       onEditCommit={commitEdit}
                       onEditCancel={cancelEdit}
                     />
@@ -927,17 +999,20 @@ const ShoppingList: React.FC = () => {
                     <span className="items-divider-label">Got it</span>
                     <div className="items-divider-line" />
                   </div>
-                  {doneItems.map((item, index) => (
-                    <ItemRow
-                      key={item.id}
-                      item={item}
-                      index={index}
+                  {groupedDoneItems.map((group) => (
+                    <CategoryGroup
+                      key={group.category}
+                      group={group}
                       onToggle={toggleComplete}
                       onDelete={deleteItem}
-                      isEditing={editingId === item.id}
+                      editingId={editingId}
                       editText={editText}
+                      editQuantity={editQuantity}
+                      editCategory={editCategory}
                       onEditStart={startEdit}
-                      onEditChange={setEditText}
+                      onEditTextChange={setEditText}
+                      onEditQuantityChange={setEditQuantity}
+                      onEditCategoryChange={setEditCategory}
                       onEditCommit={commitEdit}
                       onEditCancel={cancelEdit}
                     />
@@ -1065,6 +1140,24 @@ const ShoppingList: React.FC = () => {
     </div>
   );
 };
+
+function groupItemsByCategory(items: ShoppingItem[]) {
+  const groups = new Map<string, ShoppingItem[]>();
+
+  items.forEach((item) => {
+    const category = getItemCategory(item);
+    groups.set(category, [...(groups.get(category) ?? []), item]);
+  });
+
+  return Array.from(groups, ([category, categoryItems]) => ({
+    category,
+    items: categoryItems,
+  })).sort((a, b) => {
+    if (a.category === DEFAULT_CATEGORY) return 1;
+    if (b.category === DEFAULT_CATEGORY) return -1;
+    return a.category.localeCompare(b.category);
+  });
+}
 
 interface DismissibleMessageProps {
   kind: "error" | "success";
@@ -1197,6 +1290,61 @@ const UserAvatar: React.FC<UserAvatarProps> = ({ user }) => {
   return <div className="user-avatar user-avatar-initials">{initial}</div>;
 };
 
+interface CategoryGroupProps {
+  group: { category: string; items: ShoppingItem[] };
+  onToggle: (id: string, completed: boolean) => void;
+  onDelete: (id: string) => void;
+  editingId: string | null;
+  editText: string;
+  editQuantity: string;
+  editCategory: string;
+  onEditStart: (item: ShoppingItem) => void;
+  onEditTextChange: (value: string) => void;
+  onEditQuantityChange: (value: string) => void;
+  onEditCategoryChange: (value: string) => void;
+  onEditCommit: () => void;
+  onEditCancel: () => void;
+}
+
+const CategoryGroup: React.FC<CategoryGroupProps> = ({
+  group,
+  onToggle,
+  onDelete,
+  editingId,
+  editText,
+  editQuantity,
+  editCategory,
+  onEditStart,
+  onEditTextChange,
+  onEditQuantityChange,
+  onEditCategoryChange,
+  onEditCommit,
+  onEditCancel,
+}) => (
+  <div className="category-group">
+    <div className="category-heading">{group.category}</div>
+    {group.items.map((item, index) => (
+      <ItemRow
+        key={item.id}
+        item={item}
+        index={index}
+        onToggle={onToggle}
+        onDelete={onDelete}
+        isEditing={editingId === item.id}
+        editText={editText}
+        editQuantity={editQuantity}
+        editCategory={editCategory}
+        onEditStart={onEditStart}
+        onEditTextChange={onEditTextChange}
+        onEditQuantityChange={onEditQuantityChange}
+        onEditCategoryChange={onEditCategoryChange}
+        onEditCommit={onEditCommit}
+        onEditCancel={onEditCancel}
+      />
+    ))}
+  </div>
+);
+
 interface ItemRowProps {
   item: ShoppingItem;
   index: number;
@@ -1204,8 +1352,12 @@ interface ItemRowProps {
   onDelete: (id: string) => void;
   isEditing: boolean;
   editText: string;
+  editQuantity: string;
+  editCategory: string;
   onEditStart: (item: ShoppingItem) => void;
-  onEditChange: (value: string) => void;
+  onEditTextChange: (value: string) => void;
+  onEditQuantityChange: (value: string) => void;
+  onEditCategoryChange: (value: string) => void;
   onEditCommit: () => void;
   onEditCancel: () => void;
 }
@@ -1217,8 +1369,12 @@ const ItemRow: React.FC<ItemRowProps> = ({
   onDelete,
   isEditing,
   editText,
+  editQuantity,
+  editCategory,
   onEditStart,
-  onEditChange,
+  onEditTextChange,
+  onEditQuantityChange,
+  onEditCategoryChange,
   onEditCommit,
   onEditCancel,
 }) => {
@@ -1265,28 +1421,55 @@ const ItemRow: React.FC<ItemRowProps> = ({
       </button>
 
       {isEditing ? (
-        <input
-          className="item-edit-input"
-          value={editText}
-          autoFocus
-          onChange={(e) => onEditChange(e.target.value)}
-          maxLength={MAX_ITEM_TEXT_LENGTH}
-          onBlur={onEditCommit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              onEditCommit();
-            }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              onEditCancel();
-            }
-          }}
-          onClick={(e) => e.stopPropagation()}
-          aria-label="Edit item text"
-        />
+        <div className="item-edit-fields" onClick={(e) => e.stopPropagation()}>
+          <input
+            className="item-edit-input"
+            value={editText}
+            autoFocus
+            onChange={(e) => onEditTextChange(e.target.value)}
+            maxLength={MAX_ITEM_TEXT_LENGTH}
+            onBlur={onEditCommit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onEditCommit();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onEditCancel();
+              }
+            }}
+            aria-label="Edit item text"
+          />
+          <input
+            className="item-edit-input item-edit-meta"
+            value={editQuantity}
+            onChange={(e) => onEditQuantityChange(e.target.value)}
+            maxLength={MAX_QUANTITY_LENGTH}
+            onBlur={onEditCommit}
+            placeholder="Qty"
+            aria-label="Edit item quantity"
+          />
+          <input
+            className="item-edit-input item-edit-meta"
+            value={editCategory}
+            onChange={(e) => onEditCategoryChange(e.target.value)}
+            maxLength={MAX_CATEGORY_LENGTH}
+            onBlur={onEditCommit}
+            placeholder="Category"
+            aria-label="Edit item category"
+          />
+        </div>
       ) : (
-        <span className="item-text">{item.text}</span>
+        <span className="item-content">
+          <span className="item-text">{item.text}</span>
+          {(item.quantity || item.category) && (
+            <span className="item-meta">
+              {item.quantity && <span>{item.quantity}</span>}
+              {item.category && <span>{item.category}</span>}
+            </span>
+          )}
+        </span>
       )}
 
       {!isEditing && (

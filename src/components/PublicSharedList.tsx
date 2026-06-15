@@ -11,6 +11,8 @@ interface SharedListSnapshot {
   items: Array<{
     text: string;
     completed: boolean;
+    quantity?: string;
+    category?: string;
   }>;
 }
 
@@ -18,6 +20,8 @@ interface PublicItem {
   id: string;
   text: string;
   completed: boolean;
+  quantity?: string;
+  category?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -44,6 +48,14 @@ function normalizeSharedItems(items: unknown): PublicItem[] {
         id: `${index}-${trimmed}`,
         text: trimmed.slice(0, 500),
         completed: item.completed === true,
+        quantity:
+          typeof item.quantity === "string" && item.quantity.trim()
+            ? item.quantity.trim().slice(0, 40)
+            : undefined,
+        category:
+          typeof item.category === "string" && item.category.trim()
+            ? item.category.trim().slice(0, 80)
+            : undefined,
       },
     ];
   });
@@ -183,7 +195,15 @@ const PublicSharedList: React.FC = () => {
                   >
                     {item.completed && <Check size={13} strokeWidth={3} />}
                   </span>
-                  <span className="item-text">{item.text}</span>
+                  <span className="item-content">
+                    <span className="item-text">{item.text}</span>
+                    {(item.quantity || item.category) && (
+                      <span className="item-meta">
+                        {item.quantity && <span>{item.quantity}</span>}
+                        {item.category && <span>{item.category}</span>}
+                      </span>
+                    )}
+                  </span>
                 </button>
               ))}
             </div>

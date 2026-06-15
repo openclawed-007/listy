@@ -457,6 +457,22 @@ input:focus-visible,
   animation: slide-up 0.5s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.enhanced-add-form {
+  align-items: stretch;
+}
+
+.add-meta-input {
+  flex: 0 0 auto;
+}
+
+.quantity-input {
+  width: 82px;
+}
+
+.category-input {
+  width: 130px;
+}
+
 .add-input {
   flex: 1;
   height: 52px;
@@ -647,6 +663,29 @@ input:focus-visible,
   animation: check-pop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.category-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.category-heading {
+  margin: 0.75rem 0 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--sage-dark);
+}
+
+.item-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .item-text {
   flex: 1;
   font-size: 0.97rem;
@@ -655,6 +694,21 @@ input:focus-visible,
   line-height: 1.4;
   word-break: break-word;
   transition: color 0.2s ease;
+}
+
+.item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.item-meta span {
+  padding: 0.08rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--cream-dark);
 }
 
 .item-row.completed .item-text {
@@ -689,6 +743,15 @@ input:focus-visible,
 
 
 /* Inline edit input */
+.item-edit-fields {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 72px 110px;
+  gap: 0.5rem;
+  align-items: end;
+}
+
 .item-edit-input {
   flex: 1;
   background: transparent;
@@ -707,6 +770,10 @@ input:focus-visible,
 
 .item-edit-input:focus {
   border-bottom-color: var(--sage-dark);
+}
+
+.item-edit-meta {
+  font-size: 0.84rem;
 }
 
 /* Row state while editing */
@@ -1554,6 +1621,25 @@ body.dark .modal-backdrop {
    RESPONSIVE
    =========================== */
 @media (max-width: 600px) {
+  .enhanced-add-form {
+    display: grid;
+    grid-template-columns: 1fr 74px 52px;
+  }
+
+  .enhanced-add-form .add-input:first-child,
+  .category-input {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .quantity-input {
+    width: 100%;
+  }
+
+  .item-edit-fields {
+    grid-template-columns: 1fr;
+  }
+
   .container {
     padding: 2rem 1rem 4rem;
   }
