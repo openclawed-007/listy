@@ -41,6 +41,7 @@ service cloud.firestore {
         && data.items is list
         && data.items.size() <= 500
         && (!('allowEdits' in data) || data.allowEdits is bool)
+        && (!('allowAnonymousEdits' in data) || data.allowAnonymousEdits is bool)
         && (!('permissions' in data) || arePermissionsValid(data.permissions));
     }
 
@@ -51,23 +52,62 @@ service cloud.firestore {
         && data.permissions is map;
     }
 
-    // A collaborator (signed-in, non-owner) may change the `items` array while
-    // sharing + editing is enabled. The owner identity, name and the
-    // permissions map must stay exactly as the owner left them; only `items`
-    // and `updatedAt` may change, and the list must stay well-formed.
-    // Granular limits (toggle vs add vs remove) are enforced in the client;
-    // the rules guarantee a collaborator cannot take ownership, change the
-    // permission set, or write a malformed list.
-    function isCollaboratorListUpdate(existing, incoming) {
+    // True when the signed-in user is anonymous (no federated/email identity).
+    function isAnonymousUser() {
+      return request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    // Read a single granular permission, defaulting missing keys to false.
+    function permGranted(data, key) {
+      return key in data.permissions && data.permissions[key] == true;
+    }
+
+    // The structural invariants every collaborator write must satisfy:
+    // only `items` (a well-formed list under the cap) and `updatedAt` may
+    // change; ownership, naming, permissions and the sharing flags are frozen.
+    function isCollaboratorStructureValid(existing, incoming) {
       return collaboratorsEnabled(existing)
         && collaboratorsEnabled(incoming)
         && incoming.ownerId == existing.ownerId
         && incoming.ownerName == existing.ownerName
         && incoming.permissions == existing.permissions
         && incoming.allowEdits == existing.allowEdits
+        && incoming.allowAnonymousEdits == existing.allowAnonymousEdits
         && incoming.items is list
         && incoming.items.size() <= 500
         && incoming.diff(existing).affectedKeys().hasOnly(['items', 'updatedAt']);
+    }
+
+    // Map the change in the items array to the permission it requires, and
+    // enforce that permission server-side rather than trusting the client:
+    //  - growing the list (a net add)    -> requires `add`
+    //  - shrinking the list (a removal)  -> requires `remove`
+    //  - same length (a toggle/edit)     -> requires `toggle`
+    // This is deliberately coarse (it keys off list length) but it guarantees a
+    // collaborator can never perform a class of change the owner did not grant.
+    function isCollaboratorChangeAllowed(existing, incoming) {
+      return (incoming.items.size() > existing.items.size()
+                && permGranted(existing, 'add'))
+        || (incoming.items.size() < existing.items.size()
+                && permGranted(existing, 'remove'))
+        || (incoming.items.size() == existing.items.size()
+                && permGranted(existing, 'toggle'));
+    }
+
+    // A signed-in (non-owner) collaborator may make any granted change.
+    function isCollaboratorListUpdate(existing, incoming) {
+      return isCollaboratorStructureValid(existing, incoming)
+        && isCollaboratorChangeAllowed(existing, incoming);
+    }
+
+    // An anonymous visitor may only edit when the owner opted in via
+    // `allowAnonymousEdits`, and may only toggle or add (never remove): a
+    // shrinking items array from an anonymous writer is always rejected.
+    function isAnonymousListUpdate(existing, incoming) {
+      return existing.allowAnonymousEdits == true
+        && isCollaboratorStructureValid(existing, incoming)
+        && incoming.items.size() >= existing.items.size()
+        && isCollaboratorChangeAllowed(existing, incoming);
     }
 
     match /sharedLists/{ownerId} {
@@ -86,7 +126,13 @@ service cloud.firestore {
           )
           || (
             request.auth.uid != ownerId
+            && !isAnonymousUser()
             && isCollaboratorListUpdate(resource.data, request.resource.data)
+          )
+          || (
+            request.auth.uid != ownerId
+            && isAnonymousUser()
+            && isAnonymousListUpdate(resource.data, request.resource.data)
           )
         );
       allow delete: if request.auth != null

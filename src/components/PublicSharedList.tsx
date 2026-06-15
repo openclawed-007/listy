@@ -4,6 +4,7 @@ import { Check, PackageOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
+  anonymousPermissions,
   hasAnyPermission,
   NO_PERMISSIONS,
   normalizeSharePermissions,
@@ -26,6 +27,7 @@ interface SharedListSnapshot {
   ownerId: string;
   ownerName: string;
   allowEdits: boolean;
+  allowAnonymousEdits: boolean;
   permissions: SharePermissions;
   items: SharedItemData[];
 }
@@ -86,6 +88,7 @@ function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
     ownerId: data.ownerId,
     ownerName: getSafeOwnerName(data.ownerName),
     allowEdits: data.allowEdits === true && hasAnyPermission(permissions),
+    allowAnonymousEdits: data.allowAnonymousEdits === true,
     permissions,
     items: normalizeSharedItems(data.items),
   };
@@ -149,17 +152,19 @@ function buildAddedPayload(
 
 const PublicSharedList: React.FC = () => {
   const { shareId } = useParams();
-  const { user } = useAuth();
+  const { user, loginAnonymously } = useAuth();
   const [ownerName, setOwnerName] = useState("Shared list");
   const [items, setItems] = useState<PublicItem[]>([]);
   const [permissions, setPermissions] =
     useState<SharePermissions>(NO_PERMISSIONS);
+  const [allowAnonymousEdits, setAllowAnonymousEdits] = useState(false);
   const [ownerId, setOwnerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [newItemText, setNewItemText] = useState("");
   const rawItemsRef = React.useRef<unknown>([]);
+  const anonSignInAttempted = React.useRef(false);
   const allowEdits = hasAnyPermission(permissions);
 
   useEffect(() => {
@@ -189,6 +194,7 @@ const PublicSharedList: React.FC = () => {
         setOwnerName(data.ownerName);
         setOwnerId(data.ownerId);
         setPermissions(data.permissions);
+        setAllowAnonymousEdits(data.allowAnonymousEdits);
         setItems(data.items);
         setLoading(false);
       },
@@ -215,11 +221,46 @@ const PublicSharedList: React.FC = () => {
     : "This shared list does not have any items yet.";
 
   const signedIn = Boolean(user) && Boolean(db) && Boolean(shareId);
-  const canEdit = allowEdits && signedIn;
-  const canToggle = signedIn && permissions.toggle;
-  const canAdd = signedIn && permissions.add;
-  const canRemove = signedIn && permissions.remove;
+  const isAnonymous = Boolean(user?.isAnonymous);
   const isOwnerViewing = Boolean(user) && user?.uid === ownerId;
+
+  // The owner allows anonymous (not-signed-in) visitors to edit when sharing is
+  // on, at least one permission is granted, and they opted in. Anonymous
+  // visitors are limited to toggle/add (never remove) by anonymousPermissions.
+  const anonymousEditingOffered =
+    allowEdits && allowAnonymousEdits && !isOwnerViewing;
+
+  // Effective permissions for THIS viewer: anonymous users get the narrowed
+  // anonymous set; signed-in collaborators get the owner's full grant.
+  const effectivePermissions: SharePermissions =
+    isAnonymous && !isOwnerViewing
+      ? anonymousPermissions(permissions, allowAnonymousEdits)
+      : permissions;
+
+  const canToggle = signedIn && effectivePermissions.toggle;
+  const canAdd = signedIn && effectivePermissions.add;
+  const canRemove = signedIn && effectivePermissions.remove;
+  const canEdit = signedIn && hasAnyPermission(effectivePermissions);
+
+  // Silently sign visitors in anonymously when the owner has opted in, so a
+  // QR/link scanner can edit (toggle/add) without a Google sign-in popup.
+  // App Check is enforced server-side, so these anonymous writes still require
+  // a valid app attestation and carry a real, traceable uid.
+  useEffect(() => {
+    if (
+      !db ||
+      !shareId ||
+      user ||
+      !anonymousEditingOffered ||
+      anonSignInAttempted.current
+    )
+      return;
+
+    anonSignInAttempted.current = true;
+    loginAnonymously().catch((signInError) => {
+      console.error("Anonymous sign-in for shared list failed:", signInError);
+    });
+  }, [user, anonymousEditingOffered, shareId, loginAnonymously]);
 
   const persistItems = (payload: SharedItemData[], onError: () => void) => {
     if (!db || !shareId) return;
@@ -341,19 +382,19 @@ const PublicSharedList: React.FC = () => {
                 {canEdit ? "You can" : "Sign in to"}
               </span>
               <span className="share-caps-chips">
-                {permissions.toggle && (
+                {effectivePermissions.toggle && (
                   <span className="share-cap" title="Check items off">
                     <Check size={13} strokeWidth={2.75} />
                     Check off
                   </span>
                 )}
-                {permissions.add && (
+                {effectivePermissions.add && (
                   <span className="share-cap" title="Add items">
                     <Plus size={13} strokeWidth={2.75} />
                     Add
                   </span>
                 )}
-                {permissions.remove && (
+                {effectivePermissions.remove && (
                   <span className="share-cap" title="Remove items">
                     <Trash2 size={12} strokeWidth={2.75} />
                     Remove
@@ -453,7 +494,7 @@ const PublicSharedList: React.FC = () => {
 
             {shareId && !isOwnerViewing && (
               <Link className="import-link-btn" to={`/import/${shareId}`}>
-                {allowEdits && !user
+                {allowEdits && !signedIn && !anonymousEditingOffered
                   ? "Sign in to edit this list"
                   : "Sign in to save this list"}
               </Link>

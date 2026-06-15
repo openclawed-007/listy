@@ -15,7 +15,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
     );
   }
 
-  if (!user) {
+  // Anonymous users (auto-signed-in on a public shared page so they can edit a
+  // QR/link list) are not real account holders. The personal list and import
+  // flows require a full Google sign-in, so treat anonymous users as logged out
+  // here and send them to the login screen.
+  if (!user || user.isAnonymous) {
     const redirect = encodeURIComponent(`${location.pathname}${location.search}`);
     return <Navigate to={`/login?redirect=${redirect}`} />;
   }

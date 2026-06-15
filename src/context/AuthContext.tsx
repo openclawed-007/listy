@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { 
   onAuthStateChanged, 
+  signInAnonymously,
   signInWithPopup, 
   signOut,
   type AuthError,
@@ -45,6 +46,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginAnonymously = async () => {
+    if (!auth) {
+      throw new Error("Firebase credentials are not configured yet.");
+    }
+
+    try {
+      await signInAnonymously(auth);
+    } catch (error) {
+      console.error("Anonymous login error:", error);
+      throw new Error("Unable to start editing right now. Please try again.");
+    }
+  };
+
   const logout = async () => {
     if (!auth) return;
 
@@ -56,7 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, loginAnonymously, logout }}>
       {children}
     </AuthContext.Provider>
   );

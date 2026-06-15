@@ -30,7 +30,16 @@ const visitor = {
   displayName: "Visitor",
   email: "visitor@example.com",
   photoURL: null,
+  isAnonymous: false,
 } as User;
+
+const anonVisitor = {
+  uid: "anon-uid",
+  displayName: null,
+  email: null,
+  photoURL: null,
+  isAnonymous: true,
+} as unknown as User;
 
 function emitSharedSnapshot(data: Record<string, unknown> | null) {
   mockOnSnapshot.mockImplementation((_doc, next) => {
@@ -42,13 +51,18 @@ function emitSharedSnapshot(data: Record<string, unknown> | null) {
   });
 }
 
-function renderPublicSharedList(path = "/share/alex-uid", user: User | null = null) {
+function renderPublicSharedList(
+  path = "/share/alex-uid",
+  user: User | null = null,
+  loginAnonymously = vi.fn().mockResolvedValue(undefined),
+) {
   return render(
     <AuthContext.Provider
       value={{
         user,
         loading: false,
         login: vi.fn(),
+        loginAnonymously,
         logout: vi.fn(),
       }}
     >
@@ -303,5 +317,114 @@ describe("PublicSharedList", () => {
 
     expect(apples).toHaveAttribute("aria-pressed", "true");
     expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it("signs the visitor in anonymously when the owner allows anonymous edits", async () => {
+    const loginAnonymously = vi.fn().mockResolvedValue(undefined);
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      allowAnonymousEdits: true,
+      permissions: { toggle: true, add: true },
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", null, loginAnonymously);
+
+    await screen.findByRole("button", { name: "Apples" });
+    await waitFor(() => expect(loginAnonymously).toHaveBeenCalledTimes(1));
+  });
+
+  it("does NOT sign in anonymously when anonymous edits are not allowed", async () => {
+    const loginAnonymously = vi.fn().mockResolvedValue(undefined);
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      allowAnonymousEdits: false,
+      permissions: { toggle: true },
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", null, loginAnonymously);
+
+    await screen.findByText("Sign in to");
+    expect(loginAnonymously).not.toHaveBeenCalled();
+  });
+
+  it("lets an anonymous visitor toggle when anonymous edits are allowed", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      allowAnonymousEdits: true,
+      permissions: { toggle: true },
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", anonVisitor);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Apples" }));
+
+    await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
+    const [, payload] = mockUpdateDoc.mock.calls[0];
+    expect(payload.items).toEqual([{ text: "Apples", completed: true }]);
+  });
+
+  it("lets an anonymous visitor add but never offers remove", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      allowAnonymousEdits: true,
+      permissions: { toggle: true, add: true, remove: true },
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", anonVisitor);
+
+    // Remove is never available to anonymous visitors, even when the owner
+    // granted the remove permission.
+    await screen.findByRole("button", { name: "Apples" });
+    expect(
+      screen.queryByRole("button", { name: 'Remove "Apples"' }),
+    ).not.toBeInTheDocument();
+
+    // Add is available and writes back.
+    const input = screen.getByLabelText("Add an item to the shared list");
+    await userEvent.type(input, "Bread");
+    await userEvent.click(screen.getByRole("button", { name: "Add item" }));
+
+    await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
+    const [, payload] = mockUpdateDoc.mock.calls[0];
+    expect(payload.items).toEqual([
+      { text: "Apples", completed: false },
+      { text: "Bread", completed: false },
+    ]);
+  });
+
+  it("does not let an anonymous visitor edit when only remove is granted", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      allowAnonymousEdits: true,
+      permissions: { remove: true },
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", anonVisitor);
+
+    const apples = await screen.findByRole("button", { name: "Apples" });
+    await userEvent.click(apples);
+
+    // Local optimistic flip only; nothing persists because anonymous remove is
+    // never allowed and no toggle/add permission was granted.
+    expect(apples).toHaveAttribute("aria-pressed", "true");
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: 'Remove "Apples"' }),
+    ).not.toBeInTheDocument();
   });
 });

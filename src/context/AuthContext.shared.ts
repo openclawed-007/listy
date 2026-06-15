@@ -5,6 +5,7 @@ export interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: () => Promise<void>;
+  loginAnonymously: () => Promise<void>;
   logout: () => Promise<void>;
 }
 

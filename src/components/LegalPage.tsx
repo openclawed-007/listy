@@ -60,9 +60,15 @@ export const PrivacyPage: React.FC = () => (
         link/QR works.
       </li>
       <li>
-        <strong>Anti-abuse signals</strong> &mdash; we use Google reCAPTCHA on
-        the Sign-in screen, which collects browser/device signals to detect
-        automated abuse.
+        <strong>Anonymous sign-in</strong> &mdash; if you open a shared list
+        whose owner has allowed editing without signing in, we create a
+        temporary anonymous account for your browser so your changes (checking
+        off and adding items) can be saved. It holds no personal details.
+      </li>
+      <li>
+        <strong>Anti-abuse signals</strong> &mdash; we use Google reCAPTCHA and
+        Firebase App Check, which collect browser/device signals to detect
+        automated abuse and to protect shared lists from bot edits.
       </li>
     </ul>
 
@@ -101,8 +107,10 @@ export const PrivacyPage: React.FC = () => (
       Lists are private by default. When you click &ldquo;Start sharing&rdquo;,
       a snapshot of your personal list is published to a public document keyed
       by your account ID; anyone with your share link or QR code can read it.
-      Click &ldquo;Stop sharing&rdquo; at any time to delete that public
-      document.
+      You choose whether visitors can only view or also check off / add items,
+      and whether people who are not signed in may edit. People who are not
+      signed in can never remove items. Click &ldquo;Stop sharing&rdquo; at any
+      time to delete that public document.
     </p>
 
     <h2>Your rights</h2>

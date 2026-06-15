@@ -251,6 +251,7 @@ const ShoppingList: React.FC = () => {
   const [shareBusy, setShareBusy] = useState(false);
   const [permissions, setPermissions] =
     useState<SharePermissions>(NO_PERMISSIONS);
+  const [allowAnonymousEdits, setAllowAnonymousEdits] = useState(false);
   const allowEdits = hasAnyPermission(permissions);
   const [importStatus, setImportStatus] = useState("");
   const [importing, setImporting] = useState(false);
@@ -324,6 +325,7 @@ const ShoppingList: React.FC = () => {
         const data = snapshot.data();
         setIsSharing(true);
         setPermissions(normalizeSharePermissions(data?.permissions));
+        setAllowAnonymousEdits(data?.allowAnonymousEdits === true);
         setShareUrl(`${window.location.origin}/share/${user.uid}`);
       } catch (error) {
         console.error("Load share state error:", error);
@@ -371,6 +373,7 @@ const ShoppingList: React.FC = () => {
           ownerId: user.uid,
           ownerName,
           allowEdits,
+          allowAnonymousEdits,
           permissions,
           items: personalItems.map((item) => ({
             text: item.text,
@@ -386,7 +389,7 @@ const ShoppingList: React.FC = () => {
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [allowEdits, permissions, itemsLoaded, ownerName, personalItems, isSharing, user]);
+  }, [allowEdits, allowAnonymousEdits, permissions, itemsLoaded, ownerName, personalItems, isSharing, user]);
 
   // When collaborators can edit, reconcile the changes they make on the public
   // shared doc back into the owner's own items: toggle completion, add new
@@ -898,6 +901,7 @@ const ShoppingList: React.FC = () => {
         ownerId: user.uid,
         ownerName,
         allowEdits,
+        allowAnonymousEdits,
         permissions,
         items: personalItems.map((item) => ({
           text: item.text,
@@ -927,18 +931,48 @@ const ShoppingList: React.FC = () => {
     const nextPermissions = { ...permissions, [key]: nextValue };
     setPermissions(nextPermissions);
 
+    // If no permission is granted at all, anonymous editing is meaningless, so
+    // turn it off too and keep the stored flags consistent.
+    const nextAllowEdits = hasAnyPermission(nextPermissions);
+    const previousAnon = allowAnonymousEdits;
+    const nextAnon = nextAllowEdits ? allowAnonymousEdits : false;
+    setAllowAnonymousEdits(nextAnon);
+
     if (!user || !db || !isSharing) return;
 
     try {
       setActionError("");
       await updateDoc(doc(db, "sharedLists", user.uid), {
-        allowEdits: hasAnyPermission(nextPermissions),
+        allowEdits: nextAllowEdits,
+        allowAnonymousEdits: nextAnon,
         permissions: nextPermissions,
         updatedAt: serverTimestamp(),
       });
     } catch (error) {
       console.error("Toggle permission error:", error);
       setPermissions(previous);
+      setAllowAnonymousEdits(previousAnon);
+      setActionError(
+        "Unable to update sharing permissions right now. Please try again.",
+      );
+    }
+  };
+
+  const toggleAnonymousEdits = async (nextValue: boolean) => {
+    const previous = allowAnonymousEdits;
+    setAllowAnonymousEdits(nextValue);
+
+    if (!user || !db || !isSharing) return;
+
+    try {
+      setActionError("");
+      await updateDoc(doc(db, "sharedLists", user.uid), {
+        allowAnonymousEdits: nextValue,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Toggle anonymous edits error:", error);
+      setAllowAnonymousEdits(previous);
       setActionError(
         "Unable to update sharing permissions right now. Please try again.",
       );
@@ -956,6 +990,7 @@ const ShoppingList: React.FC = () => {
       await deleteDoc(doc(db, "sharedLists", user.uid));
       setIsSharing(false);
       setPermissions(NO_PERMISSIONS);
+      setAllowAnonymousEdits(false);
       setShareUrl("");
       setShareOpen(false);
     } catch (error) {
@@ -1439,6 +1474,28 @@ const ShoppingList: React.FC = () => {
                         Remove
                       </button>
                     </div>
+                    <label
+                      className={`anon-edit-toggle ${allowEdits ? "" : "is-disabled"}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={allowAnonymousEdits && allowEdits}
+                        disabled={!allowEdits}
+                        onChange={(e) =>
+                          toggleAnonymousEdits(e.target.checked)
+                        }
+                      />
+                      <span className="anon-edit-toggle-text">
+                        <span className="anon-edit-toggle-title">
+                          Let people edit without signing in
+                        </span>
+                        <span className="anon-edit-toggle-hint">
+                          {allowEdits
+                            ? "Anyone with the link or QR code can check off and add items. They can never remove items, and you can stop sharing at any time."
+                            : "Turn on a permission above first."}
+                        </span>
+                      </span>
+                    </label>
                   </div>
                   <button
                     className="text-action-btn danger"

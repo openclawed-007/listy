@@ -28,7 +28,11 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
    ```
    Then fill in your Firebase project credentials in `.env.local` from the [Firebase Console](https://console.firebase.google.com).
 
-3. **Enable Google Sign-In** in Firebase Console → Authentication → Sign-in providers.
+3. **Enable sign-in providers** in Firebase Console → Authentication → Sign-in providers:
+   - **Google** (required, for account holders).
+   - **Anonymous** (required if you want non-signed-in visitors to edit shared lists via a QR/link).
+
+   **Enforce App Check on Cloud Firestore** (Firebase Console → App Check). This is required to safely allow anonymous edits: it ensures only requests from your real app are accepted. Set `VITE_RECAPTCHA_SITE_KEY` in your env.
 
 4. **Set Firestore rules** (see `README` Security section below).
 
@@ -39,32 +43,15 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
 
 ## Firestore Security Rules
 
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /shoppingItems/{itemId} {
-      allow read, delete: if request.auth != null
-        && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null
-        && request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth != null
-        && request.auth.uid == resource.data.userId
-        && request.resource.data.userId == resource.data.userId;
-    }
+The authoritative rules live in [`firestore.rules`](./firestore.rules) and are deployed with `firebase deploy`. Highlights:
 
-    match /sharedLists/{ownerId} {
-      allow get: if true;
-      allow list: if false;
-      allow create, update: if request.auth != null
-        && request.auth.uid == ownerId
-        && request.resource.data.ownerId == request.auth.uid;
-      allow delete: if request.auth != null
-        && request.auth.uid == ownerId;
-    }
-  }
-}
-```
+- **`shoppingItems`** are private: only the owner (`request.auth.uid == userId`) can read/write their own items.
+- **`sharedLists/{ownerId}`** are publicly readable by ID (`allow get`) but never listable.
+- Only the **owner** can create/replace their shared doc or delete it.
+- **Collaborators** (signed-in, non-owner) can only change the `items` array and `updatedAt`; ownership, name, permissions and the sharing flags are frozen by the rules. The granular `toggle` / `add` / `remove` permission set is enforced **server-side** (by comparing item-array length changes), not just in the client.
+- **Anonymous visitors** (auto-signed-in on the public share page) may edit only when the owner sets `allowAnonymousEdits: true`, and may only **toggle or add** (a shrinking items array from an anonymous writer is always rejected). They can never remove items.
+
+> Safe anonymous editing depends on **App Check being enforced** on Firestore (see Setup step 3). Without enforcement, do not enable anonymous edits.
 
 ## Deploy
 
