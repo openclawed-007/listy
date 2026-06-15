@@ -1424,14 +1424,21 @@ const ItemRow: React.FC<ItemRowProps> = ({
       </button>
 
       {isEditing ? (
-        <div className="item-edit-fields" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="item-edit-fields"
+          onClick={(e) => e.stopPropagation()}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              onEditCommit();
+            }
+          }}
+        >
           <input
             className="item-edit-input"
             value={editText}
             autoFocus
             onChange={(e) => onEditTextChange(e.target.value)}
             maxLength={MAX_ITEM_TEXT_LENGTH}
-            onBlur={onEditCommit}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -1449,7 +1456,16 @@ const ItemRow: React.FC<ItemRowProps> = ({
             value={editQuantity}
             onChange={(e) => onEditQuantityChange(e.target.value)}
             maxLength={MAX_QUANTITY_LENGTH}
-            onBlur={onEditCommit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onEditCommit();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onEditCancel();
+              }
+            }}
             placeholder="Qty"
             aria-label="Edit item quantity"
           />
@@ -1458,7 +1474,16 @@ const ItemRow: React.FC<ItemRowProps> = ({
             value={editCategory}
             onChange={(e) => onEditCategoryChange(e.target.value)}
             maxLength={MAX_CATEGORY_LENGTH}
-            onBlur={onEditCommit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onEditCommit();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onEditCancel();
+              }
+            }}
             placeholder="Category"
             aria-label="Edit item category"
           />
