@@ -4,6 +4,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -578,8 +579,8 @@ const ShoppingList: React.FC = () => {
       setActionError("");
       await updateDoc(doc(db, "shoppingItems", id), {
         text: trimmed,
-        quantity: normalizedQuantity,
-        category: normalizedCategory,
+        quantity: normalizedQuantity || deleteField(),
+        category: normalizedCategory || deleteField(),
       });
     } catch (error) {
       console.error("Update item details error:", error);
@@ -666,6 +667,8 @@ const ShoppingList: React.FC = () => {
         items: personalItems.map((item) => ({
           text: item.text,
           completed: item.completed,
+          ...(item.quantity ? { quantity: item.quantity } : {}),
+          ...(item.category ? { category: item.category } : {}),
         })),
         updatedAt: serverTimestamp(),
       });

@@ -1623,7 +1623,7 @@ body.dark .modal-backdrop {
 @media (max-width: 600px) {
   .enhanced-add-form {
     display: grid;
-    grid-template-columns: 1fr 74px 52px;
+    grid-template-columns: minmax(0, 1fr) 52px;
   }
 
   .enhanced-add-form .add-input:first-child,
@@ -1633,7 +1633,12 @@ body.dark .modal-backdrop {
   }
 
   .quantity-input {
+    grid-column: 1;
     width: 100%;
+  }
+
+  .enhanced-add-form .add-btn {
+    grid-column: 2;
   }
 
   .item-edit-fields {
