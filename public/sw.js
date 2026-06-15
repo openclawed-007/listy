@@ -1,4 +1,4 @@
-const CACHE_NAME = "cartlink-shell-v6";
+const CACHE_NAME = "cartlink-shell-v7";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -72,34 +72,20 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then(async (cached) => {
-      if (cached) {
-        // Refresh in the background, but always return the cached response.
-        event.waitUntil(
-          fetch(request)
-            .then((response) => {
-              if (response && response.ok) {
-                const copy = response.clone();
-                return caches
-                  .open(CACHE_NAME)
-                  .then((cache) => cache.put(request, copy));
-              }
-            })
-            .catch(() => undefined),
-        );
-        return cached;
-      }
-
+    (async () => {
       try {
         const response = await fetch(request);
         if (response && response.ok) {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          event.waitUntil(
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)),
+          );
         }
         return response;
       } catch (err) {
-        return offlineFallback();
+        const cached = await caches.match(request);
+        return cached || offlineFallback();
       }
-    }),
+    })(),
   );
 });

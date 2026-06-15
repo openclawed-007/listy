@@ -39,8 +39,27 @@
     <meta name="twitter:image" content="https://cartlink.co.uk/icon-512.png" />
 
     <title>CartLink — shared shopping lists</title>
+    <script>
+      try {
+        if (localStorage.getItem("theme") === "dark") {
+          document.body?.classList.add("dark");
+          document.documentElement.classList.add("dark");
+        }
+      } catch {
+        // Ignore blocked storage access.
+      }
+    </script>
   </head>
   <body>
+    <script>
+      try {
+        if (localStorage.getItem("theme") === "dark") {
+          document.body.classList.add("dark");
+        }
+      } catch {
+        // Ignore blocked storage access.
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

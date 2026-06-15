@@ -65,6 +65,13 @@ interface ListTab {
   name: string;
 }
 
+interface PendingDelete {
+  item: ShoppingItem;
+  timeoutId: number;
+}
+
+type ConfirmAction = "clearCompleted" | "removeSharedList" | "stopSharing";
+
 const PERSONAL_LIST_ID = "personal";
 const MAX_ITEM_TEXT_LENGTH = 500;
 const MAX_FIRESTORE_BATCH_WRITES = 450;
@@ -83,25 +90,69 @@ function getSafeOwnerName(value: unknown) {
     : "Shared user";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function normalizeOptionalString(value: unknown, maxLength: number) {
+  return typeof value === "string" && value.trim()
+    ? value.trim().slice(0, maxLength)
+    : undefined;
+}
+
+function normalizeShoppingItem(id: string, data: unknown): ShoppingItem | null {
+  if (!isRecord(data)) return null;
+
+  const text = normalizeOptionalString(data.text, MAX_ITEM_TEXT_LENGTH);
+  const userId = normalizeOptionalString(data.userId, 128);
+  if (!text || !userId || typeof data.completed !== "boolean") return null;
+
+  return {
+    id,
+    text,
+    completed: data.completed,
+    userId,
+    listId: normalizeOptionalString(data.listId, 200),
+    listName: normalizeOptionalString(data.listName, 120),
+    sharedFromUserId: normalizeOptionalString(data.sharedFromUserId, 128),
+    createdAt:
+      data.createdAt &&
+      typeof data.createdAt === "object" &&
+      "toMillis" in data.createdAt
+        ? (data.createdAt as Timestamp)
+        : undefined,
+  };
+}
+
 function normalizeSharedItems(items: unknown) {
   if (!Array.isArray(items)) return [];
 
   return items.flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
+    if (!isRecord(item)) return [];
 
-    const { text, completed } = item as { text?: unknown; completed?: unknown };
-    if (typeof text !== "string") return [];
-
-    const trimmed = text.trim();
-    if (!trimmed) return [];
+    const text = normalizeOptionalString(item.text, MAX_ITEM_TEXT_LENGTH);
+    if (!text) return [];
 
     return [
       {
-        text: trimmed.slice(0, MAX_ITEM_TEXT_LENGTH),
-        completed: completed === true,
+        text,
+        completed: item.completed === true,
       },
     ];
   });
+}
+
+function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
+  if (!isRecord(data)) return null;
+
+  const ownerId = normalizeOptionalString(data.ownerId, 128);
+  if (!ownerId) return null;
+
+  return {
+    ownerId,
+    ownerName: getSafeOwnerName(data.ownerName),
+    items: normalizeSharedItems(data.items),
+  };
 }
 
 async function commitBatchOperations(
@@ -165,7 +216,22 @@ const ShoppingList: React.FC = () => {
   const [importing, setImporting] = useState(false);
   const [itemsLoaded, setItemsLoaded] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const handledShareId = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pendingDelete) window.clearTimeout(pendingDelete.timeoutId);
+    };
+  }, [pendingDelete]);
+
+  useEffect(() => {
+    if (!importStatus) return undefined;
+
+    const timeoutId = window.setTimeout(() => setImportStatus(""), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [importStatus]);
 
   useEffect(() => {
     if (!user || !db) return;
@@ -179,10 +245,13 @@ const ShoppingList: React.FC = () => {
       q,
       (snapshot) => {
         setActionError("");
-        const itemsData = snapshot.docs.map((snapshotDoc) => ({
-          id: snapshotDoc.id,
-          ...snapshotDoc.data(),
-        })) as ShoppingItem[];
+        const itemsData = snapshot.docs.flatMap((snapshotDoc) => {
+          const item = normalizeShoppingItem(
+            snapshotDoc.id,
+            snapshotDoc.data(),
+          );
+          return item ? [item] : [];
+        });
 
         itemsData.sort((a, b) => {
           const timeA = a.createdAt?.toMillis() || 0;
@@ -255,15 +324,17 @@ const ShoppingList: React.FC = () => {
     if (!isSharing || !itemsLoaded || !user || !db) return;
 
     const timeout = window.setTimeout(() => {
-      void setDoc(doc(db, "sharedLists", user.uid), {
-        ownerId: user.uid,
-        ownerName,
-        items: personalItems.map((item) => ({
-          text: item.text,
-          completed: item.completed,
-        })),
-        updatedAt: serverTimestamp(),
-      }).catch((error) => {
+      Promise.resolve(
+        setDoc(doc(db, "sharedLists", user.uid), {
+          ownerId: user.uid,
+          ownerName,
+          items: personalItems.map((item) => ({
+            text: item.text,
+            completed: item.completed,
+          })),
+          updatedAt: serverTimestamp(),
+        }),
+      ).catch((error) => {
         console.error("Auto share sync error:", error);
       });
     }, 350);
@@ -295,9 +366,15 @@ const ShoppingList: React.FC = () => {
           return;
         }
 
-        const data = snapshot.data() as SharedListSnapshot;
-        const ownerName = getSafeOwnerName(data.ownerName);
-        const sharedItems = normalizeSharedItems(data.items);
+        const data = normalizeSharedListSnapshot(snapshot.data());
+        if (!data) {
+          setActionError("That shared list is not valid anymore.");
+          navigate("/", { replace: true });
+          return;
+        }
+
+        const ownerName = data.ownerName;
+        const sharedItems = data.items;
         if (data.ownerId === user.uid) {
           setActionError("This is your own share code.");
           navigate("/", { replace: true });
@@ -314,9 +391,8 @@ const ShoppingList: React.FC = () => {
 
         const operations: Array<(batch: WriteBatch) => void> = [];
         existingItems.forEach((itemDoc) => {
-          if (
-            getItemListId(itemDoc.data() as ShoppingItem) === importedListId
-          ) {
+          const item = normalizeShoppingItem(itemDoc.id, itemDoc.data());
+          if (item && getItemListId(item) === importedListId) {
             operations.push((batch) =>
               batch.delete(doc(db, "shoppingItems", itemDoc.id)),
             );
@@ -401,12 +477,52 @@ const ShoppingList: React.FC = () => {
   const deleteItem = async (id: string) => {
     if (!db) return;
 
+    const item = items.find((currentItem) => currentItem.id === id);
+    if (!item) return;
+
+    if (pendingDelete) {
+      window.clearTimeout(pendingDelete.timeoutId);
+      setPendingDelete(null);
+    }
+
     try {
       setActionError("");
       await deleteDoc(doc(db, "shoppingItems", id));
+      const timeoutId = window.setTimeout(() => {
+        setPendingDelete((current) =>
+          current?.item.id === id ? null : current,
+        );
+      }, 6000);
+      setPendingDelete({ item, timeoutId });
     } catch (error) {
       console.error("Delete item error:", error);
       setActionError("Unable to remove this item right now. Please try again.");
+    }
+  };
+
+  const undoDeleteItem = async () => {
+    if (!db || !pendingDelete) return;
+
+    const { item, timeoutId } = pendingDelete;
+    window.clearTimeout(timeoutId);
+    setPendingDelete(null);
+
+    try {
+      setActionError("");
+      await setDoc(doc(db, "shoppingItems", item.id), {
+        text: item.text,
+        completed: item.completed,
+        userId: item.userId,
+        listId: getItemListId(item),
+        listName: getItemListName(item),
+        ...(item.sharedFromUserId
+          ? { sharedFromUserId: item.sharedFromUserId }
+          : {}),
+        createdAt: item.createdAt ?? serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Undo delete item error:", error);
+      setActionError("Unable to restore that item right now. Please try again.");
     }
   };
 
@@ -447,10 +563,16 @@ const ShoppingList: React.FC = () => {
     const done = items.filter(
       (item) => item.completed && getItemListId(item) === activeListId,
     );
+    if (done.length === 0) return;
+
     try {
       setActionError("");
-      await Promise.all(
-        done.map((item) => deleteDoc(doc(db, "shoppingItems", item.id))),
+      await commitBatchOperations(
+        db,
+        done.map(
+          (item) => (batch) =>
+            batch.delete(doc(db, "shoppingItems", item.id)),
+        ),
       );
     } catch (error) {
       console.error("Clear completed error:", error);
@@ -468,8 +590,12 @@ const ShoppingList: React.FC = () => {
       const sharedItems = items.filter(
         (item) => getItemListId(item) === activeListId,
       );
-      await Promise.all(
-        sharedItems.map((item) => deleteDoc(doc(db, "shoppingItems", item.id))),
+      await commitBatchOperations(
+        db,
+        sharedItems.map(
+          (item) => (batch) =>
+            batch.delete(doc(db, "shoppingItems", item.id)),
+        ),
       );
       setActiveListId(PERSONAL_LIST_ID);
       setImportStatus("");
@@ -521,12 +647,22 @@ const ShoppingList: React.FC = () => {
       await deleteDoc(doc(db, "sharedLists", user.uid));
       setIsSharing(false);
       setShareUrl("");
+      setShareOpen(false);
     } catch (error) {
       console.error("Stop sharing error:", error);
       setActionError("Unable to stop sharing right now. Please try again.");
     } finally {
       setShareBusy(false);
     }
+  };
+
+  const runConfirmedAction = async () => {
+    const action = confirmAction;
+    setConfirmAction(null);
+
+    if (action === "clearCompleted") await clearCompleted();
+    if (action === "removeSharedList") await removeActiveSharedList();
+    if (action === "stopSharing") await stopSharing();
   };
 
   const copyShareLink = async () => {
@@ -635,14 +771,18 @@ const ShoppingList: React.FC = () => {
         <div className="page-heading">
           <h1 className="page-title">{activeTabName}</h1>
           {importStatus && (
-            <p className="form-success inline-error" role="status">
-              {importStatus}
-            </p>
+            <DismissibleMessage
+              kind="success"
+              message={importStatus}
+              onDismiss={() => setImportStatus("")}
+            />
           )}
           {actionError && (
-            <p className="form-error inline-error" role="alert">
-              {actionError}
-            </p>
+            <DismissibleMessage
+              kind="error"
+              message={actionError}
+              onDismiss={() => setActionError("")}
+            />
           )}
         </div>
 
@@ -679,7 +819,6 @@ const ShoppingList: React.FC = () => {
             value={newItem}
             onChange={(e) => setNewItem(e.target.value)}
             placeholder="Add an item…"
-            autoFocus
             aria-label="New shopping item"
             maxLength={MAX_ITEM_TEXT_LENGTH}
           />
@@ -719,7 +858,7 @@ const ShoppingList: React.FC = () => {
             {allDoneCount > 0 && (
               <button
                 className="clear-done-btn"
-                onClick={clearCompleted}
+                onClick={() => setConfirmAction("clearCompleted")}
                 type="button"
               >
                 Clear {allDoneCount} done
@@ -728,7 +867,7 @@ const ShoppingList: React.FC = () => {
             {activeListId !== PERSONAL_LIST_ID && (
               <button
                 className="clear-done-btn"
-                onClick={removeActiveSharedList}
+                onClick={() => setConfirmAction("removeSharedList")}
                 type="button"
               >
                 Remove list
@@ -810,6 +949,26 @@ const ShoppingList: React.FC = () => {
         </div>
       </main>
 
+      {pendingDelete && (
+        <div className="undo-toast" role="status">
+          <span>Removed “{pendingDelete.item.text}”.</span>
+          <button type="button" onClick={undoDeleteItem}>
+            Undo
+          </button>
+        </div>
+      )}
+
+      {confirmAction && (
+        <ConfirmDialog
+          action={confirmAction}
+          itemCount={allDoneCount}
+          listName={activeTabName}
+          busy={shareBusy && confirmAction === "stopSharing"}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={runConfirmedAction}
+        />
+      )}
+
       {shareOpen && (
         <div
           className="modal-backdrop"
@@ -869,7 +1028,7 @@ const ShoppingList: React.FC = () => {
                   <button
                     className="text-action-btn danger"
                     type="button"
-                    onClick={stopSharing}
+                    onClick={() => setConfirmAction("stopSharing")}
                     disabled={shareBusy}
                   >
                     {shareBusy ? "Stopping..." : "Stop sharing"}
@@ -903,6 +1062,114 @@ const ShoppingList: React.FC = () => {
           </section>
         </div>
       )}
+    </div>
+  );
+};
+
+interface DismissibleMessageProps {
+  kind: "error" | "success";
+  message: string;
+  onDismiss: () => void;
+}
+
+const DismissibleMessage: React.FC<DismissibleMessageProps> = ({
+  kind,
+  message,
+  onDismiss,
+}) => (
+  <div
+    className={`${kind === "error" ? "form-error" : "form-success"} inline-error dismissible-message`}
+    role={kind === "error" ? "alert" : "status"}
+  >
+    <span>{message}</span>
+    <button type="button" onClick={onDismiss} aria-label="Dismiss message">
+      <X size={14} />
+    </button>
+  </div>
+);
+
+interface ConfirmDialogProps {
+  action: ConfirmAction;
+  itemCount: number;
+  listName: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function getConfirmCopy(action: ConfirmAction, itemCount: number, listName: string) {
+  if (action === "clearCompleted") {
+    return {
+      title: "Clear completed items?",
+      body: `This will permanently remove ${itemCount} completed ${
+        itemCount === 1 ? "item" : "items"
+      } from ${listName}.`,
+      confirmLabel: "Clear items",
+    };
+  }
+
+  if (action === "removeSharedList") {
+    return {
+      title: "Remove this list?",
+      body: `${listName} and its saved items will be removed from your account.`,
+      confirmLabel: "Remove list",
+    };
+  }
+
+  return {
+    title: "Stop sharing?",
+    body: "Anyone with your current share link or QR code will no longer be able to view this list.",
+    confirmLabel: "Stop sharing",
+  };
+}
+
+const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
+  action,
+  itemCount,
+  listName,
+  busy,
+  onCancel,
+  onConfirm,
+}) => {
+  const copy = getConfirmCopy(action, itemCount, listName);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onCancel}>
+      <section
+        className="settings-modal confirm-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <div>
+            <h2 id="confirm-title">{copy.title}</h2>
+            <p>{copy.body}</p>
+          </div>
+          <button
+            className="modal-close"
+            type="button"
+            onClick={onCancel}
+            aria-label="Cancel"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="confirm-actions">
+          <button className="secondary-btn" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            className="danger-btn"
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? "Working..." : copy.confirmLabel}
+          </button>
+        </div>
+      </section>
     </div>
   );
 };

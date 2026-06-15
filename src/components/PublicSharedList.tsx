@@ -20,6 +20,10 @@ interface PublicItem {
   completed: boolean;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
 function getSafeOwnerName(value: unknown) {
   return typeof value === "string" && value.trim()
     ? value.trim().slice(0, 120)
@@ -30,22 +34,29 @@ function normalizeSharedItems(items: unknown): PublicItem[] {
   if (!Array.isArray(items)) return [];
 
   return items.flatMap((item, index) => {
-    if (!item || typeof item !== "object") return [];
+    if (!isRecord(item) || typeof item.text !== "string") return [];
 
-    const { text, completed } = item as { text?: unknown; completed?: unknown };
-    if (typeof text !== "string") return [];
-
-    const trimmed = text.trim();
+    const trimmed = item.text.trim();
     if (!trimmed) return [];
 
     return [
       {
         id: `${index}-${trimmed}`,
-        text: trimmed,
-        completed: completed === true,
+        text: trimmed.slice(0, 500),
+        completed: item.completed === true,
       },
     ];
   });
+}
+
+function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
+  if (!isRecord(data) || typeof data.ownerId !== "string") return null;
+
+  return {
+    ownerId: data.ownerId,
+    ownerName: getSafeOwnerName(data.ownerName),
+    items: normalizeSharedItems(data.items),
+  };
 }
 
 const PublicSharedList: React.FC = () => {
@@ -68,10 +79,17 @@ const PublicSharedList: React.FC = () => {
           return;
         }
 
-        const data = snapshot.data() as SharedListSnapshot;
+        const data = normalizeSharedListSnapshot(snapshot.data());
+        if (!data) {
+          setError("This shared list is not available.");
+          setItems([]);
+          setLoading(false);
+          return;
+        }
+
         setError("");
-        setOwnerName(getSafeOwnerName(data.ownerName));
-        setItems(normalizeSharedItems(data.items));
+        setOwnerName(data.ownerName);
+        setItems(data.items);
         setLoading(false);
       },
       (loadError) => {

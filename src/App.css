@@ -849,6 +849,48 @@ input:focus-visible,
   transform: translateY(-1px);
 }
 
+.undo-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  z-index: 700;
+  width: min(calc(100% - 2rem), 420px);
+  transform: translateX(-50%);
+  border: 1.5px solid var(--cream-deep);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  animation: pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.undo-toast span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.undo-toast button {
+  border: none;
+  background: transparent;
+  color: var(--sage-dark);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.undo-toast button:hover {
+  color: var(--sage);
+}
+
 /* ===========================
    LOGIN PAGE
    =========================== */
@@ -1035,6 +1077,29 @@ input:focus-visible,
 .inline-error {
   margin-top: 0.75rem;
   margin-bottom: 0;
+}
+
+.dismissible-message {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dismissible-message button {
+  border: none;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.72;
+  padding: 0.1rem;
+}
+
+.dismissible-message button:hover {
+  opacity: 1;
 }
 
 /* Loading state */
@@ -1244,6 +1309,38 @@ body.dark .modal-backdrop {
 .primary-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.danger-btn {
+  min-height: 42px;
+  flex: 1;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--terra);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 700;
+  transition: background 0.18s ease, transform 0.15s ease;
+}
+
+.danger-btn:hover:not(:disabled) {
+  background: var(--terra-light);
+  transform: translateY(-1px);
+}
+
+.danger-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.65rem;
 }
 
 .share-empty {

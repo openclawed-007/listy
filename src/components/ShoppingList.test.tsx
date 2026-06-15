@@ -211,6 +211,7 @@ describe("ShoppingList sharing", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Stop sharing" })[0]);
 
     await waitFor(() => {
       expect(mockDeleteDoc).toHaveBeenCalledWith({ path: "sharedLists/owner-uid" });
@@ -316,10 +317,12 @@ describe("ShoppingList sharing", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Alex" }));
     await userEvent.click(screen.getByRole("button", { name: "Remove list" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Remove list" })[1]);
 
     await waitFor(() => {
-      expect(mockDeleteDoc).toHaveBeenCalledWith({ path: "shoppingItems/shared-1" });
-      expect(mockDeleteDoc).toHaveBeenCalledWith({ path: "shoppingItems/shared-2" });
+      expect(mockBatchDelete).toHaveBeenCalledWith({ path: "shoppingItems/shared-1" });
+      expect(mockBatchDelete).toHaveBeenCalledWith({ path: "shoppingItems/shared-2" });
+      expect(mockBatchCommit).toHaveBeenCalled();
     });
   });
 
