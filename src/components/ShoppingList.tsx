@@ -112,6 +112,27 @@ function getSharedItemKey(item: {
   return [item.text, item.quantity ?? "", item.category ?? ""].join("\u0000");
 }
 
+// A normalized signature of an items array (text + meta + completed), order
+// independent, used to detect whether the owner's local list and the shared
+// doc are already in agreement so the auto-sync doesn't clobber an inbound
+// collaborator change with stale local state.
+function getItemsSignature(
+  items: Array<{
+    text: string;
+    completed: boolean;
+    quantity?: string;
+    category?: string;
+  }>,
+) {
+  return items
+    .map(
+      (item) =>
+        `${getSharedItemKey(item)}\u0001${item.completed ? "1" : "0"}`,
+    )
+    .sort()
+    .join("\u0002");
+}
+
 function getSafeOwnerName(value: unknown) {
   return typeof value === "string" && value.trim()
     ? value.trim().slice(0, 120)
@@ -260,6 +281,10 @@ const ShoppingList: React.FC = () => {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const handledShareId = React.useRef<string | null>(null);
+  // Signature of the items array currently stored in the shared doc. Used by
+  // the auto-sync to avoid re-publishing (and thereby reverting) an inbound
+  // collaborator change before the sync-back has updated local state.
+  const sharedItemsSignatureRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -367,7 +392,25 @@ const ShoppingList: React.FC = () => {
   useEffect(() => {
     if (!isSharing || !itemsLoaded || !user || !db) return;
 
+    const payloadItems = personalItems.map((item) => ({
+      text: item.text,
+      completed: item.completed,
+      ...(item.quantity ? { quantity: item.quantity } : {}),
+      ...(item.category ? { category: item.category } : {}),
+    }));
+
+    // Echo guard: when collaborator editing is on, the sync-back listener pulls
+    // their changes into our local list. If our local items already match what
+    // is in the shared doc, re-publishing would only risk reverting an inbound
+    // change made from stale state, so skip the write. Owner-originated edits
+    // change the signature and still publish normally.
+    const localSignature = getItemsSignature(payloadItems);
+    if (allowEdits && sharedItemsSignatureRef.current === localSignature) {
+      return;
+    }
+
     const timeout = window.setTimeout(() => {
+      sharedItemsSignatureRef.current = localSignature;
       Promise.resolve(
         setDoc(doc(db, "sharedLists", user.uid), {
           ownerId: user.uid,
@@ -375,12 +418,7 @@ const ShoppingList: React.FC = () => {
           allowEdits,
           allowAnonymousEdits,
           permissions,
-          items: personalItems.map((item) => ({
-            text: item.text,
-            completed: item.completed,
-            ...(item.quantity ? { quantity: item.quantity } : {}),
-            ...(item.category ? { category: item.category } : {}),
-          })),
+          items: payloadItems,
           updatedAt: serverTimestamp(),
         }),
       ).catch((error) => {
@@ -404,6 +442,10 @@ const ShoppingList: React.FC = () => {
 
         const shared = normalizeSharedListSnapshot(snapshot.data());
         if (!shared) return;
+
+        // Record what the shared doc currently holds so the auto-sync can tell
+        // an inbound collaborator change from an owner-originated one.
+        sharedItemsSignatureRef.current = getItemsSignature(shared.items);
 
         const sharedByKey = new Map<string, (typeof shared.items)[number]>();
         shared.items.forEach((sharedItem) => {

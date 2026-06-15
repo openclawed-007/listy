@@ -140,6 +140,10 @@ beforeEach(() => {
   );
 
   mockBatchCommit.mockResolvedValue(undefined);
+  mockUpdateDoc.mockResolvedValue(undefined);
+  mockAddDoc.mockResolvedValue(undefined);
+  mockDeleteDoc.mockResolvedValue(undefined);
+  mockSetDoc.mockResolvedValue(undefined);
 });
 
 describe("ShoppingList sharing", () => {
@@ -325,6 +329,53 @@ describe("ShoppingList sharing", () => {
       expect(mockBatchDelete).toHaveBeenCalledWith({ path: "shoppingItems/shared-2" });
       expect(mockBatchCommit).toHaveBeenCalled();
     });
+  });
+
+  it("syncs a collaborator's check-off from the shared doc back into the owner's items", async () => {
+    snapshotDocs = [
+      makeDoc("personal-1", {
+        text: "Milk",
+        completed: false,
+        userId: user.uid,
+        listId: "personal",
+      }),
+    ];
+    // Owner is already sharing with toggle permission enabled.
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({
+        ownerId: user.uid,
+        ownerName: "Brad Owner",
+        allowEdits: true,
+        permissions: { toggle: true },
+        items: [{ text: "Milk", completed: false }],
+      }),
+    });
+    // The shared doc the owner's listener observes already reflects the
+    // collaborator's check-off (Milk completed: true).
+    sharedSnapshots.set(user.uid, {
+      ownerId: user.uid,
+      ownerName: "Brad Owner",
+      allowEdits: true,
+      permissions: { toggle: true },
+      items: [{ text: "Milk", completed: true }],
+    });
+
+    renderShoppingList();
+
+    // The sync-back writes the collaborator's completion state onto the
+    // owner's personal item, and the echo guard prevents the auto-sync from
+    // reverting it back to false.
+    await waitFor(() => {
+      expect(mockUpdateDoc).toHaveBeenCalledWith(
+        { path: "shoppingItems/personal-1" },
+        { completed: true },
+      );
+    });
+    expect(mockUpdateDoc).not.toHaveBeenCalledWith(
+      { path: "shoppingItems/personal-1" },
+      { completed: false },
+    );
   });
 
   it("does not live-resync an imported list when the owner updates their snapshot (one-shot import only)", async () => {
