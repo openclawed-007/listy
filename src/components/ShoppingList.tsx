@@ -29,6 +29,7 @@ import {
   Plus,
   Search,
   Share2,
+  SlidersHorizontal,
   Sun,
   Trash2,
   WifiOff,
@@ -236,6 +237,7 @@ const ShoppingList: React.FC = () => {
   const [newItem, setNewItem] = useState("");
   const [newQuantity, setNewQuantity] = useState("");
   const [newCategory, setNewCategory] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [activeListId, setActiveListId] = useState(PERSONAL_LIST_ID);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1126,42 +1128,65 @@ const ShoppingList: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={addItem} className="add-form enhanced-add-form">
-          <input
-            type="text"
-            className="add-input"
-            value={newItem}
-            onChange={(e) => setNewItem(e.target.value)}
-            placeholder="Add an item…"
-            aria-label="New shopping item"
-            maxLength={MAX_ITEM_TEXT_LENGTH}
-          />
-          <input
-            type="text"
-            className="add-input add-meta-input quantity-input"
-            value={newQuantity}
-            onChange={(e) => setNewQuantity(e.target.value)}
-            placeholder="Qty"
-            aria-label="Item quantity"
-            maxLength={MAX_QUANTITY_LENGTH}
-          />
-          <input
-            type="text"
-            className="add-input add-meta-input category-input"
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-            placeholder="Category"
-            aria-label="Item category or aisle"
-            maxLength={MAX_CATEGORY_LENGTH}
-          />
-          <button
-            type="submit"
-            className="add-btn"
-            title="Add item"
-            aria-label="Add item"
+        <form
+          onSubmit={addItem}
+          className={`add-form enhanced-add-form ${detailsOpen ? "details-open" : ""}`}
+        >
+          <div className="add-primary-row">
+            <input
+              type="text"
+              className="add-input"
+              value={newItem}
+              onChange={(e) => setNewItem(e.target.value)}
+              placeholder="Add an item…"
+              aria-label="New shopping item"
+              maxLength={MAX_ITEM_TEXT_LENGTH}
+            />
+            <button
+              type="button"
+              className={`add-details-toggle ${detailsOpen || newQuantity || newCategory ? "is-active" : ""}`}
+              onClick={() => setDetailsOpen((open) => !open)}
+              aria-expanded={detailsOpen}
+              aria-controls="add-details-fields"
+              title={detailsOpen ? "Hide quantity & category" : "Add quantity & category"}
+              aria-label={detailsOpen ? "Hide quantity and category" : "Add quantity and category"}
+            >
+              <SlidersHorizontal size={18} strokeWidth={2.25} />
+            </button>
+            <button
+              type="submit"
+              className="add-btn"
+              title="Add item"
+              aria-label="Add item"
+            >
+              <Plus size={22} strokeWidth={2.5} />
+            </button>
+          </div>
+
+          <div
+            id="add-details-fields"
+            className="add-details-fields"
+            hidden={!detailsOpen}
           >
-            <Plus size={22} strokeWidth={2.5} />
-          </button>
+            <input
+              type="text"
+              className="add-input add-meta-input quantity-input"
+              value={newQuantity}
+              onChange={(e) => setNewQuantity(e.target.value)}
+              placeholder="Quantity"
+              aria-label="Item quantity"
+              maxLength={MAX_QUANTITY_LENGTH}
+            />
+            <input
+              type="text"
+              className="add-input add-meta-input category-input"
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+              placeholder="Category / aisle"
+              aria-label="Item category or aisle"
+              maxLength={MAX_CATEGORY_LENGTH}
+            />
+          </div>
         </form>
 
         {listTabs.length > 1 && (

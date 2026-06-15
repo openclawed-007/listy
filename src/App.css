@@ -450,9 +450,13 @@ input:focus-visible,
 /* ===========================
    ADD ITEM INPUT
    =========================== */
+/* The add form is a single clean line by default: one "Add an item" field, a
+   subtle details toggle, and the add button. Quantity and category are optional
+   and stay tucked away behind the toggle, so mobile users aren't faced with
+   three large boxes of mostly-empty space. */
 .add-form {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.6rem;
   margin-bottom: 2rem;
   animation: slide-up 0.5s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -462,49 +466,66 @@ input:focus-visible,
   align-items: stretch;
 }
 
+.add-primary-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+/* Optional detail fields. Hidden via the [hidden] attribute when collapsed;
+   when shown they sit on their own row and share the width evenly. */
+.add-details-fields {
+  display: flex;
+  gap: 0.6rem;
+  animation: slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.add-details-fields[hidden] {
+  display: none;
+}
+
 .add-meta-input {
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
 }
 
-.quantity-input {
-  width: 82px;
+/* The small square toggle that reveals quantity & category. */
+.add-details-toggle {
+  flex-shrink: 0;
+  height: 52px;
+  width: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--cream-deep);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-muted);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease,
+    transform 0.15s ease;
 }
 
-.category-input {
-  width: 130px;
+.add-details-toggle:hover {
+  color: var(--ink);
+  border-color: var(--sage-light);
 }
 
-/* On small screens the three large inputs crowd the row, leaving the main
-   "Add an item" field too narrow. Keep the primary input + add button on the
-   first row, and drop the optional Qty/Category fields onto a compact second
-   row so they take less perceived space. */
-@media (max-width: 480px) {
-  .add-form {
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-  }
+.add-details-toggle.is-active {
+  color: var(--sage-dark);
+  border-color: var(--sage);
+  background: rgba(107, 143, 113, 0.1);
+}
 
-  .add-form .add-input:first-child {
-    flex: 1 1 auto;
-    /* Reserve room so the add button stays on the first row beside it. */
-    min-width: 0;
-  }
-
-  .add-meta-input {
-    flex: 1 1 0;
-    width: auto;
-    height: 44px;
-    /* Push both meta inputs onto their own row below the main input. */
-    order: 3;
-  }
-
-  .add-form .add-btn {
-    order: 2;
-  }
+.add-details-toggle:active {
+  transform: scale(0.96);
 }
 
 .add-input {
   flex: 1;
+  min-width: 0;
   height: 52px;
   padding: 0 1.25rem;
   border: 2px solid var(--cream-deep);
@@ -1808,24 +1829,36 @@ body.dark .modal-backdrop {
    RESPONSIVE
    =========================== */
 @media (max-width: 600px) {
-  .enhanced-add-form {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 52px;
+  .add-form {
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
   }
 
-  .enhanced-add-form .add-input:first-child,
-  .category-input {
-    grid-column: 1 / -1;
-    width: 100%;
+  .add-primary-row {
+    gap: 0.5rem;
   }
 
-  .quantity-input {
-    grid-column: 1;
-    width: 100%;
+  /* Slightly smaller controls so the single add row feels light on mobile. */
+  .add-input,
+  .add-details-toggle,
+  .add-btn {
+    height: 48px;
   }
 
-  .enhanced-add-form .add-btn {
-    grid-column: 2;
+  .add-details-toggle,
+  .add-btn {
+    width: 48px;
+    border-radius: var(--radius-sm);
+  }
+
+  .add-input {
+    padding: 0 1rem;
+    font-size: 0.95rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .add-details-fields {
+    gap: 0.5rem;
   }
 
   .item-edit-fields {
