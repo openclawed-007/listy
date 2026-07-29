@@ -417,7 +417,7 @@ const PublicSharedList: React.FC = () => {
                         ? `Mark "${item.text}" as needed`
                         : `Mark "${item.text}" as completed`
                     }
-                    disabled={!canToggle && signedIn}
+                    disabled={!canToggle}
                   >
                     {item.completed && <Check size={13} strokeWidth={3} />}
                   </button>
@@ -427,6 +427,7 @@ const PublicSharedList: React.FC = () => {
                     type="button"
                     aria-pressed={item.completed}
                     aria-label={item.text}
+                    disabled={signedIn && !canToggle}
                   >
                     <span className="item-text">{item.text}</span>
                     {(item.quantity || item.category) && (

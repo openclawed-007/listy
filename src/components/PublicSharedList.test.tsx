@@ -287,6 +287,28 @@ describe("PublicSharedList", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("disables toggle controls for signed-in users without toggle permission", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      permissions: { add: true },
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", visitor);
+
+    const contentControl = await screen.findByRole("button", { name: "Apples" });
+    const toggleControl = screen.getByRole("button", {
+      name: 'Mark "Apples" as completed',
+    });
+    expect(contentControl).toBeDisabled();
+    expect(toggleControl).toBeDisabled();
+    await userEvent.click(contentControl);
+    expect(contentControl).toHaveAttribute("aria-pressed", "false");
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
   it("does not write back when no permissions are granted", async () => {
     emitSharedSnapshot({
       ownerId: "alex-uid",
@@ -301,7 +323,8 @@ describe("PublicSharedList", () => {
     const apples = await screen.findByRole("button", { name: "Apples" });
     await userEvent.click(apples);
 
-    expect(apples).toHaveAttribute("aria-pressed", "true");
+    expect(apples).toBeDisabled();
+    expect(apples).toHaveAttribute("aria-pressed", "false");
     expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 });
