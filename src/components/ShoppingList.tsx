@@ -800,12 +800,16 @@ const ShoppingList: React.FC = () => {
     const trimmed = text.trim();
     const normalizedQuantity = quantity.trim().slice(0, MAX_QUANTITY_LENGTH);
     const normalizedCategory = category.trim().slice(0, MAX_CATEGORY_LENGTH);
-    if (!trimmed || !db) return;
+    if (!trimmed) {
+      setActionError("Item text cannot be empty.");
+      return false;
+    }
+    if (!db) return false;
     if (trimmed.length > MAX_ITEM_TEXT_LENGTH) {
       setActionError(
         `Keep items to ${MAX_ITEM_TEXT_LENGTH} characters or fewer.`,
       );
-      return;
+      return false;
     }
 
     try {
@@ -815,9 +819,11 @@ const ShoppingList: React.FC = () => {
         quantity: normalizedQuantity || deleteField(),
         category: normalizedCategory || deleteField(),
       });
+      return true;
     } catch (error) {
       console.error("Update item details error:", error);
       setActionError("Unable to save your edit right now. Please try again.");
+      return false;
     }
   };
 
@@ -829,9 +835,14 @@ const ShoppingList: React.FC = () => {
   };
 
   const commitEdit = async () => {
-    if (editingId)
-      await updateItemDetails(editingId, editText, editQuantity, editCategory);
-    setEditingId(null);
+    if (!editingId) return;
+    const saved = await updateItemDetails(
+      editingId,
+      editText,
+      editQuantity,
+      editCategory,
+    );
+    if (saved) setEditingId(null);
   };
 
   const cancelEdit = () => setEditingId(null);
@@ -1015,6 +1026,25 @@ const ShoppingList: React.FC = () => {
     listTabs.find((tab) => tab.id === activeListId)?.name ?? "My List";
   const showSearch =
     currentListItems.length > SEARCH_VISIBILITY_THRESHOLD || search.length > 0;
+
+  useEffect(() => {
+    if (!shareOpen && !confirmAction) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      if (confirmAction) setConfirmAction(null);
+      else setShareOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [confirmAction, shareOpen]);
 
   return (
     <div className="app-wrapper">
@@ -1357,6 +1387,7 @@ const ShoppingList: React.FC = () => {
               <button
                 className="modal-close"
                 type="button"
+                autoFocus
                 onClick={() => setShareOpen(false)}
                 aria-label="Close share dialog"
               >
@@ -1583,6 +1614,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <button
             className="modal-close"
             type="button"
+            autoFocus
             onClick={onCancel}
             aria-label="Cancel"
           >
@@ -1718,30 +1750,10 @@ const ItemRow: React.FC<ItemRowProps> = ({
   onEditCommit,
   onEditCancel,
 }) => {
-  const handleClick = () => {
-    if (!isEditing) onToggle(item.id, item.completed, item);
-  };
-
-  const handleRowKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (isEditing) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onToggle(item.id, item.completed, item);
-    }
-  };
-
   return (
     <div
       className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
-      style={{
-        animationDelay: `${Math.min(index, 8) * 0.04}s`,
-        cursor: isEditing ? "default" : "pointer",
-      }}
-      onClick={handleClick}
-      role="button"
-      tabIndex={isEditing ? -1 : 0}
-      onKeyDown={handleRowKeyDown}
-      aria-label={`${item.completed ? "Mark as needed" : "Mark as completed"}: ${item.text}`}
+      style={{ animationDelay: `${Math.min(index, 8) * 0.04}s` }}
     >
       <button
         className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
@@ -1826,7 +1838,12 @@ const ItemRow: React.FC<ItemRowProps> = ({
           />
         </div>
       ) : (
-        <span className="item-content">
+        <button
+          className="item-content"
+          type="button"
+          onClick={() => onToggle(item.id, item.completed, item)}
+          aria-label={`${item.completed ? "Mark as needed" : "Mark as completed"}: ${item.text}`}
+        >
           <span className="item-text">{item.text}</span>
           {(item.quantity || item.category) && (
             <span className="item-meta">
@@ -1834,7 +1851,7 @@ const ItemRow: React.FC<ItemRowProps> = ({
               {item.category && <span>{item.category}</span>}
             </span>
           )}
-        </span>
+        </button>
       )}
 
       {!isEditing && (

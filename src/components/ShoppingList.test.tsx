@@ -218,6 +218,41 @@ describe("ShoppingList sharing", () => {
     });
   });
 
+  it("keeps an empty item edit open and explains the validation error", async () => {
+    snapshotDocs = [
+      makeDoc("personal-1", {
+        text: "Milk",
+        completed: false,
+        userId: user.uid,
+        listId: "personal",
+      }),
+    ];
+
+    renderShoppingList();
+
+    await userEvent.click(await screen.findByRole("button", { name: 'Edit "Milk"' }));
+    const input = screen.getByLabelText("Edit item text");
+    await userEvent.clear(input);
+    await userEvent.keyboard("{Enter}");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Item text cannot be empty.");
+    expect(screen.getByLabelText("Edit item text")).toBeInTheDocument();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it("closes the share dialog with Escape and restores page scrolling", async () => {
+    renderShoppingList();
+
+    await userEvent.click(screen.getByRole("button", { name: "Share list" }));
+    expect(screen.getByRole("dialog", { name: "Share list" })).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "Share list" })).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
+  });
+
   it("shows an offline indicator in the navbar when offline", async () => {
     Object.defineProperty(navigator, "onLine", {
       configurable: true,

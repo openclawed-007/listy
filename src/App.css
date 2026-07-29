@@ -1899,3 +1899,36 @@ body.dark .modal-backdrop {
     padding: 2.5rem 1.75rem;
   }
 }
+
+/* Respect mobile browser chrome and user motion preferences. */
+.app-wrapper,
+.login-container,
+.legal-wrapper,
+.not-found-wrapper,
+.error-boundary {
+  min-height: 100dvh;
+}
+
+.loading-screen {
+  height: 100dvh;
+}
+
+.item-content {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
