@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import {
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
 import { Check, PackageOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { db } from "../firebase";
@@ -9,10 +14,16 @@ import {
   normalizeSharePermissions,
   type SharePermissions,
 } from "../lib/sharePermissions";
+import {
+  formatQuantity,
+  getDuplicateKey,
+  MAX_ITEM_TEXT_LENGTH,
+  parseItemInput,
+} from "../lib/itemInput";
+import { isRecord } from "../lib/shoppingItem";
 import { useAuth } from "../context/useAuth";
 import BrandMark from "./BrandMark";
 
-const MAX_ITEM_TEXT_LENGTH = 500;
 const MAX_ITEMS = 500;
 
 interface SharedItemData {
@@ -37,10 +48,6 @@ interface PublicItem {
   completed: boolean;
   quantity?: string;
   category?: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
 }
 
 function getSafeOwnerName(value: unknown) {
@@ -93,7 +100,10 @@ function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
 
 // Map a single raw stored item into the clean payload shape, dropping empty
 // optional fields so writes stay consistent with what the owner stores.
-function toPayloadItem(item: unknown, override?: Partial<SharedItemData>): SharedItemData {
+function toPayloadItem(
+  item: unknown,
+  override?: Partial<SharedItemData>,
+): SharedItemData {
   const record = isRecord(item) ? item : {};
   const base: SharedItemData = {
     text: typeof record.text === "string" ? record.text : "",
@@ -118,7 +128,9 @@ function buildToggledPayload(
 
   return rawItems.map((item, index) =>
     index === toggledIndex
-      ? toPayloadItem(item, { completed: !(isRecord(item) && item.completed === true) })
+      ? toPayloadItem(item, {
+          completed: !(isRecord(item) && item.completed === true),
+        })
       : toPayloadItem(item),
   );
 }
@@ -159,6 +171,7 @@ const PublicSharedList: React.FC = () => {
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [newItemText, setNewItemText] = useState("");
+  const [addNotice, setAddNotice] = useState("");
   const rawItemsRef = React.useRef<unknown>([]);
   const allowEdits = hasAnyPermission(permissions);
 
@@ -201,6 +214,13 @@ const PublicSharedList: React.FC = () => {
 
     return unsubscribe;
   }, [shareId]);
+
+  useEffect(() => {
+    if (!addNotice) return undefined;
+
+    const timeoutId = window.setTimeout(() => setAddNotice(""), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [addNotice]);
 
   const remainingCount = useMemo(
     () => items.filter((item) => !item.completed).length,
@@ -266,30 +286,52 @@ const PublicSharedList: React.FC = () => {
     );
   };
 
+  // Visitors get the same smart field as the list owner: "2 milk" sets the
+  // quantity and files the item under the right aisle.
   const addItem = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = newItemText.trim().slice(0, MAX_ITEM_TEXT_LENGTH);
-    if (!trimmed || !canAdd) return;
+    if (!canAdd) return;
+
+    const { text, quantity, category } = parseItemInput(newItemText);
+    if (!text) return;
     if (items.length >= MAX_ITEMS) {
       setSaveError("This list is full.");
       return;
     }
 
-    const newItem: SharedItemData = { text: trimmed, completed: false };
+    const duplicate = items.find(
+      (item) => getDuplicateKey(item.text) === getDuplicateKey(text),
+    );
+    if (duplicate) {
+      setNewItemText("");
+      setSaveError("");
+      setAddNotice(`${duplicate.text} is already on this list.`);
+      return;
+    }
+
+    const newItem: SharedItemData = {
+      text,
+      completed: false,
+      ...(quantity ? { quantity } : {}),
+      ...(category ? { category } : {}),
+    };
     const previousItems = items;
     const nextIndex = items.length;
 
     setItems((currentItems) => [
       ...currentItems,
       {
-        id: `${nextIndex}-${trimmed}`,
+        id: `${nextIndex}-${text}`,
         index: nextIndex,
-        text: trimmed,
+        text,
         completed: false,
+        quantity,
+        category,
       },
     ]);
     setNewItemText("");
     setSaveError("");
+    setAddNotice("");
     persistItems(buildAddedPayload(rawItemsRef.current, newItem), () =>
       setItems(previousItems),
     );
@@ -369,6 +411,12 @@ const PublicSharedList: React.FC = () => {
           )}
         </div>
 
+        {canAdd && addNotice && (
+          <p className="form-success inline-error" role="status">
+            {addNotice}
+          </p>
+        )}
+
         {canAdd && (
           <form onSubmit={addItem} className="add-form">
             <input
@@ -432,7 +480,9 @@ const PublicSharedList: React.FC = () => {
                     <span className="item-text">{item.text}</span>
                     {(item.quantity || item.category) && (
                       <span className="item-meta">
-                        {item.quantity && <span>{item.quantity}</span>}
+                        {item.quantity && (
+                          <span>{formatQuantity(item.quantity)}</span>
+                        )}
                         {item.category && <span>{item.category}</span>}
                       </span>
                     )}

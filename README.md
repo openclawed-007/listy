@@ -6,12 +6,38 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
 
 ## Features
 
+- ✍️ **One smart field** — type `2 milk`, `500g flour` or `bread x3` and the
+  quantity is read for you. No extra boxes, no toggles.
+- 🧺 **Sorts itself by aisle** — items are matched against a built-in grocery
+  dictionary and grouped under Produce, Bakery, Dairy & Eggs, and so on.
+  Unrecognised items stay in *General* rather than being filed somewhere wrong.
+  Override any aisle by editing the row, or by typing `batteries #shed`.
+- 🔁 **No duplicate rows** — adding something already on the list bumps its
+  quantity (and un-checks it if you'd already ticked it off).
+- 📊 **Progress bar** so you can see how much of the shop is left.
+- 🔗 Share by link or QR code, with per-visitor permissions (check off / add /
+  remove)
 - 🔐 Google Sign-In (Firebase Auth)
 - ⚡ Real-time sync across devices (Firestore)
-- 🔍 Search & filter (All / Needed / Got it)
+- 🔍 Search (appears once a list is worth searching; press `/` any time)
+- ⌨️ Shortcuts: `/` search, `n` new item, `Enter` save, `Esc` cancel
 - 🌙 Dark mode with persistent preference
 - 📱 Fully responsive
 - 📶 Offline-ready with local changes synced when the connection returns
+
+## Project layout
+
+```
+src/lib/itemInput.ts     smart parsing: quantity, #category, aisle guessing
+src/lib/shoppingItem.ts  item shape, Firestore sanitising, grouping, batching
+src/lib/sharePermissions.ts  what a share-link visitor is allowed to do
+src/components/          ShoppingList (screen) + ItemRow, ShareDialog,
+                         ConfirmDialog, DismissibleMessage, UserAvatar
+src/hooks/               useDarkMode, useOnlineStatus
+```
+
+Parsing and item rules are pure functions in `src/lib`, so behaviour is unit
+tested without Firebase or a browser.
 
 ## Setup
 

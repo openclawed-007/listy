@@ -1,4 +1,4 @@
-const CACHE_NAME = "cartlink-shell-v7";
+const CACHE_NAME = "cartlink-shell-v8";
 const APP_SHELL = [
   "/",
   "/index.html",

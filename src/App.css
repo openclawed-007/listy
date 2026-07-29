@@ -450,10 +450,9 @@ input:focus-visible,
 /* ===========================
    ADD ITEM INPUT
    =========================== */
-/* The add form is a single clean line by default: one "Add an item" field, a
-   subtle details toggle, and the add button. Quantity and category are optional
-   and stay tucked away behind the toggle, so mobile users aren't faced with
-   three large boxes of mostly-empty space. */
+/* The add form is one clean line: an "Add an item" field and the add button.
+   Quantity and aisle are read from what the customer types, so there are no
+   extra boxes to fill in. */
 .add-form {
   display: flex;
   flex-direction: column;
@@ -462,65 +461,38 @@ input:focus-visible,
   animation: slide-up 0.5s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.enhanced-add-form {
-  align-items: stretch;
-}
-
 .add-primary-row {
   display: flex;
   gap: 0.6rem;
   align-items: stretch;
 }
 
-/* Optional detail fields. Hidden via the [hidden] attribute when collapsed;
-   when shown they sit on their own row and share the width evenly. */
-.add-details-fields {
-  display: flex;
-  gap: 0.6rem;
-  animation: slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.add-details-fields[hidden] {
-  display: none;
-}
-
-.add-meta-input {
-  flex: 1 1 0;
-  min-width: 0;
-  width: auto;
-}
-
-/* The small square toggle that reveals quantity & category. */
-.add-details-toggle {
-  flex-shrink: 0;
-  height: 52px;
-  width: 52px;
+/* Live read-out of what will be added, e.g. "Milk  x2  Dairy & Eggs".
+   Reserves its own line so the form never jumps as you type. */
+.add-hint {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 2px solid var(--cream-deep);
-  border-radius: var(--radius);
-  background: var(--surface);
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-height: 1.15rem;
+  padding: 0 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 500;
   color: var(--ink-muted);
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease,
-    transform 0.15s ease;
 }
 
-.add-details-toggle:hover {
+.add-hint strong {
+  font-weight: 600;
   color: var(--ink);
-  border-color: var(--sage-light);
 }
 
-.add-details-toggle.is-active {
+.add-hint-chip {
+  padding: 0.05rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: rgba(107, 143, 113, 0.14);
   color: var(--sage-dark);
-  border-color: var(--sage);
-  background: rgba(107, 143, 113, 0.1);
-}
-
-.add-details-toggle:active {
-  transform: scale(0.96);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .add-input {
@@ -762,6 +734,19 @@ input:focus-visible,
   background: var(--cream-dark);
 }
 
+/* Quantity chip on a row. The aisle is the group heading above, so the row
+   itself stays down to one glanceable line. */
+.item-qty {
+  align-self: flex-start;
+  padding: 0.05rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--cream-dark);
+  color: var(--ink-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
 .item-row.completed .item-text {
   text-decoration: line-through;
   color: var(--ink-faint);
@@ -902,9 +887,56 @@ input:focus-visible,
   line-height: 1.5;
 }
 
+/* First-run hint that teaches the smart add field in one line. */
+.empty-tip {
+  max-width: 280px;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+
+.empty-tip code {
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-sm);
+  background: var(--cream-dark);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--sage-dark);
+}
+
 /* ===========================
    STATS BAR
    =========================== */
+.list-summary {
+  margin-bottom: 1.25rem;
+}
+
+.list-summary .stats-bar {
+  margin-bottom: 0.5rem;
+}
+
+/* Thin "how far through the shop am I" bar. Purely reassuring, never in the
+   way — it is the only progress affordance in the app. */
+.progress-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--cream-deep);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--sage);
+  transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill {
+    transition: none;
+  }
+}
+
 .stats-bar {
   display: flex;
   align-items: center;
@@ -1840,12 +1872,10 @@ body.dark .modal-backdrop {
 
   /* Slightly smaller controls so the single add row feels light on mobile. */
   .add-input,
-  .add-details-toggle,
   .add-btn {
     height: 48px;
   }
 
-  .add-details-toggle,
   .add-btn {
     width: 48px;
     border-radius: var(--radius-sm);
@@ -1855,10 +1885,6 @@ body.dark .modal-backdrop {
     padding: 0 1rem;
     font-size: 0.95rem;
     border-radius: var(--radius-sm);
-  }
-
-  .add-details-fields {
-    gap: 0.5rem;
   }
 
   .item-edit-fields {

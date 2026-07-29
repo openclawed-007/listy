@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
-import type { User } from "firebase/auth";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -14,28 +13,19 @@ import {
   setDoc,
   updateDoc,
   where,
-  writeBatch,
-  type Firestore,
-  type Timestamp,
   type WriteBatch,
 } from "firebase/firestore";
 import {
-  Check,
-  Copy,
   LogOut,
   Moon,
   PackageOpen,
-  Pencil,
   Plus,
   Search,
   Share2,
-  SlidersHorizontal,
   Sun,
-  Trash2,
   WifiOff,
   X,
 } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
@@ -44,33 +34,44 @@ import {
   normalizeSharePermissions,
   type SharePermissions,
 } from "../lib/sharePermissions";
+import {
+  AISLES,
+  DEFAULT_CATEGORY,
+  formatQuantity,
+  getDuplicateKey,
+  MAX_CATEGORY_LENGTH,
+  MAX_ITEM_TEXT_LENGTH,
+  MAX_QUANTITY_LENGTH,
+  mergeQuantities,
+  parseItemInput,
+} from "../lib/itemInput";
+import {
+  commitBatchOperations,
+  getItemListId,
+  getItemListName,
+  getSharedItemKey,
+  groupItemsByCategory,
+  isRecord,
+  normalizeShoppingItem,
+  normalizeSharedListSnapshot,
+  PERSONAL_LIST_ID,
+  PERSONAL_LIST_NAME,
+  toSharedItemPayload,
+  type ShoppingItem,
+} from "../lib/shoppingItem";
 import { useAuth } from "../context/useAuth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { useDarkMode } from "../hooks/useDarkMode";
 import BrandMark from "./BrandMark";
-
-interface ShoppingItem {
-  id: string;
-  text: string;
-  completed: boolean;
-  userId: string;
-  quantity?: string;
-  category?: string;
-  listId?: string;
-  listName?: string;
-  sharedFromUserId?: string;
-  createdAt?: Timestamp;
-}
-
-interface SharedListSnapshot {
-  ownerId: string;
-  ownerName: string;
-  items: Array<{
-    text: string;
-    completed: boolean;
-    quantity?: string;
-    category?: string;
-  }>;
-}
+import ConfirmDialog, { type ConfirmAction } from "./ConfirmDialog";
+import DismissibleMessage from "./DismissibleMessage";
+import ShareDialog from "./ShareDialog";
+import UserAvatar from "./UserAvatar";
+import {
+  CATEGORY_DATALIST_ID,
+  CategoryGroup,
+  type ItemEditState,
+} from "./ItemRow";
 
 interface ListTab {
   id: string;
@@ -82,150 +83,9 @@ interface PendingDelete {
   timeoutId: number;
 }
 
-type ConfirmAction = "clearCompleted" | "removeSharedList" | "stopSharing";
-
-const PERSONAL_LIST_ID = "personal";
-const MAX_ITEM_TEXT_LENGTH = 500;
-const MAX_QUANTITY_LENGTH = 40;
-const MAX_CATEGORY_LENGTH = 80;
-const MAX_FIRESTORE_BATCH_WRITES = 450;
-const DEFAULT_CATEGORY = "General";
-
-function getItemListId(item: ShoppingItem) {
-  return item.listId ?? PERSONAL_LIST_ID;
-}
-
-function getItemListName(item: ShoppingItem) {
-  return item.listName ?? "My List";
-}
-
-function getItemCategory(item: ShoppingItem) {
-  return item.category ?? DEFAULT_CATEGORY;
-}
-
-// Stable identity for matching a personal item to its shared-doc counterpart.
-function getSharedItemKey(item: {
-  text: string;
-  quantity?: string;
-  category?: string;
-}) {
-  return [item.text, item.quantity ?? "", item.category ?? ""].join("\u0000");
-}
-
-function getSafeOwnerName(value: unknown) {
-  return typeof value === "string" && value.trim()
-    ? value.trim().slice(0, 120)
-    : "Shared user";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
-}
-
-function normalizeOptionalString(value: unknown, maxLength: number) {
-  return typeof value === "string" && value.trim()
-    ? value.trim().slice(0, maxLength)
-    : undefined;
-}
-
-function normalizeShoppingItem(id: string, data: unknown): ShoppingItem | null {
-  if (!isRecord(data)) return null;
-
-  const text = normalizeOptionalString(data.text, MAX_ITEM_TEXT_LENGTH);
-  const userId = normalizeOptionalString(data.userId, 128);
-  if (!text || !userId || typeof data.completed !== "boolean") return null;
-
-  return {
-    id,
-    text,
-    completed: data.completed,
-    userId,
-    quantity: normalizeOptionalString(data.quantity, MAX_QUANTITY_LENGTH),
-    category: normalizeOptionalString(data.category, MAX_CATEGORY_LENGTH),
-    listId: normalizeOptionalString(data.listId, 200),
-    listName: normalizeOptionalString(data.listName, 120),
-    sharedFromUserId: normalizeOptionalString(data.sharedFromUserId, 128),
-    createdAt:
-      data.createdAt &&
-      typeof data.createdAt === "object" &&
-      "toMillis" in data.createdAt
-        ? (data.createdAt as Timestamp)
-        : undefined,
-  };
-}
-
-function normalizeSharedItems(items: unknown) {
-  if (!Array.isArray(items)) return [];
-
-  return items.flatMap((item) => {
-    if (!isRecord(item)) return [];
-
-    const text = normalizeOptionalString(item.text, MAX_ITEM_TEXT_LENGTH);
-    if (!text) return [];
-
-    return [
-      {
-        text,
-        completed: item.completed === true,
-        quantity: normalizeOptionalString(item.quantity, MAX_QUANTITY_LENGTH),
-        category: normalizeOptionalString(item.category, MAX_CATEGORY_LENGTH),
-      },
-    ];
-  });
-}
-
-function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
-  if (!isRecord(data)) return null;
-
-  const ownerId = normalizeOptionalString(data.ownerId, 128);
-  if (!ownerId) return null;
-
-  return {
-    ownerId,
-    ownerName: getSafeOwnerName(data.ownerName),
-    items: normalizeSharedItems(data.items),
-  };
-}
-
-async function commitBatchOperations(
-  firestore: Firestore,
-  operations: Array<(batch: WriteBatch) => void>,
-) {
-  for (
-    let index = 0;
-    index < operations.length;
-    index += MAX_FIRESTORE_BATCH_WRITES
-  ) {
-    const batch = writeBatch(firestore);
-    operations
-      .slice(index, index + MAX_FIRESTORE_BATCH_WRITES)
-      .forEach((operation) => operation(batch));
-    await batch.commit();
-  }
-}
-
-function useDarkMode() {
-  const [dark, setDark] = React.useState<boolean>(() => {
-    try {
-      return localStorage.getItem("theme") === "dark";
-    } catch {
-      return false;
-    }
-  });
-
-  React.useEffect(() => {
-    document.body.classList.toggle("dark", dark);
-    try {
-      localStorage.setItem("theme", dark ? "dark" : "light");
-    } catch {
-      // Some browser privacy modes can block localStorage.
-    }
-  }, [dark]);
-
-  return { dark, toggle: () => setDark((value) => !value) };
-}
-
-const SEARCH_VISIBILITY_THRESHOLD = 15;
+// Below this many items, searching is slower than just looking at the list, so
+// the field stays out of the way until it earns its place (or "/" is pressed).
+const SEARCH_VISIBILITY_THRESHOLD = 8;
 
 const ShoppingList: React.FC = () => {
   const { user, logout } = useAuth();
@@ -235,10 +95,8 @@ const ShoppingList: React.FC = () => {
   const online = useOnlineStatus();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [newItem, setNewItem] = useState("");
-  const [newQuantity, setNewQuantity] = useState("");
-  const [newCategory, setNewCategory] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [searchPinned, setSearchPinned] = useState(false);
   const [activeListId, setActiveListId] = useState(PERSONAL_LIST_ID);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -252,13 +110,19 @@ const ShoppingList: React.FC = () => {
   const [permissions, setPermissions] =
     useState<SharePermissions>(NO_PERMISSIONS);
   const allowEdits = hasAnyPermission(permissions);
-  const [importStatus, setImportStatus] = useState("");
+  const [notice, setNotice] = useState("");
   const [importing, setImporting] = useState(false);
   const [itemsLoaded, setItemsLoaded] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
-  const handledShareId = React.useRef<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
+    null,
+  );
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(
+    null,
+  );
+  const handledShareId = useRef<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const addInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -267,11 +131,11 @@ const ShoppingList: React.FC = () => {
   }, [pendingDelete]);
 
   useEffect(() => {
-    if (!importStatus) return undefined;
+    if (!notice) return undefined;
 
-    const timeoutId = window.setTimeout(() => setImportStatus(""), 5000);
+    const timeoutId = window.setTimeout(() => setNotice(""), 5000);
     return () => window.clearTimeout(timeoutId);
-  }, [importStatus]);
+  }, [notice]);
 
   useEffect(() => {
     if (!user || !db) return;
@@ -343,7 +207,7 @@ const ShoppingList: React.FC = () => {
     });
 
     return [
-      { id: PERSONAL_LIST_ID, name: "My List" },
+      { id: PERSONAL_LIST_ID, name: PERSONAL_LIST_NAME },
       ...Array.from(sharedTabs, ([id, name]) => ({ id, name })),
     ];
   }, [items]);
@@ -372,12 +236,7 @@ const ShoppingList: React.FC = () => {
           ownerName,
           allowEdits,
           permissions,
-          items: personalItems.map((item) => ({
-            text: item.text,
-            completed: item.completed,
-            ...(item.quantity ? { quantity: item.quantity } : {}),
-            ...(item.category ? { category: item.category } : {}),
-          })),
+          items: personalItems.map(toSharedItemPayload),
           updatedAt: serverTimestamp(),
         }),
       ).catch((error) => {
@@ -386,7 +245,15 @@ const ShoppingList: React.FC = () => {
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [allowEdits, permissions, itemsLoaded, ownerName, personalItems, isSharing, user]);
+  }, [
+    allowEdits,
+    permissions,
+    itemsLoaded,
+    ownerName,
+    personalItems,
+    isSharing,
+    user,
+  ]);
 
   // When collaborators can edit, reconcile the changes they make on the public
   // shared doc back into the owner's own items: toggle completion, add new
@@ -438,7 +305,7 @@ const ShoppingList: React.FC = () => {
               ...(sharedItem.quantity ? { quantity: sharedItem.quantity } : {}),
               ...(sharedItem.category ? { category: sharedItem.category } : {}),
               listId: PERSONAL_LIST_ID,
-              listName: "My List",
+              listName: PERSONAL_LIST_NAME,
               createdAt: serverTimestamp(),
             }).catch((error) => {
               console.error("Collaborator add sync-back error:", error);
@@ -478,7 +345,7 @@ const ShoppingList: React.FC = () => {
     const importSharedList = async () => {
       handledShareId.current = shareId;
       setImporting(true);
-      setImportStatus("");
+      setNotice("");
       setActionError("");
 
       try {
@@ -496,7 +363,7 @@ const ShoppingList: React.FC = () => {
           return;
         }
 
-        const ownerName = data.ownerName;
+        const sharedOwnerName = data.ownerName;
         const sharedItems = data.items;
         if (data.ownerId === user.uid) {
           setActionError("This is your own share code.");
@@ -532,7 +399,7 @@ const ShoppingList: React.FC = () => {
               ...(item.quantity ? { quantity: item.quantity } : {}),
               ...(item.category ? { category: item.category } : {}),
               listId: importedListId,
-              listName: ownerName,
+              listName: sharedOwnerName,
               sharedFromUserId: data.ownerId,
               createdAt: serverTimestamp(),
             }),
@@ -541,7 +408,7 @@ const ShoppingList: React.FC = () => {
 
         await commitBatchOperations(db, operations);
         setActiveListId(importedListId);
-        setImportStatus(`${ownerName}'s list was added to your tabs.`);
+        setNotice(`${sharedOwnerName}'s list was added to your tabs.`);
         navigate("/", { replace: true });
       } catch (error) {
         console.error("Import shared list error:", error);
@@ -556,64 +423,6 @@ const ShoppingList: React.FC = () => {
 
     void importSharedList();
   }, [importing, navigate, shareId, user]);
-
-  const addItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = newItem.trim();
-    const quantity = newQuantity.trim().slice(0, MAX_QUANTITY_LENGTH);
-    const category = newCategory.trim().slice(0, MAX_CATEGORY_LENGTH);
-    if (!trimmed || !user || !db) return;
-    if (trimmed.length > MAX_ITEM_TEXT_LENGTH) {
-      setActionError(
-        `Keep items to ${MAX_ITEM_TEXT_LENGTH} characters or fewer.`,
-      );
-      return;
-    }
-
-    const activeTab = listTabs.find((tab) => tab.id === activeListId);
-
-    // When adding into an imported (shared) tab, carry the owner id so the new
-    // item behaves like other shared items (toggle/remove propagate too) and so
-    // we can push the addition back to the owner's shared list below.
-    const sharedFromUserId = activeListId.startsWith("shared:")
-      ? activeListId.slice("shared:".length)
-      : undefined;
-
-    try {
-      setActionError("");
-      await addDoc(collection(db, "shoppingItems"), {
-        text: trimmed,
-        completed: false,
-        userId: user.uid,
-        ...(quantity ? { quantity } : {}),
-        ...(category ? { category } : {}),
-        listId: activeListId,
-        listName: activeTab?.name ?? "My List",
-        ...(sharedFromUserId ? { sharedFromUserId } : {}),
-        createdAt: serverTimestamp(),
-      });
-      if (sharedFromUserId) {
-        void propagateToSharedOwner(
-          {
-            id: "",
-            text: trimmed,
-            completed: false,
-            userId: user.uid,
-            quantity: quantity || undefined,
-            category: category || undefined,
-            sharedFromUserId,
-          },
-          "add",
-        );
-      }
-      setNewItem("");
-      setNewQuantity("");
-      setNewCategory("");
-    } catch (error) {
-      console.error("Add item error:", error);
-      setActionError("Unable to add that item right now. Please try again.");
-    }
-  };
 
   // Propagate a change made on an imported (shared) item back to the owner's
   // shared list document, so collaboration works the same whether you're
@@ -634,17 +443,18 @@ const ShoppingList: React.FC = () => {
 
       // Permissions live on the raw doc; the local snapshot normalizer drops
       // them, so read them directly here to honor the owner's current settings.
-      const permissions = normalizeSharePermissions(
+      const ownerPermissions = normalizeSharePermissions(
         isRecord(raw) ? raw.permissions : undefined,
       );
-      const allowEdits = raw?.allowEdits === true && hasAnyPermission(permissions);
+      const ownerAllowsEdits =
+        raw?.allowEdits === true && hasAnyPermission(ownerPermissions);
       const permitted =
         change === "toggle"
-          ? permissions.toggle
+          ? ownerPermissions.toggle
           : change === "add"
-            ? permissions.add
-            : permissions.remove;
-      if (!allowEdits || !permitted) return;
+            ? ownerPermissions.add
+            : ownerPermissions.remove;
+      if (!ownerAllowsEdits || !permitted) return;
 
       const rawItems = Array.isArray(raw?.items) ? raw.items : [];
       const itemKey = getSharedItemKey(item);
@@ -673,15 +483,7 @@ const ShoppingList: React.FC = () => {
       if (change === "remove") {
         workingItems = rawItems.filter((_raw, index) => index !== matchIndex);
       } else if (change === "add") {
-        workingItems = [
-          ...rawItems,
-          {
-            text: item.text,
-            completed: item.completed,
-            ...(item.quantity ? { quantity: item.quantity } : {}),
-            ...(item.category ? { category: item.category } : {}),
-          },
-        ];
+        workingItems = [...rawItems, toSharedItemPayload(item)];
       } else {
         workingItems = rawItems.map((rawItem, index) =>
           index === matchIndex
@@ -694,16 +496,14 @@ const ShoppingList: React.FC = () => {
         const record = (
           rawItem && typeof rawItem === "object" ? rawItem : {}
         ) as Record<string, unknown>;
-        return {
+        return toSharedItemPayload({
           text: typeof record.text === "string" ? record.text : "",
           completed: record.completed === true,
-          ...(typeof record.quantity === "string" && record.quantity
-            ? { quantity: record.quantity }
-            : {}),
-          ...(typeof record.category === "string" && record.category
-            ? { category: record.category }
-            : {}),
-        };
+          quantity:
+            typeof record.quantity === "string" ? record.quantity : undefined,
+          category:
+            typeof record.category === "string" ? record.category : undefined,
+        });
       });
 
       await updateDoc(ownerRef, {
@@ -712,6 +512,97 @@ const ShoppingList: React.FC = () => {
       });
     } catch (error) {
       console.error("Propagate to shared owner error:", error);
+    }
+  };
+
+  const currentListItems = useMemo(
+    () => items.filter((item) => getItemListId(item) === activeListId),
+    [activeListId, items],
+  );
+
+  // What "2 milk" will actually become, so the smart input is never a surprise.
+  const preview = useMemo(() => parseItemInput(newItem), [newItem]);
+  const duplicateItem = useMemo(() => {
+    if (!preview.text) return undefined;
+    const key = getDuplicateKey(preview.text);
+    return currentListItems.find((item) => getDuplicateKey(item.text) === key);
+  }, [currentListItems, preview.text]);
+
+  /**
+   * Add what the customer typed. Adding something already on the list bumps
+   * that row instead of creating a near-identical duplicate.
+   */
+  const addItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !db) return;
+
+    const { text, quantity, category } = parseItemInput(newItem);
+    if (!text) return;
+
+    try {
+      setActionError("");
+
+      if (duplicateItem) {
+        const nextQuantity = mergeQuantities(duplicateItem.quantity, quantity);
+        await updateDoc(doc(db, "shoppingItems", duplicateItem.id), {
+          completed: false,
+          quantity: nextQuantity ?? deleteField(),
+        });
+
+        // Un-checking counts as a toggle for the list owner.
+        if (duplicateItem.completed && duplicateItem.sharedFromUserId) {
+          void propagateToSharedOwner(duplicateItem, "toggle");
+        }
+
+        setNotice(
+          nextQuantity
+            ? `${duplicateItem.text} was already on your list — now ${formatQuantity(nextQuantity)}.`
+            : `${duplicateItem.text} is already on your list.`,
+        );
+        setNewItem("");
+        return;
+      }
+
+      const activeTab = listTabs.find((tab) => tab.id === activeListId);
+
+      // When adding into an imported (shared) tab, carry the owner id so the new
+      // item behaves like other shared items (toggle/remove propagate too) and so
+      // we can push the addition back to the owner's shared list below.
+      const sharedFromUserId = activeListId.startsWith("shared:")
+        ? activeListId.slice("shared:".length)
+        : undefined;
+
+      await addDoc(collection(db, "shoppingItems"), {
+        text,
+        completed: false,
+        userId: user.uid,
+        ...(quantity ? { quantity } : {}),
+        ...(category ? { category } : {}),
+        listId: activeListId,
+        listName: activeTab?.name ?? PERSONAL_LIST_NAME,
+        ...(sharedFromUserId ? { sharedFromUserId } : {}),
+        createdAt: serverTimestamp(),
+      });
+
+      if (sharedFromUserId) {
+        void propagateToSharedOwner(
+          {
+            id: "",
+            text,
+            completed: false,
+            userId: user.uid,
+            quantity,
+            category,
+            sharedFromUserId,
+          },
+          "add",
+        );
+      }
+
+      setNewItem("");
+    } catch (error) {
+      console.error("Add item error:", error);
+      setActionError("Unable to add that item right now. Please try again.");
     }
   };
 
@@ -787,7 +678,9 @@ const ShoppingList: React.FC = () => {
       });
     } catch (error) {
       console.error("Undo delete item error:", error);
-      setActionError("Unable to restore that item right now. Please try again.");
+      setActionError(
+        "Unable to restore that item right now. Please try again.",
+      );
     }
   };
 
@@ -827,13 +720,6 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const startEdit = (item: ShoppingItem) => {
-    setEditingId(item.id);
-    setEditText(item.text);
-    setEditQuantity(item.quantity ?? "");
-    setEditCategory(item.category ?? "");
-  };
-
   const commitEdit = async () => {
     if (!editingId) return;
     const saved = await updateItemDetails(
@@ -845,14 +731,28 @@ const ShoppingList: React.FC = () => {
     if (saved) setEditingId(null);
   };
 
-  const cancelEdit = () => setEditingId(null);
+  const edit: ItemEditState = {
+    editingId,
+    text: editText,
+    quantity: editQuantity,
+    category: editCategory,
+    onStart: (item) => {
+      setEditingId(item.id);
+      setEditText(item.text);
+      setEditQuantity(item.quantity ?? "");
+      setEditCategory(item.category ?? "");
+    },
+    onTextChange: setEditText,
+    onQuantityChange: setEditQuantity,
+    onCategoryChange: setEditCategory,
+    onCommit: commitEdit,
+    onCancel: () => setEditingId(null),
+  };
 
   const clearCompleted = async () => {
     if (!db) return;
 
-    const done = items.filter(
-      (item) => item.completed && getItemListId(item) === activeListId,
-    );
+    const done = currentListItems.filter((item) => item.completed);
     if (done.length === 0) return;
 
     try {
@@ -860,8 +760,7 @@ const ShoppingList: React.FC = () => {
       await commitBatchOperations(
         db,
         done.map(
-          (item) => (batch) =>
-            batch.delete(doc(db, "shoppingItems", item.id)),
+          (item) => (batch) => batch.delete(doc(db, "shoppingItems", item.id)),
         ),
       );
     } catch (error) {
@@ -877,18 +776,14 @@ const ShoppingList: React.FC = () => {
 
     try {
       setActionError("");
-      const sharedItems = items.filter(
-        (item) => getItemListId(item) === activeListId,
-      );
       await commitBatchOperations(
         db,
-        sharedItems.map(
-          (item) => (batch) =>
-            batch.delete(doc(db, "shoppingItems", item.id)),
+        currentListItems.map(
+          (item) => (batch) => batch.delete(doc(db, "shoppingItems", item.id)),
         ),
       );
       setActiveListId(PERSONAL_LIST_ID);
-      setImportStatus("");
+      setNotice("");
     } catch (error) {
       console.error("Remove shared list error:", error);
       setActionError(
@@ -910,12 +805,7 @@ const ShoppingList: React.FC = () => {
         ownerName,
         allowEdits,
         permissions,
-        items: personalItems.map((item) => ({
-          text: item.text,
-          completed: item.completed,
-          ...(item.quantity ? { quantity: item.quantity } : {}),
-          ...(item.category ? { category: item.category } : {}),
-        })),
+        items: personalItems.map(toSharedItemPayload),
         updatedAt: serverTimestamp(),
       });
       setIsSharing(true);
@@ -998,37 +888,57 @@ const ShoppingList: React.FC = () => {
   };
 
   const filtered = useMemo(() => {
-    let list = items.filter((item) => getItemListId(item) === activeListId);
+    const normalizedQuery = search.trim().toLowerCase();
+    if (!normalizedQuery) return currentListItems;
 
-    if (search.trim()) {
-      const normalizedQuery = search.trim().toLowerCase();
-      list = list.filter((item) =>
-        [item.text, item.quantity, item.category]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery),
-      );
-    }
+    return currentListItems.filter((item) =>
+      [item.text, item.quantity, item.category]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+  }, [currentListItems, search]);
 
-    return list;
-  }, [activeListId, items, search]);
+  const { activeGroups, doneGroups, activeCount, doneCount } = useMemo(() => {
+    const stillNeeded = filtered.filter((item) => !item.completed);
+    const alreadyGot = filtered.filter((item) => item.completed);
 
-  const activeItems = filtered.filter((item) => !item.completed);
-  const doneItems = filtered.filter((item) => item.completed);
-  const groupedActiveItems = groupItemsByCategory(activeItems);
-  const groupedDoneItems = groupItemsByCategory(doneItems);
-  const currentListItems = items.filter(
-    (item) => getItemListId(item) === activeListId,
-  );
+    return {
+      activeGroups: groupItemsByCategory(stillNeeded),
+      doneGroups: groupItemsByCategory(alreadyGot),
+      activeCount: stillNeeded.length,
+      doneCount: alreadyGot.length,
+    };
+  }, [filtered]);
+
+  // Aisle suggestions while editing: the customer's own categories first, then
+  // the built-in aisles.
+  const categorySuggestions = useMemo(() => {
+    const used = new Set(
+      items
+        .map((item) => item.category)
+        .filter((category): category is string => Boolean(category)),
+    );
+    AISLES.forEach((aisle) => used.add(aisle));
+    return Array.from(used).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
   const allDoneCount = currentListItems.filter((item) => item.completed).length;
+  const totalCount = currentListItems.length;
+  const progress = totalCount
+    ? Math.round((allDoneCount / totalCount) * 100)
+    : 0;
   const activeTabName =
-    listTabs.find((tab) => tab.id === activeListId)?.name ?? "My List";
+    listTabs.find((tab) => tab.id === activeListId)?.name ?? PERSONAL_LIST_NAME;
   const showSearch =
-    currentListItems.length > SEARCH_VISIBILITY_THRESHOLD || search.length > 0;
+    searchPinned ||
+    totalCount > SEARCH_VISIBILITY_THRESHOLD ||
+    search.length > 0;
+  const modalOpen = shareOpen || confirmAction !== null;
 
   useEffect(() => {
-    if (!shareOpen && !confirmAction) return undefined;
+    if (!modalOpen) return undefined;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -1044,7 +954,33 @@ const ShoppingList: React.FC = () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [confirmAction, shareOpen]);
+  }, [confirmAction, modalOpen]);
+
+  // Keyboard shortcuts for people who live at a keyboard: "/" to search,
+  // "n" to jump to the add field. Ignored while typing or in a dialog.
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (modalOpen || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== "/" && event.key !== "n") return;
+
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      event.preventDefault();
+      if (event.key === "n") {
+        addInputRef.current?.focus();
+        return;
+      }
+
+      setSearchPinned(true);
+      window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    };
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [modalOpen]);
 
   return (
     <div className="app-wrapper">
@@ -1116,11 +1052,11 @@ const ShoppingList: React.FC = () => {
       <main className="container">
         <div className="page-heading">
           <h1 className="page-title">{activeTabName}</h1>
-          {importStatus && (
+          {notice && (
             <DismissibleMessage
               kind="success"
-              message={importStatus}
-              onDismiss={() => setImportStatus("")}
+              message={notice}
+              onDismiss={() => setNotice("")}
             />
           )}
           {actionError && (
@@ -1138,6 +1074,7 @@ const ShoppingList: React.FC = () => {
               <Search size={16} />
             </span>
             <input
+              ref={searchInputRef}
               type="text"
               className="search-input"
               placeholder="Search your list…"
@@ -1158,66 +1095,60 @@ const ShoppingList: React.FC = () => {
           </div>
         )}
 
-        <form
-          onSubmit={addItem}
-          className={`add-form enhanced-add-form ${detailsOpen ? "details-open" : ""}`}
-        >
+        {/* One field, one button. Quantity and aisle are read from what you
+            type ("2 milk", "500g flour", "batteries #shed"). */}
+        <form onSubmit={addItem} className="add-form">
           <div className="add-primary-row">
             <input
+              ref={addInputRef}
               type="text"
               className="add-input"
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
               placeholder="Add an item…"
               aria-label="New shopping item"
+              aria-describedby="add-hint"
               maxLength={MAX_ITEM_TEXT_LENGTH}
+              autoComplete="off"
             />
-            <button
-              type="button"
-              className={`add-details-toggle ${detailsOpen || newQuantity || newCategory ? "is-active" : ""}`}
-              onClick={() => setDetailsOpen((open) => !open)}
-              aria-expanded={detailsOpen}
-              aria-controls="add-details-fields"
-              title={detailsOpen ? "Hide quantity & category" : "Add quantity & category"}
-              aria-label={detailsOpen ? "Hide quantity and category" : "Add quantity and category"}
-            >
-              <SlidersHorizontal size={18} strokeWidth={2.25} />
-            </button>
             <button
               type="submit"
               className="add-btn"
               title="Add item"
               aria-label="Add item"
+              disabled={!preview.text}
             >
               <Plus size={22} strokeWidth={2.5} />
             </button>
           </div>
 
-          <div
-            id="add-details-fields"
-            className="add-details-fields"
-            hidden={!detailsOpen}
-          >
-            <input
-              type="text"
-              className="add-input add-meta-input quantity-input"
-              value={newQuantity}
-              onChange={(e) => setNewQuantity(e.target.value)}
-              placeholder="Quantity"
-              aria-label="Item quantity"
-              maxLength={MAX_QUANTITY_LENGTH}
-            />
-            <input
-              type="text"
-              className="add-input add-meta-input category-input"
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-              placeholder="Category / aisle"
-              aria-label="Item category or aisle"
-              maxLength={MAX_CATEGORY_LENGTH}
-            />
-          </div>
+          <p id="add-hint" className="add-hint" aria-live="polite">
+            {duplicateItem ? (
+              <>
+                <strong>{duplicateItem.text}</strong> is already here — adding
+                bumps the quantity.
+              </>
+            ) : preview.quantity || preview.category ? (
+              <>
+                <strong>{preview.text}</strong>
+                {preview.quantity && (
+                  <span className="add-hint-chip">
+                    {formatQuantity(preview.quantity)}
+                  </span>
+                )}
+                {preview.category && (
+                  <span className="add-hint-chip">{preview.category}</span>
+                )}
+              </>
+            ) : null}
+          </p>
         </form>
+
+        <datalist id={CATEGORY_DATALIST_ID}>
+          {categorySuggestions.map((category) => (
+            <option key={category} value={category} />
+          ))}
+        </datalist>
 
         {listTabs.length > 1 && (
           <div className="list-tabs" aria-label="Shopping lists">
@@ -1237,29 +1168,45 @@ const ShoppingList: React.FC = () => {
           </div>
         )}
 
-        {currentListItems.length > 0 && (
-          <div className="stats-bar">
-            <span className="stats-text">
-              <strong>{activeItems.length}</strong> remaining
-            </span>
-            {allDoneCount > 0 && (
-              <button
-                className="clear-done-btn"
-                onClick={() => setConfirmAction("clearCompleted")}
-                type="button"
-              >
-                Clear {allDoneCount} done
-              </button>
-            )}
-            {activeListId !== PERSONAL_LIST_ID && (
-              <button
-                className="clear-done-btn"
-                onClick={() => setConfirmAction("removeSharedList")}
-                type="button"
-              >
-                Remove list
-              </button>
-            )}
+        {totalCount > 0 && (
+          <div className="list-summary">
+            <div className="stats-bar">
+              <span className="stats-text">
+                <strong>{activeCount}</strong> left
+                {allDoneCount > 0 && ` · ${allDoneCount} in the bag`}
+              </span>
+              {allDoneCount > 0 && (
+                <button
+                  className="clear-done-btn"
+                  onClick={() => setConfirmAction("clearCompleted")}
+                  type="button"
+                >
+                  Clear {allDoneCount} done
+                </button>
+              )}
+              {activeListId !== PERSONAL_LIST_ID && (
+                <button
+                  className="clear-done-btn"
+                  onClick={() => setConfirmAction("removeSharedList")}
+                  type="button"
+                >
+                  Remove list
+                </button>
+              )}
+            </div>
+            <div
+              className="progress-track"
+              role="progressbar"
+              aria-label={`${allDoneCount} of ${totalCount} items picked up`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progress}
+            >
+              <div
+                className="progress-fill"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
           </div>
         )}
 
@@ -1270,7 +1217,7 @@ const ShoppingList: React.FC = () => {
               <p className="empty-title">
                 {search
                   ? "No matches"
-                  : currentListItems.length === 0
+                  : totalCount === 0
                     ? "Bag is empty"
                     : "Nothing here"}
               </p>
@@ -1279,60 +1226,56 @@ const ShoppingList: React.FC = () => {
                   ? "Try a different search term."
                   : `Add your first item to ${activeTabName}.`}
               </p>
+              {!search && totalCount === 0 && (
+                <p className="empty-tip">
+                  Try typing <code>2 milk</code> — the quantity and the aisle
+                  are filled in for you.
+                </p>
+              )}
             </div>
           ) : (
             <div className="items-list">
-              {activeItems.length > 0 && (
+              {activeCount > 0 && (
                 <>
-                  {doneItems.length > 0 && (
+                  {doneCount > 0 && (
                     <div className="items-divider">
                       <span className="items-divider-label">To get</span>
                       <div className="items-divider-line" />
                     </div>
                   )}
-                  {groupedActiveItems.map((group) => (
+                  {activeGroups.map((group) => (
                     <CategoryGroup
                       key={group.category}
                       group={group}
+                      showHeading={
+                        activeGroups.length > 1 ||
+                        group.category !== DEFAULT_CATEGORY
+                      }
+                      edit={edit}
                       onToggle={toggleComplete}
                       onDelete={deleteItem}
-                      editingId={editingId}
-                      editText={editText}
-                      editQuantity={editQuantity}
-                      editCategory={editCategory}
-                      onEditStart={startEdit}
-                      onEditTextChange={setEditText}
-                      onEditQuantityChange={setEditQuantity}
-                      onEditCategoryChange={setEditCategory}
-                      onEditCommit={commitEdit}
-                      onEditCancel={cancelEdit}
                     />
                   ))}
                 </>
               )}
 
-              {doneItems.length > 0 && (
+              {doneCount > 0 && (
                 <>
                   <div className="items-divider">
                     <span className="items-divider-label">Got it</span>
                     <div className="items-divider-line" />
                   </div>
-                  {groupedDoneItems.map((group) => (
+                  {doneGroups.map((group) => (
                     <CategoryGroup
                       key={group.category}
                       group={group}
+                      showHeading={
+                        doneGroups.length > 1 ||
+                        group.category !== DEFAULT_CATEGORY
+                      }
+                      edit={edit}
                       onToggle={toggleComplete}
                       onDelete={deleteItem}
-                      editingId={editingId}
-                      editText={editText}
-                      editQuantity={editQuantity}
-                      editCategory={editCategory}
-                      onEditStart={startEdit}
-                      onEditTextChange={setEditText}
-                      onEditQuantityChange={setEditQuantity}
-                      onEditCategoryChange={setEditCategory}
-                      onEditCommit={commitEdit}
-                      onEditCancel={cancelEdit}
                     />
                   ))}
                 </>
@@ -1363,524 +1306,19 @@ const ShoppingList: React.FC = () => {
       )}
 
       {shareOpen && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={() => setShareOpen(false)}
-        >
-          <section
-            className="settings-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="share-title"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
-              <div>
-                <h2 id="share-title">Share list</h2>
-                <p>
-                  {isSharing
-                    ? "Anyone with the link or QR code can view your list."
-                    : "Publish your list to a public link or QR code."}
-                </p>
-              </div>
-              <button
-                className="modal-close"
-                type="button"
-                autoFocus
-                onClick={() => setShareOpen(false)}
-                aria-label="Close share dialog"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="share-panel">
-              {isSharing ? (
-                <>
-                  <div className="qr-frame">
-                    {shareUrl ? (
-                      <QRCodeSVG value={shareUrl} size={184} marginSize={2} />
-                    ) : (
-                      <div className="qr-placeholder" />
-                    )}
-                  </div>
-                  <p className="share-status" role="status">
-                    {shareStatus || "Live - changes publish automatically"}
-                  </p>
-                  <div className="share-actions">
-                    <button
-                      className="secondary-btn"
-                      type="button"
-                      onClick={copyShareLink}
-                      disabled={!shareUrl}
-                    >
-                      <Copy size={15} />
-                      Copy link
-                    </button>
-                  </div>
-                  <div className="share-perms">
-                    <div className="share-perms-head">
-                      <span className="share-perms-title">
-                        Visitor permissions
-                      </span>
-                      <span className="share-perms-state">
-                        {allowEdits ? "Can edit" : "View only"}
-                      </span>
-                    </div>
-                    <div
-                      className="perm-chips"
-                      role="group"
-                      aria-label="Visitor permissions"
-                    >
-                      <button
-                        type="button"
-                        className={`perm-chip ${permissions.toggle ? "is-on" : ""}`}
-                        aria-pressed={permissions.toggle}
-                        title="Let visitors check items off"
-                        onClick={() =>
-                          togglePermission("toggle", !permissions.toggle)
-                        }
-                      >
-                        <Check size={15} strokeWidth={2.5} />
-                        Check off
-                      </button>
-                      <button
-                        type="button"
-                        className={`perm-chip ${permissions.add ? "is-on" : ""}`}
-                        aria-pressed={permissions.add}
-                        title="Let visitors add items"
-                        onClick={() =>
-                          togglePermission("add", !permissions.add)
-                        }
-                      >
-                        <Plus size={15} strokeWidth={2.5} />
-                        Add
-                      </button>
-                      <button
-                        type="button"
-                        className={`perm-chip ${permissions.remove ? "is-on" : ""}`}
-                        aria-pressed={permissions.remove}
-                        title="Let visitors remove items"
-                        onClick={() =>
-                          togglePermission("remove", !permissions.remove)
-                        }
-                      >
-                        <Trash2 size={14} strokeWidth={2.5} />
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                  <button
-                    className="text-action-btn danger"
-                    type="button"
-                    onClick={() => setConfirmAction("stopSharing")}
-                    disabled={shareBusy}
-                  >
-                    {shareBusy ? "Stopping..." : "Stop sharing"}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="share-empty">
-                    <Share2 size={36} strokeWidth={1.5} />
-                    <p>Sharing is off.</p>
-                    <p className="share-empty-text">
-                      Anyone with the link can view (not edit) your list.
-                    </p>
-                  </div>
-                  {shareStatus && (
-                    <p className="share-status" role="status">
-                      {shareStatus}
-                    </p>
-                  )}
-                  <button
-                    className="primary-btn"
-                    type="button"
-                    onClick={startSharing}
-                    disabled={shareBusy}
-                  >
-                    {shareBusy ? "Starting..." : "Start sharing"}
-                  </button>
-                </>
-              )}
-            </div>
-          </section>
-        </div>
+        <ShareDialog
+          isSharing={isSharing}
+          shareUrl={shareUrl}
+          shareStatus={shareStatus}
+          busy={shareBusy}
+          permissions={permissions}
+          onClose={() => setShareOpen(false)}
+          onStartSharing={startSharing}
+          onCopyLink={copyShareLink}
+          onTogglePermission={togglePermission}
+          onRequestStopSharing={() => setConfirmAction("stopSharing")}
+        />
       )}
-    </div>
-  );
-};
-
-function groupItemsByCategory(items: ShoppingItem[]) {
-  const groups = new Map<string, ShoppingItem[]>();
-
-  items.forEach((item) => {
-    const category = getItemCategory(item);
-    groups.set(category, [...(groups.get(category) ?? []), item]);
-  });
-
-  return Array.from(groups, ([category, categoryItems]) => ({
-    category,
-    items: categoryItems,
-  })).sort((a, b) => {
-    if (a.category === DEFAULT_CATEGORY) return 1;
-    if (b.category === DEFAULT_CATEGORY) return -1;
-    return a.category.localeCompare(b.category);
-  });
-}
-
-interface DismissibleMessageProps {
-  kind: "error" | "success";
-  message: string;
-  onDismiss: () => void;
-}
-
-const DismissibleMessage: React.FC<DismissibleMessageProps> = ({
-  kind,
-  message,
-  onDismiss,
-}) => (
-  <div
-    className={`${kind === "error" ? "form-error" : "form-success"} inline-error dismissible-message`}
-    role={kind === "error" ? "alert" : "status"}
-  >
-    <span>{message}</span>
-    <button type="button" onClick={onDismiss} aria-label="Dismiss message">
-      <X size={14} />
-    </button>
-  </div>
-);
-
-interface ConfirmDialogProps {
-  action: ConfirmAction;
-  itemCount: number;
-  listName: string;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-function getConfirmCopy(action: ConfirmAction, itemCount: number, listName: string) {
-  if (action === "clearCompleted") {
-    return {
-      title: "Clear completed items?",
-      body: `This will permanently remove ${itemCount} completed ${
-        itemCount === 1 ? "item" : "items"
-      } from ${listName}.`,
-      confirmLabel: "Clear items",
-    };
-  }
-
-  if (action === "removeSharedList") {
-    return {
-      title: "Remove this list?",
-      body: `${listName} and its saved items will be removed from your account.`,
-      confirmLabel: "Remove list",
-    };
-  }
-
-  return {
-    title: "Stop sharing?",
-    body: "Anyone with your current share link or QR code will no longer be able to view this list.",
-    confirmLabel: "Stop sharing",
-  };
-}
-
-const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
-  action,
-  itemCount,
-  listName,
-  busy,
-  onCancel,
-  onConfirm,
-}) => {
-  const copy = getConfirmCopy(action, itemCount, listName);
-
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onCancel}>
-      <section
-        className="settings-modal confirm-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="confirm-title"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <div>
-            <h2 id="confirm-title">{copy.title}</h2>
-            <p>{copy.body}</p>
-          </div>
-          <button
-            className="modal-close"
-            type="button"
-            autoFocus
-            onClick={onCancel}
-            aria-label="Cancel"
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <div className="confirm-actions">
-          <button className="secondary-btn" type="button" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            className="danger-btn"
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-          >
-            {busy ? "Working..." : copy.confirmLabel}
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-};
-
-interface UserAvatarProps {
-  user: User | null;
-}
-
-const UserAvatar: React.FC<UserAvatarProps> = ({ user }) => {
-  const [imgFailed, setImgFailed] = React.useState(false);
-  const initial = user?.displayName?.[0]?.toUpperCase() ?? "?";
-
-  if (user?.photoURL && !imgFailed) {
-    return (
-      <img
-        src={user.photoURL}
-        alt=""
-        className="user-avatar"
-        referrerPolicy="no-referrer"
-        onError={() => setImgFailed(true)}
-      />
-    );
-  }
-
-  return <div className="user-avatar user-avatar-initials">{initial}</div>;
-};
-
-interface CategoryGroupProps {
-  group: { category: string; items: ShoppingItem[] };
-  onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
-  onDelete: (id: string) => void;
-  editingId: string | null;
-  editText: string;
-  editQuantity: string;
-  editCategory: string;
-  onEditStart: (item: ShoppingItem) => void;
-  onEditTextChange: (value: string) => void;
-  onEditQuantityChange: (value: string) => void;
-  onEditCategoryChange: (value: string) => void;
-  onEditCommit: () => void;
-  onEditCancel: () => void;
-}
-
-const CategoryGroup: React.FC<CategoryGroupProps> = ({
-  group,
-  onToggle,
-  onDelete,
-  editingId,
-  editText,
-  editQuantity,
-  editCategory,
-  onEditStart,
-  onEditTextChange,
-  onEditQuantityChange,
-  onEditCategoryChange,
-  onEditCommit,
-  onEditCancel,
-}) => (
-  <div className="category-group">
-    <div className="category-heading">{group.category}</div>
-    {group.items.map((item, index) => (
-      <ItemRow
-        key={item.id}
-        item={item}
-        index={index}
-        onToggle={onToggle}
-        onDelete={onDelete}
-        isEditing={editingId === item.id}
-        editText={editText}
-        editQuantity={editQuantity}
-        editCategory={editCategory}
-        onEditStart={onEditStart}
-        onEditTextChange={onEditTextChange}
-        onEditQuantityChange={onEditQuantityChange}
-        onEditCategoryChange={onEditCategoryChange}
-        onEditCommit={onEditCommit}
-        onEditCancel={onEditCancel}
-      />
-    ))}
-  </div>
-);
-
-interface ItemRowProps {
-  item: ShoppingItem;
-  index: number;
-  onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
-  onDelete: (id: string) => void;
-  isEditing: boolean;
-  editText: string;
-  editQuantity: string;
-  editCategory: string;
-  onEditStart: (item: ShoppingItem) => void;
-  onEditTextChange: (value: string) => void;
-  onEditQuantityChange: (value: string) => void;
-  onEditCategoryChange: (value: string) => void;
-  onEditCommit: () => void;
-  onEditCancel: () => void;
-}
-
-const ItemRow: React.FC<ItemRowProps> = ({
-  item,
-  index,
-  onToggle,
-  onDelete,
-  isEditing,
-  editText,
-  editQuantity,
-  editCategory,
-  onEditStart,
-  onEditTextChange,
-  onEditQuantityChange,
-  onEditCategoryChange,
-  onEditCommit,
-  onEditCancel,
-}) => {
-  return (
-    <div
-      className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
-      style={{ animationDelay: `${Math.min(index, 8) * 0.04}s` }}
-    >
-      <button
-        className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (!isEditing) onToggle(item.id, item.completed, item);
-        }}
-        type="button"
-        aria-label={
-          item.completed
-            ? `Mark "${item.text}" as needed`
-            : `Mark "${item.text}" as completed`
-        }
-        aria-pressed={item.completed}
-      >
-        {item.completed && <Check size={13} strokeWidth={3} />}
-      </button>
-
-      {isEditing ? (
-        <div
-          className="item-edit-fields"
-          onClick={(e) => e.stopPropagation()}
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-              onEditCommit();
-            }
-          }}
-        >
-          <input
-            className="item-edit-input"
-            value={editText}
-            autoFocus
-            onChange={(e) => onEditTextChange(e.target.value)}
-            maxLength={MAX_ITEM_TEXT_LENGTH}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onEditCommit();
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                onEditCancel();
-              }
-            }}
-            aria-label="Edit item text"
-          />
-          <input
-            className="item-edit-input item-edit-meta"
-            value={editQuantity}
-            onChange={(e) => onEditQuantityChange(e.target.value)}
-            maxLength={MAX_QUANTITY_LENGTH}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onEditCommit();
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                onEditCancel();
-              }
-            }}
-            placeholder="Qty"
-            aria-label="Edit item quantity"
-          />
-          <input
-            className="item-edit-input item-edit-meta"
-            value={editCategory}
-            onChange={(e) => onEditCategoryChange(e.target.value)}
-            maxLength={MAX_CATEGORY_LENGTH}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onEditCommit();
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                onEditCancel();
-              }
-            }}
-            placeholder="Category"
-            aria-label="Edit item category"
-          />
-        </div>
-      ) : (
-        <button
-          className="item-content"
-          type="button"
-          onClick={() => onToggle(item.id, item.completed, item)}
-          aria-label={`${item.completed ? "Mark as needed" : "Mark as completed"}: ${item.text}`}
-        >
-          <span className="item-text">{item.text}</span>
-          {(item.quantity || item.category) && (
-            <span className="item-meta">
-              {item.quantity && <span>{item.quantity}</span>}
-              {item.category && <span>{item.category}</span>}
-            </span>
-          )}
-        </button>
-      )}
-
-      {!isEditing && (
-        <button
-          className="edit-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEditStart(item);
-          }}
-          title="Edit item"
-          type="button"
-          aria-label={`Edit "${item.text}"`}
-        >
-          <Pencil size={14} />
-        </button>
-      )}
-
-      <button
-        className="delete-btn"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(item.id);
-        }}
-        title="Remove item"
-        type="button"
-        aria-label={`Remove "${item.text}"`}
-      >
-        <Trash2 size={15} />
-      </button>
     </div>
   );
 };

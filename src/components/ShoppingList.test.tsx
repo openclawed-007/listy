@@ -48,16 +48,29 @@ vi.mock("../firebase", () => ({
 
 vi.mock("firebase/firestore", () => ({
   addDoc: mockAddDoc,
-  collection: vi.fn((_db: unknown, path: string) => ({ path, type: "collection" })),
+  collection: vi.fn((_db: unknown, path: string) => ({
+    path,
+    type: "collection",
+  })),
   deleteDoc: mockDeleteDoc,
-  doc: vi.fn((first: { path?: string; type?: string } | unknown, ...segments: string[]) => {
-    if (typeof first === "object" && first && "type" in first && first.type === "collection") {
-      autoDocId += 1;
-      return { path: `${first.path}/auto-${autoDocId}` };
-    }
+  doc: vi.fn(
+    (
+      first: { path?: string; type?: string } | unknown,
+      ...segments: string[]
+    ) => {
+      if (
+        typeof first === "object" &&
+        first &&
+        "type" in first &&
+        first.type === "collection"
+      ) {
+        autoDocId += 1;
+        return { path: `${first.path}/auto-${autoDocId}` };
+      }
 
-    return { path: segments.join("/") };
-  }),
+      return { path: segments.join("/") };
+    },
+  ),
   getDoc: mockGetDoc,
   getDocs: mockGetDocs,
   onSnapshot: mockOnSnapshot,
@@ -65,7 +78,11 @@ vi.mock("firebase/firestore", () => ({
   serverTimestamp: vi.fn(() => "server-time"),
   setDoc: mockSetDoc,
   updateDoc: mockUpdateDoc,
-  where: vi.fn((field: string, operator: string, value: unknown) => ({ field, operator, value })),
+  where: vi.fn((field: string, operator: string, value: unknown) => ({
+    field,
+    operator,
+    value,
+  })),
   writeBatch: vi.fn(() => ({
     delete: mockBatchDelete,
     set: mockBatchSet,
@@ -134,7 +151,8 @@ beforeEach(() => {
 
   mockGetDocs.mockImplementation(() =>
     Promise.resolve({
-      forEach: (callback: (doc: MockDoc) => void) => queryDocs.forEach(callback),
+      forEach: (callback: (doc: MockDoc) => void) =>
+        queryDocs.forEach(callback),
     }),
   );
 
@@ -158,7 +176,10 @@ describe("ShoppingList sharing", () => {
         listName: "Alex",
       }),
     ];
-    mockGetDoc.mockResolvedValue({ exists: () => false, data: () => undefined });
+    mockGetDoc.mockResolvedValue({
+      exists: () => false,
+      data: () => undefined,
+    });
 
     renderShoppingList();
 
@@ -166,7 +187,9 @@ describe("ShoppingList sharing", () => {
 
     expect(mockSetDoc).not.toHaveBeenCalled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Start sharing" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start sharing" }),
+    );
 
     await waitFor(() => {
       expect(mockSetDoc).toHaveBeenCalledWith(
@@ -207,14 +230,20 @@ describe("ShoppingList sharing", () => {
     renderShoppingList();
 
     await userEvent.click(
-      await screen.findByRole("button", { name: /share list \(sharing is on\)/i }),
+      await screen.findByRole("button", {
+        name: /share list \(sharing is on\)/i,
+      }),
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
-    await userEvent.click(screen.getAllByRole("button", { name: "Stop sharing" })[0]);
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "Stop sharing" })[0],
+    );
 
     await waitFor(() => {
-      expect(mockDeleteDoc).toHaveBeenCalledWith({ path: "sharedLists/owner-uid" });
+      expect(mockDeleteDoc).toHaveBeenCalledWith({
+        path: "sharedLists/owner-uid",
+      });
     });
   });
 
@@ -230,12 +259,16 @@ describe("ShoppingList sharing", () => {
 
     renderShoppingList();
 
-    await userEvent.click(await screen.findByRole("button", { name: 'Edit "Milk"' }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: 'Edit "Milk"' }),
+    );
     const input = screen.getByLabelText("Edit item text");
     await userEvent.clear(input);
     await userEvent.keyboard("{Enter}");
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Item text cannot be empty.");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Item text cannot be empty.",
+    );
     expect(screen.getByLabelText("Edit item text")).toBeInTheDocument();
     expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
@@ -244,12 +277,16 @@ describe("ShoppingList sharing", () => {
     renderShoppingList();
 
     await userEvent.click(screen.getByRole("button", { name: "Share list" }));
-    expect(screen.getByRole("dialog", { name: "Share list" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Share list" }),
+    ).toBeInTheDocument();
     expect(document.body.style.overflow).toBe("hidden");
 
     await userEvent.keyboard("{Escape}");
 
-    expect(screen.queryByRole("dialog", { name: "Share list" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Share list" }),
+    ).not.toBeInTheDocument();
     expect(document.body.style.overflow).toBe("");
   });
 
@@ -301,7 +338,9 @@ describe("ShoppingList sharing", () => {
 
     await waitFor(() => expect(mockBatchCommit).toHaveBeenCalled());
 
-    expect(mockBatchDelete).toHaveBeenCalledWith({ path: "shoppingItems/old-shared-1" });
+    expect(mockBatchDelete).toHaveBeenCalledWith({
+      path: "shoppingItems/old-shared-1",
+    });
     expect(mockBatchSet).toHaveBeenCalledWith(
       { path: "shoppingItems/auto-1" },
       expect.objectContaining({
@@ -352,11 +391,17 @@ describe("ShoppingList sharing", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Alex" }));
     await userEvent.click(screen.getByRole("button", { name: "Remove list" }));
-    await userEvent.click(screen.getAllByRole("button", { name: "Remove list" })[1]);
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "Remove list" })[1],
+    );
 
     await waitFor(() => {
-      expect(mockBatchDelete).toHaveBeenCalledWith({ path: "shoppingItems/shared-1" });
-      expect(mockBatchDelete).toHaveBeenCalledWith({ path: "shoppingItems/shared-2" });
+      expect(mockBatchDelete).toHaveBeenCalledWith({
+        path: "shoppingItems/shared-1",
+      });
+      expect(mockBatchDelete).toHaveBeenCalledWith({
+        path: "shoppingItems/shared-2",
+      });
       expect(mockBatchCommit).toHaveBeenCalled();
     });
   });
@@ -389,5 +434,81 @@ describe("ShoppingList sharing", () => {
     expect(mockBatchCommit).not.toHaveBeenCalled();
     expect(mockBatchDelete).not.toHaveBeenCalled();
     expect(mockBatchSet).not.toHaveBeenCalled();
+  });
+});
+
+describe("ShoppingList smart add field", () => {
+  it("reads the quantity and aisle out of what the customer typed", async () => {
+    renderShoppingList();
+
+    await userEvent.type(screen.getByLabelText("New shopping item"), "2 milk");
+    await userEvent.click(screen.getByRole("button", { name: "Add item" }));
+
+    await waitFor(() => {
+      expect(mockAddDoc).toHaveBeenCalledWith(
+        expect.objectContaining({ path: "shoppingItems" }),
+        expect.objectContaining({
+          text: "Milk",
+          quantity: "2",
+          category: "Dairy & Eggs",
+          completed: false,
+          listId: "personal",
+        }),
+      );
+    });
+  });
+
+  it("bumps the existing row instead of adding a duplicate", async () => {
+    snapshotDocs = [
+      makeDoc("personal-1", {
+        text: "Milk",
+        completed: true,
+        userId: user.uid,
+        listId: "personal",
+      }),
+    ];
+
+    renderShoppingList();
+
+    await userEvent.type(
+      await screen.findByLabelText("New shopping item"),
+      "milk",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add item" }));
+
+    await waitFor(() => {
+      expect(mockUpdateDoc).toHaveBeenCalledWith(
+        { path: "shoppingItems/personal-1" },
+        expect.objectContaining({ completed: false, quantity: "2" }),
+      );
+    });
+    expect(mockAddDoc).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/already on your list — now x2/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows progress towards finishing the list", async () => {
+    snapshotDocs = [
+      makeDoc("personal-1", {
+        text: "Milk",
+        completed: true,
+        userId: user.uid,
+        listId: "personal",
+      }),
+      makeDoc("personal-2", {
+        text: "Bread",
+        completed: false,
+        userId: user.uid,
+        listId: "personal",
+      }),
+    ];
+
+    renderShoppingList();
+
+    const progress = await screen.findByRole("progressbar", {
+      name: "1 of 2 items picked up",
+    });
+    expect(progress).toHaveAttribute("aria-valuenow", "50");
   });
 });
