@@ -57,7 +57,11 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   const copy = getConfirmCopy(action, itemCount, listName);
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onCancel}>
+    <div
+      className="modal-backdrop confirm-backdrop"
+      role="presentation"
+      onMouseDown={onCancel}
+    >
       <section
         className="settings-modal confirm-modal"
         role="dialog"

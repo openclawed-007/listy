@@ -139,7 +139,7 @@ body::before {
    HEADER / NAVBAR
    =========================== */
 .navbar {
-  padding: 0 max(1.5rem, calc((100% - 640px) / 2));
+  padding: env(safe-area-inset-top, 0px) max(1.5rem, calc((100% - 640px) / 2)) 0;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -296,6 +296,11 @@ input:focus-visible,
   transform: translateX(1px);
 }
 
+.logout-btn:active {
+  background: rgba(192, 107, 74, 0.16);
+  transform: scale(0.94);
+}
+
 /* Theme toggle */
 .theme-toggle {
   width: 36px;
@@ -317,6 +322,11 @@ input:focus-visible,
   border-color: var(--sage-light);
   color: var(--sage);
   transform: rotate(20deg) scale(1.08);
+}
+
+.theme-toggle:active {
+  background: rgba(107, 143, 113, 0.18);
+  transform: scale(0.94);
 }
 
 /* ===========================
@@ -639,6 +649,8 @@ input:focus-visible,
   transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.3s ease;
   animation: pop-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
   box-shadow: var(--shadow-sm);
+  /* Keep edit fields clear of sticky nav + soft keyboard. */
+  scroll-margin-block: 5.5rem;
 }
 
 .item-row:hover {
@@ -677,6 +689,10 @@ input:focus-visible,
 .toggle-btn:hover {
   border-color: var(--sage);
   background: rgba(107, 143, 113, 0.08);
+}
+
+.toggle-btn:active {
+  transform: scale(0.92);
 }
 
 .toggle-btn.is-checked {
@@ -777,6 +793,11 @@ input:focus-visible,
   color: var(--terra);
 }
 
+.delete-btn:active {
+  background: rgba(192, 107, 74, 0.16);
+  color: var(--terra);
+  transform: scale(0.92);
+}
 
 /* Inline edit input */
 .item-edit-fields {
@@ -796,7 +817,8 @@ input:focus-visible,
   border-radius: 0;
   padding: 0.1rem 0.25rem;
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.97rem;
+  /* ≥16px so iOS does not zoom the page when the field is focused. */
+  font-size: 1rem;
   font-weight: 400;
   color: var(--ink);
   outline: none;
@@ -809,7 +831,7 @@ input:focus-visible,
 }
 
 .item-edit-meta {
-  font-size: 0.84rem;
+  font-size: 1rem;
 }
 
 /* Row state while editing */
@@ -843,6 +865,12 @@ input:focus-visible,
 .edit-btn:hover {
   background: rgba(107, 143, 113, 0.1);
   color: var(--sage);
+}
+
+.edit-btn:active {
+  background: rgba(107, 143, 113, 0.16);
+  color: var(--sage);
+  transform: scale(0.92);
 }
 
 /* Always visible on touch/mobile screens */
@@ -1314,10 +1342,18 @@ input:focus-visible,
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.25rem;
+  padding: max(1.25rem, env(safe-area-inset-top, 0px))
+    max(1.25rem, env(safe-area-inset-right, 0px))
+    max(1.25rem, env(safe-area-inset-bottom, 0px))
+    max(1.25rem, env(safe-area-inset-left, 0px));
   background: rgba(42, 37, 32, 0.38);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+}
+
+/* Destructive confirm sits over other modals (e.g. Stop sharing from Share). */
+.modal-backdrop.confirm-backdrop {
+  z-index: 600;
 }
 
 body.dark .modal-backdrop {
@@ -1904,7 +1940,7 @@ body.dark .modal-backdrop {
     gap: 0.5rem;
   }
 
-  /* Slightly smaller controls so the single add row feels light on mobile. */
+  /* Slightly shorter controls on mobile — keep 16px type to avoid iOS zoom. */
   .add-input,
   .add-btn {
     height: 48px;
@@ -1917,7 +1953,7 @@ body.dark .modal-backdrop {
 
   .add-input {
     padding: 0 1rem;
-    font-size: 0.95rem;
+    font-size: 1rem;
     border-radius: var(--radius-sm);
   }
 
@@ -1930,7 +1966,7 @@ body.dark .modal-backdrop {
   }
 
   .navbar {
-    padding: 0 1rem;
+    padding: env(safe-area-inset-top, 0px) 1rem 0;
   }
 
   .page-title {

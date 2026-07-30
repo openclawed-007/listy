@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { User } from "firebase/auth";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -236,8 +236,13 @@ describe("ShoppingList sharing", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
+
+    // Confirm sits above the share modal; target that dialog explicitly.
+    const confirm = await screen.findByRole("dialog", {
+      name: /stop sharing\?/i,
+    });
     await userEvent.click(
-      screen.getAllByRole("button", { name: "Stop sharing" })[0],
+      within(confirm).getByRole("button", { name: "Stop sharing" }),
     );
 
     await waitFor(() => {

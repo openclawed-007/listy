@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { Check, Pencil, Trash2 } from "lucide-react";
 import {
   formatQuantity,
@@ -60,9 +60,33 @@ const ItemRow: React.FC<ItemRowProps> = ({
 }) => {
   const isEditing = edit.editingId === item.id;
   const handleEditKeys = useEditKeys(edit);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+
+  // Soft keyboard can cover lower rows; bring the edit target into view.
+  useEffect(() => {
+    if (!isEditing) return undefined;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const frame = window.requestAnimationFrame(() => {
+      const node = rowRef.current;
+      // jsdom has no layout engine; scrollIntoView is missing or throws.
+      if (!node || typeof node.scrollIntoView !== "function") return;
+      try {
+        node.scrollIntoView({
+          block: "nearest",
+          behavior: reduceMotion ? "auto" : "smooth",
+        });
+      } catch {
+        // Ignore environments without scroll support.
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isEditing]);
 
   return (
     <div
+      ref={rowRef}
       className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
       style={{ animationDelay: `${Math.min(index, 8) * 0.04}s` }}
     >

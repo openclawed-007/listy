@@ -1294,17 +1294,6 @@ const ShoppingList: React.FC = () => {
         </div>
       )}
 
-      {confirmAction && (
-        <ConfirmDialog
-          action={confirmAction}
-          itemCount={allDoneCount}
-          listName={activeTabName}
-          busy={shareBusy && confirmAction === "stopSharing"}
-          onCancel={() => setConfirmAction(null)}
-          onConfirm={runConfirmedAction}
-        />
-      )}
-
       {shareOpen && (
         <ShareDialog
           isSharing={isSharing}
@@ -1317,6 +1306,18 @@ const ShoppingList: React.FC = () => {
           onCopyLink={copyShareLink}
           onTogglePermission={togglePermission}
           onRequestStopSharing={() => setConfirmAction("stopSharing")}
+        />
+      )}
+
+      {/* Confirm must stack above Share (same base z-index would leave it trapped behind). */}
+      {confirmAction && (
+        <ConfirmDialog
+          action={confirmAction}
+          itemCount={allDoneCount}
+          listName={activeTabName}
+          busy={shareBusy && confirmAction === "stopSharing"}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={runConfirmedAction}
         />
       )}
     </div>
