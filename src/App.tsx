@@ -14,6 +14,7 @@ import "./App.css";
 
 const ShoppingList = lazy(() => import("./components/ShoppingList"));
 const Login = lazy(() => import("./components/Login"));
+const GuestList = lazy(() => import("./components/GuestList"));
 const PublicSharedList = lazy(() => import("./components/PublicSharedList"));
 const NotFound = lazy(() => import("./components/NotFound"));
 const PrivacyPage = lazy(() =>
@@ -79,6 +80,7 @@ const App: React.FC = () => {
                   </ProtectedRoute>
                 }
               />
+              <Route path="/guest" element={<GuestList />} />
               <Route path="/share/:shareId" element={<PublicSharedList />} />
               <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="/terms" element={<TermsPage />} />

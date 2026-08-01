@@ -2140,3 +2140,13 @@ body.dark .setup-warning {
 body.dark .clear-done-btn:hover {
   background: rgba(224, 138, 106, 0.1);
 }
+
+
+.login-divider { display: flex; align-items: center; gap: 0.75rem; margin: 1rem 0 0.75rem; color: var(--ink-faint); font-size: 0.72rem; }
+.login-divider::before, .login-divider::after { content: ""; flex: 1; height: 1px; background: var(--cream-deep); }
+.guest-button { min-height: 46px; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--cream-deep); border-radius: var(--radius); color: var(--ink); background: var(--cream); text-decoration: none; font-size: 0.9rem; font-weight: 700; }
+.guest-button:hover { background: var(--cream-dark); border-color: var(--ink-faint); }
+.guest-badge { padding: 0.2rem 0.55rem; border-radius: var(--radius-pill); background: var(--cream-dark); color: var(--ink-muted); font-size: 0.72rem; font-weight: 700; }
+.guest-note { margin-top: 0.45rem; color: var(--ink-muted); font-size: 0.82rem; }
+.guest-note a { color: var(--sage-dark); font-weight: 700; }
+a.theme-toggle { text-decoration: none; }

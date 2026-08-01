@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { isFirebaseConfigured } from "../firebase";
 import { AlertTriangle } from "lucide-react";
@@ -76,7 +77,9 @@ const Login: React.FC = () => {
               />
               {isLoggingIn ? "Signing in..." : "Continue with Google"}
             </button>
-            <p className="login-trust">Free to use · No adverts · Your lists stay private until you share them.</p>
+            <div className="login-divider"><span>or</span></div>
+            <Link className="guest-button" to="/guest">Continue as guest</Link>
+            <p className="login-trust">No account needed · Guest lists stay on this device.</p>
             {canInstall && (
               <button className="install-button" type="button" onClick={() => void install()}>
                 <Download size={17} /> Install CartLink
