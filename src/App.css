@@ -231,24 +231,31 @@ a:focus-visible {
   font-style: normal;
 }
 
-/* User section */
+/* User section — avatar never shrinks under action icons */
 .user-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  min-width: 0;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.nav-icon-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
 }
 
 .user-chip {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
+  flex-shrink: 0;
   background: var(--cream-dark);
   border: 1.5px solid var(--cream-deep);
   border-radius: var(--radius-pill);
-  padding: 0.35rem 1rem 0.35rem 0.35rem;
+  padding: 0.3rem 0.75rem 0.3rem 0.3rem;
   transition: background 0.2s ease, border-color 0.2s ease;
-  overflow: hidden;
 }
 
 .user-chip:hover {
@@ -257,9 +264,10 @@ a:focus-visible {
 }
 
 .user-avatar {
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid var(--cream-deep);
@@ -365,6 +373,14 @@ a:focus-visible {
   animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.page-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
 .page-title {
   font-family: 'Playfair Display', serif;
   font-size: 2.4rem;
@@ -372,6 +388,38 @@ a:focus-visible {
   color: var(--ink);
   letter-spacing: -0.02em;
   line-height: 1.1;
+  margin: 0;
+  min-width: 0;
+}
+
+/* Room for join without crowding the navbar avatar */
+.page-join-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0.35rem 0.8rem;
+  border: 1.5px solid var(--cream-deep);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--sage-dark);
+  font: 700 0.8rem "DM Sans", sans-serif;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.page-join-btn:hover {
+  background: rgba(107, 143, 113, 0.1);
+  border-color: var(--sage-light);
+  color: var(--sage);
+}
+
+.page-join-btn svg {
+  flex-shrink: 0;
+  display: block;
 }
 
 .page-subtitle {
@@ -1614,11 +1662,61 @@ body.dark .modal-backdrop {
 }
 
 .share-modal-header {
-  margin-bottom: 1rem;
+  margin-bottom: 0.85rem;
 }
 
 .share-modal-header p {
   margin-top: 0.35rem;
+}
+
+.share-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+  padding: 0.25rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius);
+  background: var(--cream);
+  border: 1.5px solid var(--cream-deep);
+}
+
+.share-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  background: transparent;
+  color: var(--ink-muted);
+  font: 700 0.86rem "DM Sans", sans-serif;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.share-tab svg {
+  flex-shrink: 0;
+  display: block;
+}
+
+.share-tab:hover {
+  color: var(--ink);
+}
+
+.share-tab.is-active {
+  background: var(--surface);
+  color: var(--sage-dark);
+  box-shadow: var(--shadow-sm);
+}
+
+.share-tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 100%;
 }
 
 .share-live-line {
@@ -1828,22 +1926,19 @@ body.dark .modal-backdrop {
   align-self: center;
 }
 
-/* Enter someone else's code while signed in */
-.share-join-section {
-  padding-bottom: 0.55rem;
-  border-bottom: 1px solid var(--cream-deep);
-}
-
 .share-join-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
   width: 100%;
 }
 
 .share-join-row {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  min-height: 48px;
-  padding: 0.25rem 0.3rem 0.25rem 0.75rem;
+  gap: 0.45rem;
+  min-height: 52px;
+  padding: 0.3rem 0.35rem 0.3rem 0.9rem;
   border: 1.5px solid var(--cream-deep);
   border-radius: var(--radius);
   background: var(--cream);
@@ -1856,20 +1951,14 @@ body.dark .modal-backdrop {
   background: var(--surface);
 }
 
-.share-join-icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: var(--sage-dark);
-}
-
 .share-join-input {
   flex: 1;
   min-width: 0;
   border: 0;
   background: transparent;
   color: var(--ink);
-  font: 800 1.05rem/1.2 "DM Sans", ui-monospace, monospace;
-  letter-spacing: 0.1em;
+  font: 800 1.2rem/1.2 "DM Sans", ui-monospace, monospace;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   outline: none;
   padding: 0.55rem 0;
@@ -2527,17 +2616,38 @@ body.dark .modal-backdrop {
   }
 
   .user-chip {
-    padding: 0.3rem;
+    padding: 0.25rem;
+  }
+
+  .user-avatar {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
   }
 
   .user-actions {
-    gap: 0.45rem;
+    gap: 0.4rem;
+  }
+
+  .nav-icon-group {
+    gap: 0.3rem;
   }
 
   .theme-toggle,
   .logout-btn {
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .page-heading-row {
+    align-items: flex-start;
+  }
+
+  .page-join-btn {
+    min-height: 34px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.76rem;
   }
 
   .login-card {

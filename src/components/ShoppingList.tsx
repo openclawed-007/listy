@@ -28,7 +28,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
   hasAnyPermission,
@@ -89,7 +89,7 @@ import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import BrandMark from "./BrandMark";
 import ConfirmDialog, { type ConfirmAction } from "./ConfirmDialog";
 import DismissibleMessage from "./DismissibleMessage";
-import ShareDialog from "./ShareDialog";
+import ShareDialog, { type ShareDialogTab } from "./ShareDialog";
 import UserAvatar from "./UserAvatar";
 import {
   CATEGORY_DATALIST_ID,
@@ -129,10 +129,16 @@ const ShoppingList: React.FC = () => {
   const [editCategory, setEditCategory] = useState("");
   const [actionError, setActionError] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareTab, setShareTab] = useState<ShareDialogTab>("share");
   const [shareUrl, setShareUrl] = useState("");
   const [shareCode, setShareCode] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [shareBusy, setShareBusy] = useState(false);
+
+  const openShareDialog = (tab: ShareDialogTab = "share") => {
+    setShareTab(tab);
+    setShareOpen(true);
+  };
   const [permissions, setPermissions] =
     useState<SharePermissions>(NO_PERMISSIONS);
   const allowEdits = hasAnyPermission(permissions);
@@ -1284,72 +1290,78 @@ const ShoppingList: React.FC = () => {
                 <span className="offline-pill-text">Offline</span>
               </span>
             )}
-            <div className="user-chip">
+            <div className="user-chip" title={user?.displayName ?? undefined}>
               <UserAvatar user={user} />
               <span className="user-name">
                 {user?.displayName?.split(" ")[0]}
               </span>
             </div>
-            {canInstall && (
-              <button
-                onClick={() => void install()}
-                className="theme-toggle"
-                title="Install CartLink"
-                type="button"
-                aria-label="Install CartLink"
-              >
-                <Download size={16} />
-              </button>
-            )}
-            <button
-              onClick={toggleDark}
-              className="theme-toggle"
-              title={dark ? "Switch to light mode" : "Switch to dark mode"}
-              type="button"
-              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {dark ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <Link
-              to="/join"
-              className="theme-toggle"
-              title="Enter a share code"
-              aria-label="Enter a share code"
-            >
-              <KeyRound size={16} />
-            </Link>
-            <button
-              onClick={() => setShareOpen(true)}
-              className={`theme-toggle share-button ${isSharing ? "is-sharing" : ""}`}
-              title={isSharing ? "Share & join" : "Share & join"}
-              type="button"
-              aria-label={
-                isSharing
-                  ? "Share and join (sharing is on)"
-                  : "Share and join"
-              }
-            >
-              <Share2 size={16} />
-              {isSharing && (
-                <span className="share-button-dot" aria-hidden="true" />
+            <div className="nav-icon-group">
+              {canInstall && (
+                <button
+                  onClick={() => void install()}
+                  className="theme-toggle"
+                  title="Install CartLink"
+                  type="button"
+                  aria-label="Install CartLink"
+                >
+                  <Download size={16} />
+                </button>
               )}
-            </button>
-            <button
-              onClick={logout}
-              className="logout-btn"
-              title="Sign out"
-              type="button"
-              aria-label="Sign out"
-            >
-              <LogOut size={16} />
-            </button>
+              <button
+                onClick={toggleDark}
+                className="theme-toggle"
+                title={dark ? "Switch to light mode" : "Switch to dark mode"}
+                type="button"
+                aria-label={
+                  dark ? "Switch to light mode" : "Switch to dark mode"
+                }
+              >
+                {dark ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+              <button
+                onClick={() => openShareDialog("share")}
+                className={`theme-toggle share-button ${isSharing ? "is-sharing" : ""}`}
+                title="Share & join"
+                type="button"
+                aria-label={
+                  isSharing
+                    ? "Share and join (sharing is on)"
+                    : "Share and join"
+                }
+              >
+                <Share2 size={16} />
+                {isSharing && (
+                  <span className="share-button-dot" aria-hidden="true" />
+                )}
+              </button>
+              <button
+                onClick={logout}
+                className="logout-btn"
+                title="Sign out"
+                type="button"
+                aria-label="Sign out"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="container">
         <div className="page-heading">
-          <h1 className="page-title">{activeTabName}</h1>
+          <div className="page-heading-row">
+            <h1 className="page-title">{activeTabName}</h1>
+            <button
+              type="button"
+              className="page-join-btn"
+              onClick={() => openShareDialog("join")}
+            >
+              <KeyRound size={15} strokeWidth={2.25} aria-hidden="true" />
+              Join with code
+            </button>
+          </div>
           {notice && (
             <DismissibleMessage
               kind="success"
@@ -1625,6 +1637,7 @@ const ShoppingList: React.FC = () => {
           shareStatus={shareStatus}
           busy={shareBusy}
           permissions={permissions}
+          initialTab={shareTab}
           onClose={() => setShareOpen(false)}
           onStartSharing={startSharing}
           onCopyLink={copyShareLink}
