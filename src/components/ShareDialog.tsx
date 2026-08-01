@@ -1,6 +1,7 @@
 import React from "react";
 import { Check, Copy, Plus, Share2, Trash2, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 import {
   hasAnyPermission,
   type SharePermissions,
@@ -65,16 +66,19 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
   onTogglePermission,
   onRequestStopSharing,
 }) => {
+  const dialogRef = useDialogFocus<HTMLElement>();
   const canSystemShare =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
         className="settings-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="share-title"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="modal-header">
@@ -89,7 +93,6 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
           <button
             className="modal-close"
             type="button"
-            autoFocus
             onClick={onClose}
             aria-label="Close share dialog"
           >

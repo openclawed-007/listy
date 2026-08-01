@@ -1844,14 +1844,14 @@ body.dark .modal-backdrop {
 }
 
 .legal-content h1 {
-  font-family: 'Fraunces', serif;
+  font-family: 'Playfair Display', serif;
   font-size: 2.2rem;
   margin: 0 0 0.4rem;
   letter-spacing: -0.01em;
 }
 
 .legal-content h2 {
-  font-family: 'Fraunces', serif;
+  font-family: 'Playfair Display', serif;
   font-size: 1.25rem;
   margin: 2rem 0 0.6rem;
   color: var(--ink);
@@ -1919,7 +1919,7 @@ body.dark .modal-backdrop {
 
 .not-found-card h1,
 .error-boundary-card h1 {
-  font-family: 'Fraunces', serif;
+  font-family: 'Playfair Display', serif;
   font-size: 1.7rem;
   margin: 0;
   color: var(--ink);
@@ -2053,5 +2053,31 @@ body.dark .modal-backdrop {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* Comfortable minimum targets for touch without making the lean layout bulky. */
+@media (pointer: coarse) {
+  .theme-toggle,
+  .logout-btn,
+  .modal-close,
+  .edit-btn,
+  .delete-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .toggle-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .list-tab,
+  .perm-chip,
+  .secondary-btn,
+  .danger-btn,
+  .clear-done-btn {
+    min-height: 44px;
   }
 }

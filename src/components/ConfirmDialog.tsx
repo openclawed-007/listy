@@ -1,5 +1,6 @@
 import React from "react";
 import { X } from "lucide-react";
+import { useDialogFocus } from "../hooks/useDialogFocus";
 
 export type ConfirmAction =
   | "clearCompleted"
@@ -55,6 +56,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onConfirm,
 }) => {
   const copy = getConfirmCopy(action, itemCount, listName);
+  const dialogRef = useDialogFocus<HTMLElement>();
 
   return (
     <div
@@ -63,10 +65,12 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       onMouseDown={onCancel}
     >
       <section
+        ref={dialogRef}
         className="settings-modal confirm-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="modal-header">
@@ -77,7 +81,6 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <button
             className="modal-close"
             type="button"
-            autoFocus
             onClick={onCancel}
             aria-label="Cancel"
           >

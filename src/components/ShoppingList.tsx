@@ -824,6 +824,14 @@ const ShoppingList: React.FC = () => {
           (item) => (batch) => batch.delete(doc(db, "shoppingItems", item.id)),
         ),
       );
+
+      // Clearing an imported list must mean the same thing to everyone using
+      // it, not just remove this device's local copies.
+      await Promise.all(
+        done
+          .filter((item) => item.sharedFromUserId)
+          .map((item) => propagateToSharedOwner(item, "remove")),
+      );
     } catch (error) {
       console.error("Clear completed error:", error);
       setActionError(
@@ -1264,6 +1272,7 @@ const ShoppingList: React.FC = () => {
                   setSearch("");
                 }}
                 type="button"
+                aria-pressed={activeListId === tab.id}
               >
                 {tab.name}
               </button>
