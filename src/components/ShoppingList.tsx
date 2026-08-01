@@ -16,6 +16,7 @@ import {
   type WriteBatch,
 } from "firebase/firestore";
 import {
+  Download,
   LogOut,
   Moon,
   PackageOpen,
@@ -72,6 +73,7 @@ import {
 import { useAuth } from "../context/useAuth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { useDarkMode } from "../hooks/useDarkMode";
+import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import BrandMark from "./BrandMark";
 import ConfirmDialog, { type ConfirmAction } from "./ConfirmDialog";
 import DismissibleMessage from "./DismissibleMessage";
@@ -102,6 +104,7 @@ const ShoppingList: React.FC = () => {
   const { shareId } = useParams();
   const navigate = useNavigate();
   const { dark, toggle: toggleDark } = useDarkMode();
+  const { canInstall, install } = useInstallPrompt();
   const online = useOnlineStatus();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [newItem, setNewItem] = useState("");
@@ -481,8 +484,9 @@ const ShoppingList: React.FC = () => {
   // Honors the owner's current permissions; silently no-ops if not allowed.
   const propagateToSharedOwner = async (
     item: ShoppingItem,
-    change: "toggle" | "remove" | "add",
+    change: "toggle" | "remove" | "add" | "edit",
     nextCompleted?: boolean,
+    editedItem?: ShoppingItem,
   ) => {
     if (!db || !item.sharedFromUserId) return;
 
@@ -505,7 +509,9 @@ const ShoppingList: React.FC = () => {
           ? ownerPermissions.toggle
           : change === "add"
             ? ownerPermissions.add
-            : ownerPermissions.remove;
+            : change === "edit"
+              ? ownerPermissions.add && ownerPermissions.remove
+              : ownerPermissions.remove;
       if (!ownerAllowsEdits || !permitted) return;
 
       const rawItems = Array.isArray(raw?.items) ? raw.items : [];
@@ -532,7 +538,11 @@ const ShoppingList: React.FC = () => {
       }
 
       let workingItems: unknown[];
-      if (change === "remove") {
+      if (change === "edit" && editedItem) {
+        workingItems = rawItems.map((rawItem, index) =>
+          index === matchIndex ? toSharedItemPayload(editedItem) : rawItem,
+        );
+      } else if (change === "remove") {
         workingItems = rawItems.filter((_raw, index) => index !== matchIndex);
       } else if (change === "add") {
         workingItems = [...rawItems, toSharedItemPayload(item)];
@@ -768,11 +778,26 @@ const ShoppingList: React.FC = () => {
 
     try {
       setActionError("");
+      const original = items.find((item) => item.id === id);
       await updateDoc(doc(db, "shoppingItems", id), {
         text: trimmed,
         quantity: normalizedQuantity || deleteField(),
         category: normalizedCategory || deleteField(),
       });
+
+      if (original?.sharedFromUserId) {
+        await propagateToSharedOwner(
+          original,
+          "edit",
+          undefined,
+          {
+            ...original,
+            text: trimmed,
+            quantity: normalizedQuantity || undefined,
+            category: normalizedCategory || undefined,
+          },
+        );
+      }
       return true;
     } catch (error) {
       console.error("Update item details error:", error);
@@ -1114,6 +1139,17 @@ const ShoppingList: React.FC = () => {
                 {user?.displayName?.split(" ")[0]}
               </span>
             </div>
+            {canInstall && (
+              <button
+                onClick={() => void install()}
+                className="theme-toggle"
+                title="Install CartLink"
+                type="button"
+                aria-label="Install CartLink"
+              >
+                <Download size={16} />
+              </button>
+            )}
             <button
               onClick={toggleDark}
               className="theme-toggle"

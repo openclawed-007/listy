@@ -1360,6 +1360,14 @@ input:focus-visible,
   gap: 0.45rem; font: 700 0.86rem 'DM Sans', sans-serif;
 }
 .install-button:hover { color: var(--sage); }
+.login-legal {
+  margin-top: 1rem;
+  color: var(--ink-faint);
+  font-size: 0.67rem;
+  line-height: 1.35;
+}
+.login-legal a { color: inherit; text-decoration: none; }
+.login-legal a:hover { color: var(--ink-muted); text-decoration: underline; }
 
 /* Loading state */
 .loading-screen {
@@ -2118,4 +2126,17 @@ body.dark .modal-backdrop {
   .clear-done-btn {
     min-height: 44px;
   }
+}
+
+
+/* Keep status feedback legible against the dark surface. */
+body.dark .form-error,
+body.dark .setup-warning {
+  background: rgba(224, 138, 106, 0.1);
+  border-color: rgba(224, 138, 106, 0.38);
+  color: #f1b39d;
+}
+
+body.dark .clear-done-btn:hover {
+  background: rgba(224, 138, 106, 0.1);
 }

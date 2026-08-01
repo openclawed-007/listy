@@ -53,6 +53,7 @@ vi.mock("firebase/firestore", () => ({
     type: "collection",
   })),
   deleteDoc: mockDeleteDoc,
+  deleteField: vi.fn(() => "delete-field"),
   doc: vi.fn(
     (
       first: { path?: string; type?: string } | unknown,
@@ -443,6 +444,48 @@ describe("ShoppingList sharing", () => {
     expect(mockBatchCommit).not.toHaveBeenCalled();
     expect(mockBatchDelete).not.toHaveBeenCalled();
     expect(mockBatchSet).not.toHaveBeenCalled();
+  });
+});
+
+describe("ShoppingList imported-list editing", () => {
+  it("propagates an edited shared item back to its owner in one update", async () => {
+    snapshotDocs = [
+      makeDoc("shared-1", {
+        text: "Apples",
+        completed: false,
+        userId: user.uid,
+        listId: "shared:alex-uid",
+        listName: "Alex",
+        sharedFromUserId: "alex-uid",
+      }),
+    ];
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({
+        ownerId: "alex-uid",
+        ownerName: "Alex",
+        allowEdits: true,
+        permissions: { toggle: true, add: true, remove: true },
+        items: [{ text: "Apples", completed: false }],
+      }),
+    });
+
+    renderShoppingList();
+    await userEvent.click(await screen.findByRole("button", { name: "Alex" }));
+    await userEvent.click(screen.getByRole("button", { name: 'Edit "Apples"' }));
+    const input = screen.getByLabelText("Edit item text");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Green apples");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(mockUpdateDoc).toHaveBeenCalledWith(
+        { path: "sharedLists/alex-uid" },
+        expect.objectContaining({
+          items: [{ text: "Green apples", completed: false }],
+        }),
+      ),
+    );
   });
 });
 

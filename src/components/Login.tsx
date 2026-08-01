@@ -1,5 +1,4 @@
 import React from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { isFirebaseConfigured } from "../firebase";
 import { AlertTriangle } from "lucide-react";
@@ -83,28 +82,11 @@ const Login: React.FC = () => {
                 <Download size={17} /> Install CartLink
               </button>
             )}
-            <p className="recaptcha-notice">
-              By continuing you agree to our <Link to="/terms">Terms</Link> and{" "}
-              <Link to="/privacy">Privacy Policy</Link>.
-            </p>
-            <p className="recaptcha-notice">
-              Protected by reCAPTCHA and the Google{" "}
-              <a
-                href="https://policies.google.com/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Privacy Policy
-              </a>{" "}
-              and{" "}
-              <a
-                href="https://policies.google.com/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Terms of Service
-              </a>
-              .
+            <p className="login-legal">
+              Secure sign-in protected by reCAPTCHA · Google{" "}
+              <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>
+              {" · "}
+              <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer">Terms</a>
             </p>
           </>
         )}
