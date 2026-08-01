@@ -4,11 +4,14 @@ import { useAuth } from "../context/useAuth";
 import { isFirebaseConfigured } from "../firebase";
 import { AlertTriangle } from "lucide-react";
 import BrandMark from "./BrandMark";
+import { Check, Download, Link2, ShoppingBasket } from "lucide-react";
+import { useInstallPrompt } from "../hooks/useInstallPrompt";
 
 const Login: React.FC = () => {
   const { login } = useAuth();
   const [loginError, setLoginError] = React.useState("");
   const [isLoggingIn, setIsLoggingIn] = React.useState(false);
+  const { canInstall, install } = useInstallPrompt();
 
   return (
     <div className="login-container">
@@ -18,9 +21,16 @@ const Login: React.FC = () => {
         </div>
 
         <h1 className="login-title">CartLink</h1>
+        <p className="login-kicker">The list built for the shop</p>
         <p className="login-subtitle">
-          Your simple, beautiful shopping companion.
+          Type naturally, find items by aisle, and keep everyone in sync.
         </p>
+
+        <ul className="login-benefits" aria-label="Why use CartLink">
+          <li><ShoppingBasket size={17} /><span><strong>Faster adding</strong> — “2 milk” understands quantity and aisle.</span></li>
+          <li><Link2 size={17} /><span><strong>Simple sharing</strong> — send a link; visitors can shop without an account.</span></li>
+          <li><Check size={17} /><span><strong>Reliable anywhere</strong> — real-time sync with offline support.</span></li>
+        </ul>
 
         {!isFirebaseConfigured ? (
           <div className="setup-warning">
@@ -67,6 +77,12 @@ const Login: React.FC = () => {
               />
               {isLoggingIn ? "Signing in..." : "Continue with Google"}
             </button>
+            <p className="login-trust">Free to use · No adverts · Your lists stay private until you share them.</p>
+            {canInstall && (
+              <button className="install-button" type="button" onClick={() => void install()}>
+                <Download size={17} /> Install CartLink
+              </button>
+            )}
             <p className="recaptcha-notice">
               By continuing you agree to our <Link to="/terms">Terms</Link> and{" "}
               <Link to="/privacy">Privacy Policy</Link>.
