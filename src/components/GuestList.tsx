@@ -317,7 +317,8 @@ const GuestList: React.FC = () => {
           <p className="guest-note">
             Saved only on this device.{" "}
             <Link to="/login?redirect=/">Sign in</Link> to share and sync —
-            your items come with you.
+            your items come with you.{" "}
+            <Link to="/join">Have a share code?</Link>
           </p>
           {message && (
             <p className="form-success inline-error" role="status">

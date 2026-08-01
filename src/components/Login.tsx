@@ -24,7 +24,7 @@ const BENEFITS = [
   {
     icon: Link2,
     label: "Share live",
-    detail: "Link or QR — shop together",
+    detail: "Code, link or QR — shop together",
   },
   {
     icon: Check,
@@ -151,6 +151,10 @@ const Login: React.FC = () => {
                 Install app
               </button>
             )}
+
+            <p className="login-code-link">
+              <Link to="/join">Have a share code?</Link>
+            </p>
 
             <p className="login-legal">
               Protected by reCAPTCHA ·{" "}

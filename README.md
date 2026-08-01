@@ -15,9 +15,10 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
 - 🔁 **No duplicate rows** — adding something already on the list bumps its
   quantity (and un-checks it if you'd already ticked it off).
 - 📊 **Progress bar** so you can see how much of the shop is left.
-- 🔗 Share by link or QR code, with per-visitor permissions (check off / add /
-  remove). Visitors who can't (or don't want to) sign in can still tick items
-  off — their progress is kept on their own device and never touches your list.
+- 🔗 Share by **short code**, link or QR (all open the same live list), with
+  per-visitor permissions (check off / add / remove). Codes are random and
+  revoked when you stop sharing. Visitors who can't (or don't want to) sign in
+  can still tick items off — their progress stays on their device.
 - 👤 **Guest mode** — use a private list on this device with no account. Sign in
   later and your guest items are brought into the synced list automatically.
 - 🔐 Google Sign-In (Firebase Auth)

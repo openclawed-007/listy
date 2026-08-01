@@ -41,7 +41,26 @@ service cloud.firestore {
         && data.items is list
         && data.items.size() <= 500
         && (!('allowEdits' in data) || data.allowEdits is bool)
-        && (!('permissions' in data) || arePermissionsValid(data.permissions));
+        && (!('permissions' in data) || arePermissionsValid(data.permissions))
+        // Short join code (8 chars, no 0/O/1/I/L). Optional for older docs.
+        && (!('shareCode' in data) || (
+          data.shareCode is string
+          && data.shareCode.matches('^[2-9A-HJ-NP-Z]{8}$')
+        ));
+    }
+
+    // Public lookup: share code -> ownerId. Create/delete only by the owner;
+    // no listing (so codes cannot be enumerated), no updates (immutable map).
+    match /shareCodes/{code} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.auth != null
+        && code.matches('^[2-9A-HJ-NP-Z]{8}$')
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['ownerId', 'createdAt']);
+      allow update: if false;
+      allow delete: if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
     }
 
     // Whether collaborators are allowed to do anything at all on this list.

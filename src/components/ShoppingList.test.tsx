@@ -46,6 +46,11 @@ vi.mock("../firebase", () => ({
   db: mockDb,
 }));
 
+vi.mock("../lib/allocateShareCode", () => ({
+  allocateShareCode: vi.fn().mockResolvedValue("AB3DK7MP"),
+  resolveShareCode: vi.fn(),
+}));
+
 vi.mock("firebase/firestore", () => ({
   addDoc: mockAddDoc,
   collection: vi.fn((_db: unknown, path: string) => ({
@@ -255,15 +260,23 @@ describe("ShoppingList sharing", () => {
           ownerId: "owner-uid",
           ownerName: "Brad Owner",
           items: [{ text: "Milk", completed: false }],
+          shareCode: "AB3DK7MP",
         }),
       );
     });
 
+    expect(screen.getByLabelText("Share code AB3D-K7MP")).toBeInTheDocument();
+
     await userEvent.click(screen.getByRole("button", { name: "Copy link" }));
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "http://localhost:3000/share/owner-uid",
+      "http://localhost:3000/c/AB3DK7MP",
     );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Copy share code" }),
+    );
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("AB3D-K7MP");
   });
 
   it("stops sharing by deleting the public share doc when the user clicks stop", async () => {
@@ -280,6 +293,7 @@ describe("ShoppingList sharing", () => {
       data: () => ({
         ownerId: user.uid,
         ownerName: "Brad Owner",
+        shareCode: "AB3DK7MP",
         items: [{ text: "Milk", completed: false }],
       }),
     });
@@ -306,6 +320,9 @@ describe("ShoppingList sharing", () => {
       expect(mockDeleteDoc).toHaveBeenCalledWith({
         path: "sharedLists/owner-uid",
       });
+    });
+    expect(mockDeleteDoc).toHaveBeenCalledWith({
+      path: "shareCodes/AB3DK7MP",
     });
   });
 

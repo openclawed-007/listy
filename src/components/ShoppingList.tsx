@@ -75,6 +75,12 @@ import {
   guestMigrationNotice,
   readGuestItems,
 } from "../lib/guestItems";
+import { allocateShareCode } from "../lib/allocateShareCode";
+import {
+  buildShareCodeUrl,
+  formatShareCode,
+  isValidShareCode,
+} from "../lib/shareCode";
 import { useAuth } from "../context/useAuth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { useDarkMode } from "../hooks/useDarkMode";
@@ -123,6 +129,7 @@ const ShoppingList: React.FC = () => {
   const [actionError, setActionError] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
+  const [shareCode, setShareCode] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [shareBusy, setShareBusy] = useState(false);
   const [permissions, setPermissions] =
@@ -214,7 +221,22 @@ const ShoppingList: React.FC = () => {
         const data = snapshot.data();
         setIsSharing(true);
         setPermissions(normalizeSharePermissions(data?.permissions));
-        setShareUrl(`${window.location.origin}/share/${user.uid}`);
+
+        // Older shares only had a UID URL. Mint a short code once so verbal
+        // sharing and the QR both use the same join path.
+        let code =
+          typeof data?.shareCode === "string" && isValidShareCode(data.shareCode)
+            ? data.shareCode
+            : "";
+        if (!code) {
+          code = await allocateShareCode(db, user.uid);
+          await updateDoc(doc(db, "sharedLists", user.uid), {
+            shareCode: code,
+          });
+        }
+
+        setShareCode(code);
+        setShareUrl(buildShareCodeUrl(window.location.origin, code));
         // Remember what we published last session so collaborator changes made
         // while this app was closed are still recognised as theirs.
         publishedRef.current = readPublishedState(user.uid);
@@ -355,6 +377,7 @@ const ShoppingList: React.FC = () => {
           allowEdits,
           permissions,
           items: published,
+          ...(shareCode ? { shareCode } : {}),
           updatedAt: serverTimestamp(),
         }),
       ).catch((error) => {
@@ -370,6 +393,7 @@ const ShoppingList: React.FC = () => {
     ownerName,
     personalItems,
     isSharing,
+    shareCode,
     user,
   ]);
 
@@ -977,20 +1001,30 @@ const ShoppingList: React.FC = () => {
     if (!user || !db || shareBusy) return;
 
     setShareBusy(true);
-    setShareStatus("Preparing QR code…");
+    setShareStatus("Creating share code…");
     setActionError("");
 
     try {
+      // Reuse an existing code if we already minted one this session so a
+      // failed publish after allocate doesn't orphan a fresh mapping.
+      let code = shareCode;
+      if (!code) {
+        code = await allocateShareCode(db, user.uid);
+        setShareCode(code);
+      }
+      const url = buildShareCodeUrl(window.location.origin, code);
+
       await setDoc(doc(db, "sharedLists", user.uid), {
         ownerId: user.uid,
         ownerName,
         allowEdits,
         permissions,
         items: personalItems.map(toSharedItemPayload),
+        shareCode: code,
         updatedAt: serverTimestamp(),
       });
       setIsSharing(true);
-      setShareUrl(`${window.location.origin}/share/${user.uid}`);
+      setShareUrl(url);
       setShareStatus("");
     } catch (error) {
       console.error("Share snapshot error:", error);
@@ -1035,12 +1069,20 @@ const ShoppingList: React.FC = () => {
     setActionError("");
 
     try {
+      const codeToRevoke = shareCode;
       await deleteDoc(doc(db, "sharedLists", user.uid));
+      // Revoke the join code so old texts/QRs stop resolving.
+      if (codeToRevoke) {
+        await deleteDoc(doc(db, "shareCodes", codeToRevoke)).catch((error) => {
+          console.error("Revoke share code error:", error);
+        });
+      }
       publishedRef.current = null;
       clearPublishedState(user.uid);
       setIsSharing(false);
       setPermissions(NO_PERMISSIONS);
       setShareUrl("");
+      setShareCode("");
       setShareOpen(false);
     } catch (error) {
       console.error("Stop sharing error:", error);
@@ -1081,16 +1123,31 @@ const ShoppingList: React.FC = () => {
     }
   };
 
+  const copyShareCode = async () => {
+    if (!shareCode) return;
+
+    try {
+      await navigator.clipboard.writeText(formatShareCode(shareCode));
+      flashShareStatus("Code copied");
+    } catch {
+      flashShareStatus("Long-press the code to copy it");
+    }
+  };
+
   // Phones have a proper share sheet; use it when the browser offers one so
   // sending a list to someone is one tap instead of copy-then-find-an-app.
   const shareViaSystem = async () => {
-    if (!shareUrl || typeof navigator.share !== "function") return;
+    if ((!shareUrl && !shareCode) || typeof navigator.share !== "function")
+      return;
 
+    const codeLabel = shareCode ? formatShareCode(shareCode) : "";
     try {
       await navigator.share({
         title: `${ownerName}'s shopping list`,
-        text: "Here's my shopping list on CartLink",
-        url: shareUrl,
+        text: codeLabel
+          ? `My CartLink list code: ${codeLabel}${shareUrl ? `\n${shareUrl}` : ""}`
+          : "Here's my shopping list on CartLink",
+        url: shareUrl || undefined,
       });
     } catch (error) {
       // A cancelled share sheet is a normal outcome, not a failure.
@@ -1553,12 +1610,14 @@ const ShoppingList: React.FC = () => {
         <ShareDialog
           isSharing={isSharing}
           shareUrl={shareUrl}
+          shareCode={shareCode}
           shareStatus={shareStatus}
           busy={shareBusy}
           permissions={permissions}
           onClose={() => setShareOpen(false)}
           onStartSharing={startSharing}
           onCopyLink={copyShareLink}
+          onCopyCode={copyShareCode}
           onSystemShare={shareViaSystem}
           onTogglePermission={togglePermission}
           onRequestStopSharing={() => setConfirmAction("stopSharing")}

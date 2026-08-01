@@ -16,6 +16,7 @@ const ShoppingList = lazy(() => import("./components/ShoppingList"));
 const Login = lazy(() => import("./components/Login"));
 const GuestList = lazy(() => import("./components/GuestList"));
 const PublicSharedList = lazy(() => import("./components/PublicSharedList"));
+const JoinShare = lazy(() => import("./components/JoinShare"));
 const NotFound = lazy(() => import("./components/NotFound"));
 const PrivacyPage = lazy(() =>
   import("./components/LegalPage").then((m) => ({ default: m.PrivacyPage })),
@@ -81,6 +82,8 @@ const App: React.FC = () => {
                 }
               />
               <Route path="/guest" element={<GuestList />} />
+              <Route path="/join" element={<JoinShare />} />
+              <Route path="/c/:code" element={<JoinShare />} />
               <Route path="/share/:shareId" element={<PublicSharedList />} />
               <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="/terms" element={<TermsPage />} />
