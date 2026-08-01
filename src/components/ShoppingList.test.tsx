@@ -245,7 +245,9 @@ describe("ShoppingList sharing", () => {
 
     renderShoppingList();
 
-    await userEvent.click(screen.getByRole("button", { name: "Share list" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Share and join" }),
+    );
 
     expect(mockSetDoc).not.toHaveBeenCalled();
 
@@ -303,7 +305,7 @@ describe("ShoppingList sharing", () => {
 
     await userEvent.click(
       await screen.findByRole("button", {
-        name: /share list \(sharing is on\)/i,
+        name: /share and join \(sharing is on\)/i,
       }),
     );
 
@@ -356,16 +358,18 @@ describe("ShoppingList sharing", () => {
   it("closes the share dialog with Escape and restores page scrolling", async () => {
     renderShoppingList();
 
-    await userEvent.click(screen.getByRole("button", { name: "Share list" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Share and join" }),
+    );
     expect(
-      screen.getByRole("dialog", { name: "Share list" }),
+      screen.getByRole("dialog", { name: "Share & join" }),
     ).toBeInTheDocument();
     expect(document.body.style.overflow).toBe("hidden");
 
     await userEvent.keyboard("{Escape}");
 
     expect(
-      screen.queryByRole("dialog", { name: "Share list" }),
+      screen.queryByRole("dialog", { name: "Share & join" }),
     ).not.toBeInTheDocument();
     expect(document.body.style.overflow).toBe("");
   });

@@ -1,7 +1,9 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Check,
   Copy,
+  KeyRound,
   Link2,
   Plus,
   QrCode,
@@ -11,11 +13,18 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useDialogFocus } from "../hooks/useDialogFocus";
+import { db } from "../firebase";
+import { resolveShareCode } from "../lib/allocateShareCode";
+import {
+  SHARE_CODE_LENGTH,
+  formatShareCode,
+  isValidShareCode,
+  normalizeShareCodeInput,
+} from "../lib/shareCode";
 import {
   hasAnyPermission,
   type SharePermissions,
 } from "../lib/sharePermissions";
-import { formatShareCode } from "../lib/shareCode";
 
 interface ShareDialogProps {
   isSharing: boolean;
@@ -59,7 +68,7 @@ const PERMISSION_OPTIONS: Array<{
   },
 ];
 
-/** Organised share sheet: code first, QR secondary, permissions last. */
+/** Share your list, or open someone else's with a code — works while signed in. */
 const ShareDialog: React.FC<ShareDialogProps> = ({
   isSharing,
   shareUrl,
@@ -76,11 +85,102 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
   onRequestStopSharing,
 }) => {
   const dialogRef = useDialogFocus<HTMLElement>();
+  const navigate = useNavigate();
   const [showQr, setShowQr] = React.useState(false);
+  const [joinValue, setJoinValue] = React.useState("");
+  const [joinError, setJoinError] = React.useState("");
+  const [joinBusy, setJoinBusy] = React.useState(false);
+
   const canSystemShare =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
   const displayCode = shareCode ? formatShareCode(shareCode) : "";
   const canEdit = hasAnyPermission(permissions);
+  const joinRaw = normalizeShareCodeInput(joinValue);
+  const canJoin = isValidShareCode(joinRaw) && !joinBusy;
+
+  const openWithCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!db) {
+      setJoinError("CartLink is not configured on this device.");
+      return;
+    }
+    if (!isValidShareCode(joinRaw)) {
+      setJoinError(`Enter the full ${SHARE_CODE_LENGTH}-character code.`);
+      return;
+    }
+
+    setJoinBusy(true);
+    setJoinError("");
+    try {
+      const ownerId = await resolveShareCode(db, joinRaw);
+      if (!ownerId) {
+        setJoinError("That code isn’t active. Ask them to check Share.");
+        setJoinBusy(false);
+        return;
+      }
+      onClose();
+      navigate(`/share/${ownerId}`);
+    } catch (error) {
+      console.error("Join share code error:", error);
+      setJoinError("Couldn’t look up that code right now. Try again.");
+      setJoinBusy(false);
+    }
+  };
+
+  const joinSection = (
+    <section
+      className="share-section share-join-section"
+      aria-labelledby="share-join-heading"
+    >
+      <h3 id="share-join-heading" className="share-section-title">
+        Open a list
+      </h3>
+      <form className="share-join-form" onSubmit={(e) => void openWithCode(e)}>
+        <div className="share-join-row">
+          <span className="share-join-icon" aria-hidden="true">
+            <KeyRound size={17} strokeWidth={2.25} />
+          </span>
+          <input
+            className="share-join-input"
+            value={joinValue}
+            onChange={(event) => {
+              const next = normalizeShareCodeInput(event.target.value).slice(
+                0,
+                SHARE_CODE_LENGTH,
+              );
+              setJoinValue(formatShareCode(next));
+              setJoinError("");
+            }}
+            placeholder="AB3D-K7MP"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            inputMode="text"
+            aria-label="Enter share code"
+            aria-invalid={Boolean(joinError)}
+            disabled={joinBusy}
+          />
+          <button
+            type="submit"
+            className="share-join-submit"
+            disabled={!canJoin}
+            aria-busy={joinBusy}
+          >
+            {joinBusy ? "…" : "Open"}
+          </button>
+        </div>
+      </form>
+      {joinError ? (
+        <p className="share-join-error" role="alert">
+          {joinError}
+        </p>
+      ) : (
+        <p className="share-section-hint">
+          Paste a code someone sent you — works while signed in.
+        </p>
+      )}
+    </section>
+  );
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -95,14 +195,14 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
       >
         <div className="modal-header share-modal-header">
           <div>
-            <h2 id="share-title">Share list</h2>
+            <h2 id="share-title">Share & join</h2>
             {isSharing ? (
               <p className="share-live-line" role="status">
                 <span className="share-live-dot" aria-hidden="true" />
                 {shareStatus || "Live — updates automatically"}
               </p>
             ) : (
-              <p>Get a code and QR so others can open this list.</p>
+              <p>Share your list, or open one with a code.</p>
             )}
           </div>
           <button
@@ -116,12 +216,17 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
         </div>
 
         <div className="share-panel">
+          {/* Always available when signed in */}
+          {joinSection}
+
           {isSharing ? (
             <>
-              {/* 1. Code — primary way to share without standing next to them */}
-              <section className="share-section" aria-labelledby="share-code-heading">
+              <section
+                className="share-section"
+                aria-labelledby="share-code-heading"
+              >
                 <h3 id="share-code-heading" className="share-section-title">
-                  Share code
+                  Your share code
                 </h3>
                 <button
                   type="button"
@@ -147,7 +252,6 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
                 </p>
               </section>
 
-              {/* 2. Send / link / QR — secondary join methods */}
               <section className="share-section" aria-label="Other ways to join">
                 <div className="share-send-row">
                   {canSystemShare && (
@@ -197,7 +301,6 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
                 )}
               </section>
 
-              {/* 3. Permissions — compact, no long essay */}
               <section
                 className="share-section share-section-perms"
                 aria-labelledby="share-perms-heading"
@@ -251,27 +354,33 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
             </>
           ) : (
             <>
-              <div className="share-empty">
-                <Share2 size={32} strokeWidth={1.5} />
-                <p>Sharing is off</p>
-                <p className="share-empty-text">
-                  You’ll get a short code plus optional QR and link. Starts
-                  view-only.
-                </p>
-              </div>
-              {shareStatus && (
-                <p className="share-status" role="status">
-                  {shareStatus}
-                </p>
-              )}
-              <button
-                className="primary-btn"
-                type="button"
-                onClick={onStartSharing}
-                disabled={busy}
+              <section
+                className="share-section share-section-mine"
+                aria-labelledby="share-mine-heading"
               >
-                {busy ? "Starting…" : "Start sharing"}
-              </button>
+                <h3 id="share-mine-heading" className="share-section-title">
+                  Share your list
+                </h3>
+                <div className="share-empty share-empty-compact">
+                  <Share2 size={28} strokeWidth={1.5} />
+                  <p className="share-empty-text">
+                    Create a code, link, and QR. Starts view-only.
+                  </p>
+                </div>
+                {shareStatus && (
+                  <p className="share-status" role="status">
+                    {shareStatus}
+                  </p>
+                )}
+                <button
+                  className="primary-btn"
+                  type="button"
+                  onClick={onStartSharing}
+                  disabled={busy}
+                >
+                  {busy ? "Starting…" : "Start sharing"}
+                </button>
+              </section>
             </>
           )}
         </div>

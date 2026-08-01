@@ -1,7 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { User } from "firebase/auth";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthContext } from "../context/AuthContext.shared";
 import JoinShare from "./JoinShare";
 
 const { mockResolve } = vi.hoisted(() => ({
@@ -17,18 +19,28 @@ vi.mock("../lib/allocateShareCode", () => ({
   allocateShareCode: vi.fn(),
 }));
 
-function renderJoin(path = "/join") {
+function renderJoin(path = "/join", user: User | null = null) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/join" element={<JoinShare />} />
-        <Route path="/c/:code" element={<JoinShare />} />
-        <Route
-          path="/share/:shareId"
-          element={<div>Opened shared list</div>}
-        />
-      </Routes>
-    </MemoryRouter>,
+    <AuthContext.Provider
+      value={{
+        user,
+        loading: false,
+        login: vi.fn(),
+        logout: vi.fn(),
+      }}
+    >
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/join" element={<JoinShare />} />
+          <Route path="/c/:code" element={<JoinShare />} />
+          <Route path="/" element={<div>My list home</div>} />
+          <Route
+            path="/share/:shareId"
+            element={<div>Opened shared list</div>}
+          />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
   );
 }
 
@@ -73,5 +85,18 @@ describe("JoinShare", () => {
       expect(mockResolve).toHaveBeenCalledWith({ app: "test" }, "AB3DK7MP");
     });
     expect(await screen.findByText("Opened shared list")).toBeInTheDocument();
+  });
+
+  it("sends signed-in users back to their list from the join page", () => {
+    renderJoin("/join", {
+      uid: "u1",
+      displayName: "Alex",
+      email: "alex@example.com",
+      photoURL: null,
+    } as User);
+
+    expect(
+      screen.getByRole("link", { name: /back to my list/i }),
+    ).toHaveAttribute("href", "/");
   });
 });

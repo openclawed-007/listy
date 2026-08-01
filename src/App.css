@@ -1828,6 +1828,105 @@ body.dark .modal-backdrop {
   align-self: center;
 }
 
+/* Enter someone else's code while signed in */
+.share-join-section {
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--cream-deep);
+}
+
+.share-join-form {
+  width: 100%;
+}
+
+.share-join-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 48px;
+  padding: 0.25rem 0.3rem 0.25rem 0.75rem;
+  border: 1.5px solid var(--cream-deep);
+  border-radius: var(--radius);
+  background: var(--cream);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.share-join-row:focus-within {
+  border-color: var(--sage);
+  box-shadow: 0 0 0 3px rgba(107, 143, 113, 0.16);
+  background: var(--surface);
+}
+
+.share-join-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--sage-dark);
+}
+
+.share-join-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 800 1.05rem/1.2 "DM Sans", ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  outline: none;
+  padding: 0.55rem 0;
+}
+
+.share-join-input::placeholder {
+  color: var(--ink-faint);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.share-join-submit {
+  flex-shrink: 0;
+  min-height: 38px;
+  min-width: 4.25rem;
+  padding: 0 0.85rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  background: var(--sage);
+  color: #fff;
+  font: 700 0.86rem "DM Sans", sans-serif;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.share-join-submit:hover:not(:disabled) {
+  background: var(--sage-dark);
+}
+
+.share-join-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.share-join-error {
+  margin: 0;
+  color: var(--terra);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.share-section-mine {
+  gap: 0.65rem;
+}
+
+.share-empty-compact {
+  padding: 0.75rem 0.5rem 0.25rem;
+}
+
+.share-empty-compact .share-empty-text {
+  margin: 0.35rem 0 0;
+}
+
 .join-card {
   max-width: 400px;
 }

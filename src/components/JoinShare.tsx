@@ -9,6 +9,7 @@ import {
   isValidShareCode,
   normalizeShareCodeInput,
 } from "../lib/shareCode";
+import { useAuth } from "../context/useAuth";
 import { useDarkMode } from "../hooks/useDarkMode";
 import BrandMark from "./BrandMark";
 
@@ -19,6 +20,7 @@ import BrandMark from "./BrandMark";
 const JoinShare: React.FC = () => {
   const { code: routeCode } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { dark, toggle } = useDarkMode();
   const [value, setValue] = useState(() =>
     routeCode ? formatShareCode(normalizeShareCodeInput(routeCode)) : "",
@@ -159,9 +161,15 @@ const JoinShare: React.FC = () => {
         )}
 
         <p className="login-legal join-footer">
-          <Link to="/login">Back to sign in</Link>
-          {" · "}
-          <Link to="/guest">Continue as guest</Link>
+          {user ? (
+            <Link to="/">← Back to my list</Link>
+          ) : (
+            <>
+              <Link to="/login">Back to sign in</Link>
+              {" · "}
+              <Link to="/guest">Continue as guest</Link>
+            </>
+          )}
         </p>
       </div>
     </div>

@@ -22,12 +22,13 @@ import {
   PackageOpen,
   Plus,
   Search,
+  KeyRound,
   Share2,
   Sun,
   WifiOff,
   X,
 } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
   hasAnyPermission,
@@ -1309,13 +1310,23 @@ const ShoppingList: React.FC = () => {
             >
               {dark ? <Sun size={16} /> : <Moon size={16} />}
             </button>
+            <Link
+              to="/join"
+              className="theme-toggle"
+              title="Enter a share code"
+              aria-label="Enter a share code"
+            >
+              <KeyRound size={16} />
+            </Link>
             <button
               onClick={() => setShareOpen(true)}
               className={`theme-toggle share-button ${isSharing ? "is-sharing" : ""}`}
-              title={isSharing ? "Sharing is on" : "Share list"}
+              title={isSharing ? "Share & join" : "Share & join"}
               type="button"
               aria-label={
-                isSharing ? "Share list (sharing is on)" : "Share list"
+                isSharing
+                  ? "Share and join (sharing is on)"
+                  : "Share and join"
               }
             >
               <Share2 size={16} />
