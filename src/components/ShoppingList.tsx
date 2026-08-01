@@ -22,7 +22,6 @@ import {
   PackageOpen,
   Plus,
   Search,
-  KeyRound,
   Share2,
   Sun,
   WifiOff,
@@ -1351,17 +1350,7 @@ const ShoppingList: React.FC = () => {
 
       <main className="container">
         <div className="page-heading">
-          <div className="page-heading-row">
-            <h1 className="page-title">{activeTabName}</h1>
-            <button
-              type="button"
-              className="page-join-btn"
-              onClick={() => openShareDialog("join")}
-            >
-              <KeyRound size={15} strokeWidth={2.25} aria-hidden="true" />
-              Join with code
-            </button>
-          </div>
+          <h1 className="page-title">{activeTabName}</h1>
           {notice && (
             <DismissibleMessage
               kind="success"
