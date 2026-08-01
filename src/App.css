@@ -156,9 +156,24 @@ body.dark .navbar {
   background: rgba(20, 27, 30, 0.94);
 }
 
+/* Kill the browser blue tap flash; keep a soft sage ring for keyboard only. */
+button,
+a,
+input,
+.item-row {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus,
+input:focus,
+.item-row:focus {
+  outline: none;
+}
+
 button:focus-visible,
 input:focus-visible,
-.item-row:focus-visible {
+.item-row:focus-visible,
+a:focus-visible {
   outline: 3px solid rgba(107, 143, 113, 0.35);
   outline-offset: 2px;
 }
@@ -1160,12 +1175,26 @@ input:focus-visible,
   cursor: pointer;
   box-shadow: var(--shadow-sm);
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
 }
 
 .login-theme-toggle:hover {
   color: var(--ink);
   border-color: var(--ink-faint);
   background: var(--cream-dark);
+}
+
+.login-theme-toggle:focus,
+.login-theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Keyboard users still get a quiet cue via border, not a blue box. */
+.login-theme-toggle:focus-visible {
+  border-color: var(--sage);
+  color: var(--ink);
 }
 
 .login-card {
