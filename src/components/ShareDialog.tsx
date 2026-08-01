@@ -157,8 +157,8 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
                       onClick={onSystemShare}
                       disabled={!shareUrl && !shareCode}
                     >
-                      <Share2 size={16} strokeWidth={2.25} />
-                      Send
+                      <Share2 size={18} strokeWidth={2.25} aria-hidden="true" />
+                      <span>Send</span>
                     </button>
                   )}
                   <button
@@ -167,8 +167,8 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
                     onClick={onCopyLink}
                     disabled={!shareUrl}
                   >
-                    <Link2 size={15} strokeWidth={2.25} />
-                    Copy link
+                    <Link2 size={17} strokeWidth={2.25} aria-hidden="true" />
+                    <span>Link</span>
                   </button>
                   <button
                     className={`secondary-btn share-send-secondary ${showQr ? "is-active" : ""}`}
@@ -176,9 +176,10 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
                     onClick={() => setShowQr((open) => !open)}
                     aria-expanded={showQr}
                     aria-controls="share-qr-panel"
+                    aria-label={showQr ? "Hide QR code" : "Show QR code"}
                   >
-                    <QrCode size={15} strokeWidth={2.25} />
-                    QR
+                    <QrCode size={17} strokeWidth={2.25} aria-hidden="true" />
+                    <span>QR</span>
                   </button>
                 </div>
 

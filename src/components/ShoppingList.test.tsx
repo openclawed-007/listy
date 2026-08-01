@@ -274,7 +274,7 @@ describe("ShoppingList sharing", () => {
     );
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("AB3D-K7MP");
 
-    await userEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    await userEvent.click(screen.getByRole("button", { name: "Link" }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       "http://localhost:3000/c/AB3DK7MP",
     );

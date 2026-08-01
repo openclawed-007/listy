@@ -1739,24 +1739,41 @@ body.dark .modal-backdrop {
 
 .share-send-row {
   display: flex;
-  gap: 0.45rem;
+  align-items: stretch;
+  gap: 0.5rem;
   width: 100%;
 }
 
+/* Force icon + label as a centered flex pair (primary-btn is not flex by default). */
+.share-send-row > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 46px;
+  padding: 0.6rem 0.85rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.share-send-row > button svg {
+  flex-shrink: 0;
+  display: block;
+  /* Optical center: lucide icons sit slightly high in the line box otherwise */
+  margin-top: 0;
+}
+
 .share-send-primary {
-  flex: 1.15;
-  min-height: 44px;
-  gap: 0.4rem;
+  flex: 1.15 1 0;
+  width: auto;
+  min-width: 0;
   font-size: 0.9rem;
 }
 
 .share-send-secondary {
-  flex: 1;
-  min-height: 44px;
-  gap: 0.35rem;
-  font-size: 0.82rem;
-  padding-left: 0.55rem;
-  padding-right: 0.55rem;
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 0.84rem;
 }
 
 .share-send-secondary.is-active {
