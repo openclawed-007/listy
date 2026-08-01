@@ -70,6 +70,11 @@ import {
   toSharedItemPayload,
   type ShoppingItem,
 } from "../lib/shoppingItem";
+import {
+  clearGuestItems,
+  guestMigrationNotice,
+  readGuestItems,
+} from "../lib/guestItems";
 import { useAuth } from "../context/useAuth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { useDarkMode } from "../hooks/useDarkMode";
@@ -134,6 +139,7 @@ const ShoppingList: React.FC = () => {
     null,
   );
   const handledShareId = useRef<string | null>(null);
+  const guestMigratedRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const addInputRef = useRef<HTMLInputElement | null>(null);
   // The snapshot we last pushed to sharedLists/{uid}. Everything the
@@ -245,6 +251,87 @@ const ShoppingList: React.FC = () => {
     () => items.filter((item) => getItemListId(item) === PERSONAL_LIST_ID),
     [items],
   );
+
+  // Guest mode lives only on this device. When the same person signs in, fold
+  // those rows into their cloud list once so they never lose a half-built shop.
+  useEffect(() => {
+    if (!user || !db || !itemsLoaded || guestMigratedRef.current) return;
+    guestMigratedRef.current = true;
+
+    const guestItems = readGuestItems();
+    if (guestItems.length === 0) return;
+
+    const personalByKey = new Map(
+      personalItems.map((item) => [getDuplicateKey(item.text), item]),
+    );
+
+    void (async () => {
+      let added = 0;
+      let merged = 0;
+
+      try {
+        for (const guest of guestItems) {
+          const key = getDuplicateKey(guest.text);
+          const existing = personalByKey.get(key);
+
+          if (existing) {
+            const nextQuantity = mergeQuantities(
+              existing.quantity,
+              guest.quantity,
+            );
+            const updates: Record<string, unknown> = {};
+
+            if (nextQuantity !== existing.quantity) {
+              updates.quantity = nextQuantity ?? deleteField();
+            }
+            // Prefer "still needed" if the guest copy was unchecked.
+            if (existing.completed && !guest.completed) {
+              updates.completed = false;
+            }
+            if (!existing.category && guest.category) {
+              updates.category = guest.category;
+            }
+
+            if (Object.keys(updates).length > 0) {
+              await updateDoc(doc(db, "shoppingItems", existing.id), updates);
+              merged += 1;
+            }
+          } else {
+            await addDoc(collection(db, "shoppingItems"), {
+              text: guest.text,
+              completed: guest.completed,
+              userId: user.uid,
+              ...(guest.quantity ? { quantity: guest.quantity } : {}),
+              ...(guest.category ? { category: guest.category } : {}),
+              listId: PERSONAL_LIST_ID,
+              listName: PERSONAL_LIST_NAME,
+              createdAt: serverTimestamp(),
+            });
+            personalByKey.set(key, {
+              id: `pending-${key}`,
+              text: guest.text,
+              completed: guest.completed,
+              userId: user.uid,
+              quantity: guest.quantity,
+              category: guest.category,
+            });
+            added += 1;
+          }
+        }
+
+        clearGuestItems();
+        setNotice(guestMigrationNotice(added, merged));
+      } catch (error) {
+        console.error("Guest list migration error:", error);
+        guestMigratedRef.current = false;
+        setActionError(
+          "Couldn't import your guest list. It is still saved on this device.",
+        );
+      }
+    })();
+    // Only when the first cloud snapshot lands — not on every item change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot
+  }, [user, itemsLoaded]);
 
   const ownerName =
     user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
@@ -1052,9 +1139,15 @@ const ShoppingList: React.FC = () => {
 
   const allDoneCount = currentListItems.filter((item) => item.completed).length;
   const totalCount = currentListItems.length;
+  const allActiveCount = totalCount - allDoneCount;
+  const isSearching = search.trim().length > 0;
+  // Progress and "clear done" always describe the full list; the headline
+  // numbers switch to match results while searching so left/done never disagree.
   const progress = totalCount
     ? Math.round((allDoneCount / totalCount) * 100)
     : 0;
+  const statsLeft = isSearching ? activeCount : allActiveCount;
+  const statsDone = isSearching ? doneCount : allDoneCount;
   const activeTabName =
     listTabs.find((tab) => tab.id === activeListId)?.name ?? PERSONAL_LIST_NAME;
   const showSearch =
@@ -1320,10 +1413,20 @@ const ShoppingList: React.FC = () => {
           <div className="list-summary">
             <div className="stats-bar">
               <span className="stats-text">
-                <strong>{activeCount}</strong> left
-                {allDoneCount > 0 && ` · ${allDoneCount} done`}
+                {isSearching ? (
+                  <>
+                    <strong>{filtered.length}</strong> match
+                    {filtered.length === 1 ? "" : "es"}
+                    {statsDone > 0 && ` · ${statsDone} done`}
+                  </>
+                ) : (
+                  <>
+                    <strong>{statsLeft}</strong> left
+                    {statsDone > 0 && ` · ${statsDone} done`}
+                  </>
+                )}
               </span>
-              {allDoneCount > 0 && (
+              {allDoneCount > 0 && !isSearching && (
                 <button
                   className="clear-done-btn"
                   onClick={() => setConfirmAction("clearCompleted")}
@@ -1342,19 +1445,21 @@ const ShoppingList: React.FC = () => {
                 </button>
               )}
             </div>
-            <div
-              className="progress-track"
-              role="progressbar"
-              aria-label={`${allDoneCount} of ${totalCount} items picked up`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progress}
-            >
+            {!isSearching && (
               <div
-                className="progress-fill"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+                className="progress-track"
+                role="progressbar"
+                aria-label={`${allDoneCount} of ${totalCount} items picked up`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress}
+              >
+                <div
+                  className="progress-fill"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -1363,21 +1468,23 @@ const ShoppingList: React.FC = () => {
             <div className="empty-state">
               <PackageOpen size={56} className="empty-icon" strokeWidth={1} />
               <p className="empty-title">
-                {search
+                {isSearching
                   ? "No matches"
                   : totalCount === 0
-                    ? "Bag is empty"
+                    ? "Ready when you are"
                     : "Nothing here"}
               </p>
               <p className="empty-text">
-                {search
+                {isSearching
                   ? "Try a different search term."
-                  : `Add your first item to ${activeTabName}.`}
+                  : totalCount === 0
+                    ? "Add your first item above."
+                    : `Nothing left on ${activeTabName}.`}
               </p>
-              {!search && totalCount === 0 && (
+              {!isSearching && totalCount === 0 && (
                 <p className="empty-tip">
-                  Try typing <code>2 milk</code> — the quantity and the aisle
-                  are filled in for you.
+                  Try <code>2 milk</code> to add a quantity and aisle
+                  automatically.
                 </p>
               )}
             </div>

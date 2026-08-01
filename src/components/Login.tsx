@@ -86,10 +86,10 @@ const Login: React.FC = () => {
               </button>
             )}
             <p className="login-legal">
-              Secure sign-in protected by reCAPTCHA · Google{" "}
-              <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>
+              Secure sign-in protected by reCAPTCHA ·{" "}
+              <Link to="/privacy">Privacy</Link>
               {" · "}
-              <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer">Terms</a>
+              <Link to="/terms">Terms</Link>
             </p>
           </>
         )}

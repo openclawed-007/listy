@@ -179,8 +179,8 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
                 </div>
                 <p className="share-perms-note">
                   {hasAnyPermission(permissions)
-                    ? "Visitors sign in with Google before they can change anything."
-                    : "Turn one on to let visitors help with the list."}
+                    ? "Anyone can tick items privately on their device. Collaborative edits need Google sign-in."
+                    : "Anyone can still tick items privately on their device. Turn one on for live collaboration."}
                 </p>
               </div>
               <button

@@ -646,10 +646,19 @@ const PublicSharedList: React.FC = () => {
             </div>
 
             {shareId && !isOwnerViewing && (
-              <Link className="import-link-btn" to={`/import/${shareId}`}>
-                {allowEdits && !user
-                  ? "Sign in to edit this list"
-                  : "Sign in to save this list"}
+              <Link
+                className="import-link-btn"
+                to={
+                  user
+                    ? `/import/${shareId}`
+                    : `/login?redirect=${encodeURIComponent(`/import/${shareId}`)}`
+                }
+              >
+                {user
+                  ? "Add this list to my tabs"
+                  : allowEdits
+                    ? "Sign in to edit this list"
+                    : "Sign in to save this list"}
               </Link>
             )}
           </>

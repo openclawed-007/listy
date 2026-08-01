@@ -26,6 +26,7 @@
     <title>CartLink — shared shopping lists</title>
     <script>
       try {
+        // Tokens use html.dark so this can run in <head> before body exists.
         if (localStorage.getItem("theme") === "dark") document.documentElement.classList.add("dark");
       } catch {}
     </script>

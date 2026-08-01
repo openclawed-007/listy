@@ -165,6 +165,58 @@ beforeEach(() => {
 });
 
 describe("ShoppingList sharing", () => {
+  it("migrates a local guest list into the signed-in personal list once", async () => {
+    snapshotDocs = [];
+    localStorage.setItem(
+      "cartlink:guest-items:v1",
+      JSON.stringify([
+        {
+          id: "g1",
+          text: "Eggs",
+          completed: false,
+          quantity: "6",
+          category: "Dairy & Eggs",
+          createdAt: 1,
+        },
+        {
+          id: "g2",
+          text: "Bread",
+          completed: true,
+          createdAt: 2,
+        },
+      ]),
+    );
+
+    renderShoppingList();
+
+    await waitFor(() => {
+      expect(mockAddDoc).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mockAddDoc).toHaveBeenCalledWith(
+      { path: "shoppingItems", type: "collection" },
+      expect.objectContaining({
+        text: "Eggs",
+        quantity: "6",
+        category: "Dairy & Eggs",
+        userId: user.uid,
+        listId: "personal",
+      }),
+    );
+    expect(mockAddDoc).toHaveBeenCalledWith(
+      { path: "shoppingItems", type: "collection" },
+      expect.objectContaining({
+        text: "Bread",
+        completed: true,
+        userId: user.uid,
+      }),
+    );
+    expect(localStorage.getItem("cartlink:guest-items:v1")).toBeNull();
+    expect(
+      await screen.findByText("Brought over 2 items from your guest list."),
+    ).toBeInTheDocument();
+  });
+
   it("publishes a public share snapshot only after the user opts in, and copies the share link", async () => {
     snapshotDocs = [
       makeDoc("personal-1", {

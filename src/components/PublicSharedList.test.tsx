@@ -95,6 +95,23 @@ describe("PublicSharedList", () => {
     expect(apples).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByRole("link", { name: "Sign in to save this list" }),
+    ).toHaveAttribute(
+      "href",
+      "/login?redirect=%2Fimport%2Falex-uid",
+    );
+  });
+
+  it("offers signed-in visitors a clear save-to-tabs action", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/share/alex-uid", visitor);
+
+    expect(
+      await screen.findByRole("link", { name: "Add this list to my tabs" }),
     ).toHaveAttribute("href", "/import/alex-uid");
   });
 
@@ -196,7 +213,7 @@ describe("PublicSharedList", () => {
     expect(mockUpdateDoc).not.toHaveBeenCalled();
     expect(
       screen.getByRole("link", { name: "Sign in to edit this list" }),
-    ).toHaveAttribute("href", "/import/alex-uid");
+    ).toHaveAttribute("href", "/login?redirect=%2Fimport%2Falex-uid");
   });
 
   it("lets a collaborator with toggle permission save a completion change", async () => {

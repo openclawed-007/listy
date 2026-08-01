@@ -11,21 +11,29 @@ function readStoredTheme(): boolean {
 }
 
 /**
- * Apply the remembered theme to <body> immediately, before React renders.
- * Without this the app always paints light first, so dark-mode users get a
- * white flash on every load — and every page that isn't the list screen
- * (share links, sign-in, legal, 404) stayed light forever.
+ * Tokens live under `html.dark` so the head script in index.html can paint
+ * the right palette before <body> exists. Mirror onto body too for any
+ * leftover `body.dark` selectors.
  */
-export function applyStoredTheme() {
-  document.body.classList.toggle("dark", readStoredTheme());
+function applyThemeClass(dark: boolean) {
+  document.documentElement.classList.toggle("dark", dark);
+  document.body?.classList.toggle("dark", dark);
 }
 
-/** Dark mode preference, mirrored onto <body> and remembered between visits. */
+/**
+ * Apply the remembered theme immediately, before React renders, so dark-mode
+ * users never flash white — including on share / sign-in / legal / 404.
+ */
+export function applyStoredTheme() {
+  applyThemeClass(readStoredTheme());
+}
+
+/** Dark mode preference, mirrored onto the document and remembered. */
 export function useDarkMode() {
   const [dark, setDark] = React.useState<boolean>(readStoredTheme);
 
   React.useEffect(() => {
-    document.body.classList.toggle("dark", dark);
+    applyThemeClass(dark);
     try {
       localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
     } catch {

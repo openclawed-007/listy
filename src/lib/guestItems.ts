@@ -47,6 +47,32 @@ export function writeGuestItems(items: GuestItem[]) {
   }
 }
 
+/** Wipe the local guest list after a successful migrate-to-account. */
+export function clearGuestItems() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Privacy modes may block storage; migration still wrote to the cloud.
+  }
+}
+
 export function createGuestId() {
   return globalThis.crypto?.randomUUID?.() ?? `guest-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Human-readable notice after bringing guest items into a signed-in account.
+ * Pure so the wording can be unit-tested without Firebase.
+ */
+export function guestMigrationNotice(added: number, merged: number): string {
+  if (added > 0 && merged === 0) {
+    return `Brought over ${added} item${added === 1 ? "" : "s"} from your guest list.`;
+  }
+  if (merged > 0 && added === 0) {
+    return `Merged ${merged} guest item${merged === 1 ? "" : "s"} into your list.`;
+  }
+  if (added > 0 && merged > 0) {
+    return `Brought over your guest list (${added} new, ${merged} merged).`;
+  }
+  return "Your guest list was already on this account.";
 }

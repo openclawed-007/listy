@@ -24,7 +24,8 @@
   --radius-pill: 50px;
 }
 
-/* Dark mode — deep slate forest palette */
+/* Dark mode — deep slate forest palette (html.dark so head script can FOUC-fix) */
+html.dark,
 body.dark {
   --cream: #141b1e;
   --cream-dark: #1c2528;
@@ -150,6 +151,7 @@ body::before {
   transition: background 0.3s ease, border-color 0.3s ease;
 }
 
+html.dark .navbar,
 body.dark .navbar {
   background: rgba(20, 27, 30, 0.94);
 }
@@ -1411,6 +1413,7 @@ input:focus-visible,
   z-index: 600;
 }
 
+html.dark .modal-backdrop,
 body.dark .modal-backdrop {
   background: rgba(0, 0, 0, 0.48);
 }
@@ -1655,20 +1658,6 @@ body.dark .modal-backdrop {
   font: inherit;
   color: inherit;
   cursor: pointer;
-}
-
-.share-perms {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  width: 100%;
-}
-
-.share-perms-title {
-  margin: 0;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--ink);
 }
 
 .share-perms-note {
@@ -2130,6 +2119,8 @@ body.dark .modal-backdrop {
 
 
 /* Keep status feedback legible against the dark surface. */
+html.dark .form-error,
+html.dark .setup-warning,
 body.dark .form-error,
 body.dark .setup-warning {
   background: rgba(224, 138, 106, 0.1);
@@ -2137,16 +2128,68 @@ body.dark .setup-warning {
   color: #f1b39d;
 }
 
+html.dark .clear-done-btn:hover,
 body.dark .clear-done-btn:hover {
   background: rgba(224, 138, 106, 0.1);
 }
 
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0 0.75rem;
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+}
 
-.login-divider { display: flex; align-items: center; gap: 0.75rem; margin: 1rem 0 0.75rem; color: var(--ink-faint); font-size: 0.72rem; }
-.login-divider::before, .login-divider::after { content: ""; flex: 1; height: 1px; background: var(--cream-deep); }
-.guest-button { min-height: 46px; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--cream-deep); border-radius: var(--radius); color: var(--ink); background: var(--cream); text-decoration: none; font-size: 0.9rem; font-weight: 700; }
-.guest-button:hover { background: var(--cream-dark); border-color: var(--ink-faint); }
-.guest-badge { padding: 0.2rem 0.55rem; border-radius: var(--radius-pill); background: var(--cream-dark); color: var(--ink-muted); font-size: 0.72rem; font-weight: 700; }
-.guest-note { margin-top: 0.45rem; color: var(--ink-muted); font-size: 0.82rem; }
-.guest-note a { color: var(--sage-dark); font-weight: 700; }
-a.theme-toggle { text-decoration: none; }
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--cream-deep);
+}
+
+.guest-button {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--cream-deep);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--cream);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.guest-button:hover {
+  background: var(--cream-dark);
+  border-color: var(--ink-faint);
+}
+
+.guest-badge {
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background: var(--cream-dark);
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.guest-note {
+  margin-top: 0.45rem;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+
+.guest-note a {
+  color: var(--sage-dark);
+  font-weight: 700;
+}
+
+a.theme-toggle {
+  text-decoration: none;
+  color: inherit;
+}
