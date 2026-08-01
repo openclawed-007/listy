@@ -16,7 +16,8 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
   quantity (and un-checks it if you'd already ticked it off).
 - 📊 **Progress bar** so you can see how much of the shop is left.
 - 🔗 Share by link or QR code, with per-visitor permissions (check off / add /
-  remove)
+  remove). Visitors who can't (or don't want to) sign in can still tick items
+  off — their progress is kept on their own device and never touches your list.
 - 🔐 Google Sign-In (Firebase Auth)
 - ⚡ Real-time sync across devices (Firestore)
 - 🔍 Search (appears once a list is worth searching; press `/` any time)
@@ -31,6 +32,8 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
 src/lib/itemInput.ts     smart parsing: quantity, #category, aisle guessing
 src/lib/shoppingItem.ts  item shape, Firestore sanitising, grouping, batching
 src/lib/sharePermissions.ts  what a share-link visitor is allowed to do
+src/lib/sharedSync.ts    diffing the published list against collaborator edits
+src/lib/localTicks.ts    a visitor's own ticks on a list they can't write to
 src/components/          ShoppingList (screen) + ItemRow, ShareDialog,
                          ConfirmDialog, DismissibleMessage, UserAvatar
 src/hooks/               useDarkMode, useOnlineStatus
@@ -65,32 +68,18 @@ tested without Firebase or a browser.
 
 ## Firestore Security Rules
 
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /shoppingItems/{itemId} {
-      allow read, delete: if request.auth != null
-        && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null
-        && request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth != null
-        && request.auth.uid == resource.data.userId
-        && request.resource.data.userId == resource.data.userId;
-    }
+The live ruleset is `firestore.rules` in this repo — deploy it rather than
+copying rules out of documentation:
 
-    match /sharedLists/{ownerId} {
-      allow get: if true;
-      allow list: if false;
-      allow create, update: if request.auth != null
-        && request.auth.uid == ownerId
-        && request.resource.data.ownerId == request.auth.uid;
-      allow delete: if request.auth != null
-        && request.auth.uid == ownerId;
-    }
-  }
-}
+```bash
+firebase deploy --only firestore:rules
 ```
+
+In short: a signed-in user can only read and write their own `shoppingItems`,
+and `sharedLists/{ownerId}` is world-readable by document ID but only the owner
+may create it, rename it or change its permissions. A signed-in collaborator
+may change nothing but the `items` array, and only while the owner has editing
+switched on.
 
 ## Deploy
 

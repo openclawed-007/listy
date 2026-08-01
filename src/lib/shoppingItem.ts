@@ -163,12 +163,20 @@ export function normalizeSharedListSnapshot(
   };
 }
 
-/** Group items by category, keeping the catch-all group last. */
-export function groupItemsByCategory(items: ShoppingItem[]) {
-  const groups = new Map<string, ShoppingItem[]>();
+/**
+ * Group items by category, keeping the catch-all group last.
+ *
+ * Generic over the item shape so the owner's list and the public share page
+ * group identically — a shared list should not look different just because
+ * you opened it from a link.
+ */
+export function groupItemsByCategory<T extends { category?: string }>(
+  items: T[],
+) {
+  const groups = new Map<string, T[]>();
 
   items.forEach((item) => {
-    const category = getItemCategory(item);
+    const category = item.category ?? DEFAULT_CATEGORY;
     const existing = groups.get(category);
     if (existing) existing.push(item);
     else groups.set(category, [item]);
