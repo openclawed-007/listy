@@ -265,18 +265,19 @@ describe("ShoppingList sharing", () => {
       );
     });
 
-    expect(screen.getByLabelText("Share code AB3D-K7MP")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Copy share code AB3D-K7MP" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Copy share code AB3D-K7MP" }),
+    );
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("AB3D-K7MP");
 
     await userEvent.click(screen.getByRole("button", { name: "Copy link" }));
-
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       "http://localhost:3000/c/AB3DK7MP",
     );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Copy share code" }),
-    );
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("AB3D-K7MP");
   });
 
   it("stops sharing by deleting the public share doc when the user clicks stop", async () => {
