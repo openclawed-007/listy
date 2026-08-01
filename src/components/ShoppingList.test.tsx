@@ -157,6 +157,10 @@ beforeEach(() => {
   );
 
   mockBatchCommit.mockResolvedValue(undefined);
+  mockAddDoc.mockResolvedValue({ id: "new-doc" });
+  mockDeleteDoc.mockResolvedValue(undefined);
+  mockSetDoc.mockResolvedValue(undefined);
+  mockUpdateDoc.mockResolvedValue(undefined);
 });
 
 describe("ShoppingList sharing", () => {
@@ -439,6 +443,90 @@ describe("ShoppingList sharing", () => {
     expect(mockBatchCommit).not.toHaveBeenCalled();
     expect(mockBatchDelete).not.toHaveBeenCalled();
     expect(mockBatchSet).not.toHaveBeenCalled();
+  });
+});
+
+describe("ShoppingList collaborator sync-back", () => {
+  // Regression: the owner publishes on a debounce while listening to the same
+  // document, so the server is briefly behind the owner's own edits. Reading
+  // that lag as collaborator activity used to re-create items the owner had
+  // just deleted, and delete items they had just renamed.
+  it("does not resurrect an item the owner just deleted", async () => {
+    snapshotDocs = [
+      makeDoc("personal-1", {
+        text: "Milk",
+        completed: false,
+        userId: user.uid,
+        listId: "personal",
+      }),
+    ];
+    // The share doc still holds the item the owner has already removed.
+    sharedSnapshots.set("owner-uid", {
+      ownerId: "owner-uid",
+      ownerName: "Brad Owner",
+      allowEdits: true,
+      permissions: { toggle: true, add: true, remove: true },
+      items: [
+        { text: "Milk", completed: false },
+        { text: "Bread", completed: false },
+      ],
+    });
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => sharedSnapshots.get("owner-uid"),
+    });
+    // What we last published matches the server, so nothing here is theirs.
+    localStorage.setItem(
+      "cartlink:published:owner-uid",
+      JSON.stringify({
+        "Milk\u0000\u0000": false,
+        "Bread\u0000\u0000": false,
+      }),
+    );
+
+    renderShoppingList();
+
+    await screen.findByText("Milk");
+    await waitFor(() => expect(mockGetDoc).toHaveBeenCalled());
+
+    // Bread is gone locally and absent from the diff, so it must stay gone.
+    expect(mockAddDoc).not.toHaveBeenCalled();
+    expect(mockDeleteDoc).not.toHaveBeenCalled();
+  });
+
+  it("applies a change that really did come from a collaborator", async () => {
+    snapshotDocs = [
+      makeDoc("personal-1", {
+        text: "Milk",
+        completed: false,
+        userId: user.uid,
+        listId: "personal",
+      }),
+    ];
+    sharedSnapshots.set("owner-uid", {
+      ownerId: "owner-uid",
+      ownerName: "Brad Owner",
+      allowEdits: true,
+      permissions: { toggle: true, add: true, remove: true },
+      items: [{ text: "Milk", completed: true }],
+    });
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => sharedSnapshots.get("owner-uid"),
+    });
+    localStorage.setItem(
+      "cartlink:published:owner-uid",
+      JSON.stringify({ "Milk\u0000\u0000": false }),
+    );
+
+    renderShoppingList();
+
+    await waitFor(() =>
+      expect(mockUpdateDoc).toHaveBeenCalledWith(
+        { path: "shoppingItems/personal-1" },
+        { completed: true },
+      ),
+    );
   });
 });
 

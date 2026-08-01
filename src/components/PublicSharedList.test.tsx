@@ -66,6 +66,7 @@ function renderPublicSharedList(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   mockUpdateDoc.mockResolvedValue(undefined);
 });
 
@@ -317,7 +318,7 @@ describe("PublicSharedList", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("disables toggle controls for signed-in users without toggle permission", async () => {
+  it("keeps ticking usable for signed-in visitors without toggle permission, without writing back", async () => {
     emitSharedSnapshot({
       ownerId: "alex-uid",
       ownerName: "Alex",
@@ -331,14 +332,16 @@ describe("PublicSharedList", () => {
     const contentControl = await screen.findByRole("button", {
       name: "Apples",
     });
-    const toggleControl = screen.getByRole("button", {
-      name: 'Mark "Apples" as completed',
-    });
-    expect(contentControl).toBeDisabled();
-    expect(toggleControl).toBeDisabled();
+
+    // Signing in must not take away the ability to keep your place while
+    // shopping — it just means the tick stays on this device.
     await userEvent.click(contentControl);
-    expect(contentControl).toHaveAttribute("aria-pressed", "false");
+
+    expect(contentControl).toHaveAttribute("aria-pressed", "true");
     expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/keeps your place on this device/i),
+    ).toBeInTheDocument();
   });
 
   it("does not write back when no permissions are granted", async () => {
@@ -355,8 +358,90 @@ describe("PublicSharedList", () => {
     const apples = await screen.findByRole("button", { name: "Apples" });
     await userEvent.click(apples);
 
-    expect(apples).toBeDisabled();
-    expect(apples).toHaveAttribute("aria-pressed", "false");
+    expect(apples).toHaveAttribute("aria-pressed", "true");
     expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it("remembers a visitor's own ticks across a reload", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      items: [
+        { text: "Apples", completed: false },
+        { text: "Tea", completed: false },
+      ],
+    });
+
+    const first = renderPublicSharedList();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Apples" }),
+    );
+    expect(screen.getByRole("button", { name: "Apples" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    first.unmount();
+
+    renderPublicSharedList();
+
+    expect(
+      await screen.findByRole("button", { name: "Apples" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Tea" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("keeps a visitor's ticks when the owner changes the list underneath them", async () => {
+    let listener:
+      | ((snapshot: {
+          exists: () => boolean;
+          data: () => Record<string, unknown>;
+        }) => void)
+      | null = null;
+    mockOnSnapshot.mockImplementation((_doc, next) => {
+      listener = next;
+      next({
+        exists: () => true,
+        data: () => ({
+          ownerId: "alex-uid",
+          ownerName: "Alex",
+          items: [{ text: "Apples", completed: false }],
+        }),
+      });
+      return vi.fn();
+    });
+
+    renderPublicSharedList();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Apples" }),
+    );
+    expect(screen.getByRole("button", { name: "Apples" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // The owner adds something while the visitor is mid-shop.
+    listener?.({
+      exists: () => true,
+      data: () => ({
+        ownerId: "alex-uid",
+        ownerName: "Alex",
+        items: [
+          { text: "Apples", completed: false },
+          { text: "Bread", completed: false },
+        ],
+      }),
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Bread" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apples" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });

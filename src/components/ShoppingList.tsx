@@ -46,6 +46,16 @@ import {
   parseItemInput,
 } from "../lib/itemInput";
 import {
+  buildPublishedState,
+  clearPublishedState,
+  diffSharedState,
+  hasSharedChanges,
+  indexSharedItems,
+  readPublishedState,
+  writePublishedState,
+  type PublishedState,
+} from "../lib/sharedSync";
+import {
   commitBatchOperations,
   getItemListId,
   getItemListName,
@@ -123,6 +133,13 @@ const ShoppingList: React.FC = () => {
   const handledShareId = useRef<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const addInputRef = useRef<HTMLInputElement | null>(null);
+  // The snapshot we last pushed to sharedLists/{uid}. Everything the
+  // collaborator listener does is measured against this, never against the
+  // live list — see src/lib/sharedSync.ts for why.
+  const publishedRef = useRef<PublishedState | null>(null);
+  // Latest personal items, readable from the listener without making the
+  // subscription tear down and replay on every keystroke.
+  const personalItemsRef = useRef<ShoppingItem[]>([]);
 
   useEffect(() => {
     return () => {
@@ -189,6 +206,9 @@ const ShoppingList: React.FC = () => {
         setIsSharing(true);
         setPermissions(normalizeSharePermissions(data?.permissions));
         setShareUrl(`${window.location.origin}/share/${user.uid}`);
+        // Remember what we published last session so collaborator changes made
+        // while this app was closed are still recognised as theirs.
+        publishedRef.current = readPublishedState(user.uid);
       } catch (error) {
         console.error("Load share state error:", error);
       }
@@ -230,13 +250,21 @@ const ShoppingList: React.FC = () => {
     if (!isSharing || !itemsLoaded || !user || !db) return;
 
     const timeout = window.setTimeout(() => {
+      const published = personalItems.map(toSharedItemPayload);
+
+      // Record before the write, not after: the local echo of our own write
+      // arrives on the listener first, and it must not look like a change
+      // somebody else made.
+      publishedRef.current = buildPublishedState(published);
+      writePublishedState(user.uid, publishedRef.current);
+
       Promise.resolve(
         setDoc(doc(db, "sharedLists", user.uid), {
           ownerId: user.uid,
           ownerName,
           allowEdits,
           permissions,
-          items: personalItems.map(toSharedItemPayload),
+          items: published,
           updatedAt: serverTimestamp(),
         }),
       ).catch((error) => {
@@ -255,9 +283,17 @@ const ShoppingList: React.FC = () => {
     user,
   ]);
 
-  // When collaborators can edit, reconcile the changes they make on the public
-  // shared doc back into the owner's own items: toggle completion, add new
-  // items and remove deleted ones, gated by the granted permissions.
+  // Keep the newest personal items reachable from the collaborator listener
+  // without re-subscribing (and replaying a stale snapshot) on every change.
+  useEffect(() => {
+    personalItemsRef.current = personalItems;
+  }, [personalItems]);
+
+  // Collaborators write to the same shared document the owner publishes to, so
+  // pull their changes back into the owner's own items. Only differences from
+  // the snapshot *we* last published count as theirs: comparing against the
+  // live list instead would treat the owner's own un-published edits and
+  // deletions as collaborator activity and undo them.
   useEffect(() => {
     if (!isSharing || !allowEdits || !user || !db) return;
 
@@ -269,34 +305,49 @@ const ShoppingList: React.FC = () => {
         const shared = normalizeSharedListSnapshot(snapshot.data());
         if (!shared) return;
 
-        const sharedByKey = new Map<string, (typeof shared.items)[number]>();
-        shared.items.forEach((sharedItem) => {
-          sharedByKey.set(getSharedItemKey(sharedItem), sharedItem);
-        });
+        const remoteState = buildPublishedState(shared.items);
+        const published = publishedRef.current;
 
+        // Nothing to compare against yet (first ever share, or storage was
+        // cleared). Adopt what is on the server as the baseline instead of
+        // guessing who changed what.
+        if (!published) {
+          publishedRef.current = remoteState;
+          writePublishedState(user.uid, remoteState);
+          return;
+        }
+
+        const diff = diffSharedState(published, remoteState);
+        if (!hasSharedChanges(diff)) return;
+
+        const sharedByKey = indexSharedItems(shared.items);
         const personalByKey = new Map<string, ShoppingItem>();
-        personalItems.forEach((item) => {
+        personalItemsRef.current.forEach((item) => {
           personalByKey.set(getSharedItemKey(item), item);
         });
 
-        // Toggle: same item, different completion state.
-        if (permissions.toggle) {
-          personalItems.forEach((item) => {
-            const sharedItem = sharedByKey.get(getSharedItemKey(item));
-            if (!sharedItem || sharedItem.completed === item.completed) return;
+        // Accept the collaborator's version as the new baseline up front, so a
+        // second snapshot for the same change cannot apply it twice.
+        publishedRef.current = remoteState;
+        writePublishedState(user.uid, remoteState);
 
-            updateDoc(doc(db, "shoppingItems", item.id), {
-              completed: sharedItem.completed,
-            }).catch((error) => {
-              console.error("Collaborator toggle sync-back error:", error);
-            });
+        if (permissions.toggle) {
+          diff.toggled.forEach(({ key, completed }) => {
+            const item = personalByKey.get(key);
+            if (!item || item.completed === completed) return;
+
+            updateDoc(doc(db, "shoppingItems", item.id), { completed }).catch(
+              (error) => {
+                console.error("Collaborator toggle sync-back error:", error);
+              },
+            );
           });
         }
 
-        // Add: shared item that has no matching personal item yet.
         if (permissions.add) {
-          shared.items.forEach((sharedItem) => {
-            if (personalByKey.has(getSharedItemKey(sharedItem))) return;
+          diff.added.forEach((key) => {
+            const sharedItem = sharedByKey.get(key);
+            if (!sharedItem || personalByKey.has(key)) return;
 
             addDoc(collection(db, "shoppingItems"), {
               text: sharedItem.text,
@@ -313,10 +364,10 @@ const ShoppingList: React.FC = () => {
           });
         }
 
-        // Remove: personal item no longer present in the shared list.
         if (permissions.remove) {
-          personalItems.forEach((item) => {
-            if (sharedByKey.has(getSharedItemKey(item))) return;
+          diff.removed.forEach((key) => {
+            const item = personalByKey.get(key);
+            if (!item) return;
 
             deleteDoc(doc(db, "shoppingItems", item.id)).catch((error) => {
               console.error("Collaborator remove sync-back error:", error);
@@ -330,7 +381,7 @@ const ShoppingList: React.FC = () => {
     );
 
     return unsubscribe;
-  }, [allowEdits, permissions, isSharing, personalItems, user]);
+  }, [allowEdits, permissions, isSharing, user]);
 
   useEffect(() => {
     if (
@@ -431,6 +482,7 @@ const ShoppingList: React.FC = () => {
   const propagateToSharedOwner = async (
     item: ShoppingItem,
     change: "toggle" | "remove" | "add",
+    nextCompleted?: boolean,
   ) => {
     if (!db || !item.sharedFromUserId) return;
 
@@ -485,9 +537,12 @@ const ShoppingList: React.FC = () => {
       } else if (change === "add") {
         workingItems = [...rawItems, toSharedItemPayload(item)];
       } else {
+        // Use the state we are moving *to* rather than inverting whatever the
+        // caller happened to hold, so a toggle can never land the wrong way up.
+        const completed = nextCompleted ?? !item.completed;
         workingItems = rawItems.map((rawItem, index) =>
           index === matchIndex
-            ? { ...(rawItem as object), completed: !item.completed }
+            ? { ...(rawItem as object), completed }
             : rawItem,
         );
       }
@@ -551,7 +606,7 @@ const ShoppingList: React.FC = () => {
 
         // Un-checking counts as a toggle for the list owner.
         if (duplicateItem.completed && duplicateItem.sharedFromUserId) {
-          void propagateToSharedOwner(duplicateItem, "toggle");
+          void propagateToSharedOwner(duplicateItem, "toggle", false);
         }
 
         setNotice(
@@ -617,7 +672,7 @@ const ShoppingList: React.FC = () => {
       setActionError("");
       await updateDoc(doc(db, "shoppingItems", id), { completed: !completed });
       if (item?.sharedFromUserId) {
-        void propagateToSharedOwner(item, "toggle");
+        void propagateToSharedOwner(item, "toggle", !completed);
       }
     } catch (error) {
       console.error("Update item error:", error);
@@ -676,6 +731,12 @@ const ShoppingList: React.FC = () => {
           : {}),
         createdAt: item.createdAt ?? serverTimestamp(),
       });
+
+      // The delete was pushed to the list owner, so the undo has to be too —
+      // otherwise the item comes back here and stays gone for everyone else.
+      if (item.sharedFromUserId) {
+        void propagateToSharedOwner(item, "add");
+      }
     } catch (error) {
       console.error("Undo delete item error:", error);
       setActionError(
@@ -855,6 +916,8 @@ const ShoppingList: React.FC = () => {
 
     try {
       await deleteDoc(doc(db, "sharedLists", user.uid));
+      publishedRef.current = null;
+      clearPublishedState(user.uid);
       setIsSharing(false);
       setPermissions(NO_PERMISSIONS);
       setShareUrl("");
@@ -876,14 +939,44 @@ const ShoppingList: React.FC = () => {
     if (action === "stopSharing") await stopSharing();
   };
 
+  // Transient feedback under the QR code. Without the timeout "Link copied"
+  // sat there permanently and hid the live-sync status it replaced.
+  const flashShareStatus = (message: string) => {
+    setShareStatus(message);
+    window.setTimeout(() => {
+      setShareStatus((current) => (current === message ? "" : current));
+    }, 2500);
+  };
+
   const copyShareLink = async () => {
     if (!shareUrl) return;
 
     try {
       await navigator.clipboard.writeText(shareUrl);
-      setShareStatus("Link copied");
+      flashShareStatus("Link copied");
     } catch {
-      setShareStatus("Copy failed");
+      // Clipboard access needs a secure context and permission. The link is
+      // shown in full in the dialog, so this is a nudge, not a dead end.
+      flashShareStatus("Press and hold the link to copy it");
+    }
+  };
+
+  // Phones have a proper share sheet; use it when the browser offers one so
+  // sending a list to someone is one tap instead of copy-then-find-an-app.
+  const shareViaSystem = async () => {
+    if (!shareUrl || typeof navigator.share !== "function") return;
+
+    try {
+      await navigator.share({
+        title: `${ownerName}'s shopping list`,
+        text: "Here's my shopping list on CartLink",
+        url: shareUrl,
+      });
+    } catch (error) {
+      // A cancelled share sheet is a normal outcome, not a failure.
+      if ((error as { name?: string })?.name === "AbortError") return;
+      console.error("System share error:", error);
+      flashShareStatus("Couldn't open the share sheet");
     }
   };
 
@@ -1083,14 +1176,24 @@ const ShoppingList: React.FC = () => {
               aria-label="Search items"
             />
             {search && (
-              <button
-                className="search-clear"
-                onClick={() => setSearch("")}
-                type="button"
-                aria-label="Clear search"
-              >
-                <X size={14} />
-              </button>
+              <>
+                <span className="search-count" role="status">
+                  {filtered.length} of {totalCount}
+                </span>
+                <button
+                  className="search-clear"
+                  onClick={() => {
+                    setSearch("");
+                    // Clearing should also put the bar away on a short list,
+                    // otherwise "x" only half-dismisses it.
+                    setSearchPinned(false);
+                  }}
+                  type="button"
+                  aria-label="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              </>
             )}
           </div>
         )}
@@ -1173,7 +1276,7 @@ const ShoppingList: React.FC = () => {
             <div className="stats-bar">
               <span className="stats-text">
                 <strong>{activeCount}</strong> left
-                {allDoneCount > 0 && ` · ${allDoneCount} in the bag`}
+                {allDoneCount > 0 && ` · ${allDoneCount} done`}
               </span>
               {allDoneCount > 0 && (
                 <button
@@ -1262,7 +1365,7 @@ const ShoppingList: React.FC = () => {
               {doneCount > 0 && (
                 <>
                   <div className="items-divider">
-                    <span className="items-divider-label">Got it</span>
+                    <span className="items-divider-label">Done</span>
                     <div className="items-divider-line" />
                   </div>
                   {doneGroups.map((group) => (
@@ -1304,6 +1407,7 @@ const ShoppingList: React.FC = () => {
           onClose={() => setShareOpen(false)}
           onStartSharing={startSharing}
           onCopyLink={copyShareLink}
+          onSystemShare={shareViaSystem}
           onTogglePermission={togglePermission}
           onRequestStopSharing={() => setConfirmAction("stopSharing")}
         />

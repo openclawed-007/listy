@@ -437,6 +437,16 @@ input:focus-visible,
   box-shadow: 0 0 0 3px rgba(107, 143, 113, 0.12), var(--shadow-sm);
 }
 
+/* Match count while searching — "no results" should never be a guess. */
+.search-count {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .search-clear {
   position: absolute;
   right: 0.75rem;
@@ -735,21 +745,6 @@ input:focus-visible,
   transition: color 0.2s ease;
 }
 
-.item-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  color: var(--ink-faint);
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.item-meta span {
-  padding: 0.08rem 0.45rem;
-  border-radius: var(--radius-pill);
-  background: var(--cream-dark);
-}
-
 /* Quantity chip on a row. The aisle is the group heading above, so the row
    itself stays down to one glanceable line. */
 .item-qty {
@@ -1002,6 +997,20 @@ input:focus-visible,
 
 .clear-done-btn:hover {
   background: #fff0ed;
+}
+
+/* Tells a visitor what their ticks actually do before they rely on them. */
+.local-ticks-note {
+  margin: -0.35rem 0 1.1rem;
+  padding: 0.55rem 0.8rem;
+  border: 1.5px dashed var(--cream-deep);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.45;
+  text-align: center;
 }
 
 .import-link-btn {
@@ -1443,6 +1452,28 @@ body.dark .modal-backdrop {
   text-align: center;
 }
 
+/* The share address, shown in full so it can always be read or long-pressed. */
+.share-link {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--cream-dark);
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.share-link:hover {
+  background: var(--cream-deep);
+  color: var(--sage-dark);
+}
+
 .share-actions {
   display: flex;
   gap: 0.65rem;
@@ -1564,16 +1595,12 @@ body.dark .modal-backdrop {
   color: var(--sage-dark);
 }
 
-.public-item-row.is-editable {
+.public-item-row {
   cursor: pointer;
 }
 
+/* Public rows render exactly like the owner's rows — same layout, same chip. */
 .public-item-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
   align-items: flex-start;
   text-align: left;
   background: none;
