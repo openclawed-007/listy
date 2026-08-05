@@ -1,4 +1,4 @@
-const CACHE_NAME = "cartlink-shell-v11";
+const CACHE_NAME = "cartlink-shell-v12";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -7,10 +7,14 @@ const APP_SHELL = [
   "/icon-192.png",
   "/icon-512.png",
   "/apple-touch-icon.png",
+  "/notification-icon.png",
+  "/notification-badge.png",
 ];
 
 const REMINDER_STORE = "cartlink-reminders-v1";
 const SW_TAG_PREFIX = "cartlink-reminder-";
+const NOTIFICATION_ICON = "/notification-icon.png";
+const NOTIFICATION_BADGE = "/notification-badge.png";
 
 const offlineFallback = () =>
   new Response("", {
@@ -212,8 +216,8 @@ async function flushDueFromStore() {
       await self.registration.showNotification(item.title || "CartLink", {
         tag: `${SW_TAG_PREFIX}${item.key}`,
         body: item.body || "Time to check your shopping list.",
-        icon: "/icon-192.png",
-        badge: "/icon-192.png",
+        icon: NOTIFICATION_ICON,
+        badge: NOTIFICATION_BADGE,
         data: { url: "/", reminderKey: item.key },
       });
     } catch {

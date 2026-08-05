@@ -20,6 +20,10 @@ import {
 } from "./shoppingReminders";
 
 const SW_TAG_PREFIX = "cartlink-reminder-";
+/** Full-color tile for notification `icon` (not a light/white square). */
+const NOTIFICATION_ICON = "/notification-icon.png";
+/** Monochrome white-on-transparent for Android `badge`. */
+const NOTIFICATION_BADGE = "/notification-badge.png";
 
 function supportsTimestampTrigger(): boolean {
   return (
@@ -85,8 +89,8 @@ async function scheduleViaTriggers(
       registration.showNotification(item.title, {
         tag: `${SW_TAG_PREFIX}${item.key}`,
         body: item.body,
-        icon: "/icon-192.png",
-        badge: "/icon-192.png",
+        icon: NOTIFICATION_ICON,
+        badge: NOTIFICATION_BADGE,
         data: { url: "/", reminderKey: item.key },
         // @ts-expect-error showTrigger is experimental (Notification Triggers).
         showTrigger: new Trigger(item.at),
@@ -108,8 +112,8 @@ async function showNow(
       await registration.showNotification(reminder.title, {
         tag: `${SW_TAG_PREFIX}${reminder.key}`,
         body: reminder.body,
-        icon: "/icon-192.png",
-        badge: "/icon-192.png",
+        icon: NOTIFICATION_ICON,
+        badge: NOTIFICATION_BADGE,
         data: { url: "/", reminderKey: reminder.key },
       });
       return;
@@ -124,7 +128,8 @@ async function showNow(
       new Notification(reminder.title, {
         tag: `${SW_TAG_PREFIX}${reminder.key}`,
         body: reminder.body,
-        icon: "/icon-192.png",
+        icon: NOTIFICATION_ICON,
+        // badge is SW-only on most browsers
         data: { url: "/", reminderKey: reminder.key },
       });
     } catch {
@@ -271,8 +276,8 @@ export async function sendTestNotification(): Promise<{
   const options = {
     tag: `${SW_TAG_PREFIX}test`,
     body,
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    icon: NOTIFICATION_ICON,
+    badge: NOTIFICATION_BADGE,
     data: { url: "/" },
   };
 
