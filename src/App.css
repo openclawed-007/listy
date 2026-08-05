@@ -255,13 +255,6 @@ a:focus-visible {
   flex-shrink: 0;
 }
 
-.nav-icon-group {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-shrink: 0;
-}
-
 /* Account / overflow menus keep secondary chrome out of the bar */
 .nav-account {
   position: relative;
@@ -445,23 +438,6 @@ a:focus-visible {
   background: rgba(192, 107, 74, 0.1);
 }
 
-.user-chip {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  flex-shrink: 0;
-  background: var(--cream-dark);
-  border: 1.5px solid var(--cream-deep);
-  border-radius: var(--radius-pill);
-  padding: 0.3rem 0.75rem 0.3rem 0.3rem;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.user-chip:hover {
-  background: var(--cream-deep);
-  border-color: var(--ink-faint);
-}
-
 .user-avatar {
   width: 32px;
   height: 32px;
@@ -484,45 +460,6 @@ a:focus-visible {
   justify-content: center;
   letter-spacing: 0;
   border: none;
-}
-
-.user-name {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--ink-muted);
-  white-space: nowrap;
-  max-width: 110px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  display: block;
-}
-
-.logout-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1.5px solid var(--cream-deep);
-  background: transparent;
-  color: var(--ink-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.logout-btn:hover {
-  background: rgba(192, 107, 74, 0.1);
-  border-color: var(--terra-light);
-  color: var(--terra);
-  transform: translateX(1px);
-}
-
-.logout-btn:active {
-  background: rgba(192, 107, 74, 0.16);
-  transform: scale(0.94);
 }
 
 /* Theme toggle */
@@ -607,6 +544,12 @@ a:focus-visible {
   flex-shrink: 0;
 }
 
+/* Hard-coded light pink would glow inside the dark navbar. */
+html.dark .offline-pill,
+body.dark .offline-pill {
+  background: rgba(224, 138, 106, 0.16);
+}
+
 @media (max-width: 480px) {
   .offline-pill-text {
     display: none;
@@ -614,81 +557,6 @@ a:focus-visible {
   .offline-pill {
     padding: 0.3rem;
   }
-}
-
-/* ===========================
-   SEARCH / FILTER BAR
-   =========================== */
-.search-bar {
-  position: relative;
-  margin-bottom: 1.25rem;
-  animation: slide-up 0.5s 0.05s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.search-bar-icon {
-  position: absolute;
-  left: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--ink-faint);
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-}
-
-.search-input {
-  width: 100%;
-  height: 46px;
-  padding: 0 1rem 0 2.75rem;
-  border: 1.5px solid var(--cream-deep);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.92rem;
-  font-weight: 400;
-  color: var(--ink);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: var(--shadow-sm);
-}
-
-.search-input::placeholder {
-  color: var(--ink-faint);
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: var(--sage-light);
-  box-shadow: 0 0 0 3px rgba(107, 143, 113, 0.12), var(--shadow-sm);
-}
-
-/* Match count while searching — "no results" should never be a guess. */
-.search-count {
-  flex-shrink: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.search-clear {
-  position: absolute;
-  right: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: var(--ink-faint);
-  cursor: pointer;
-  padding: 0.25rem;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  transition: color 0.15s ease;
-}
-
-.search-clear:hover {
-  color: var(--ink-muted);
 }
 
 /* ===========================
@@ -1406,12 +1274,6 @@ body.dark .item-row.is-important {
   padding: 0 0.05rem;
 }
 
-.stats-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
 .stats-actions {
   display: flex;
   align-items: center;
@@ -1453,10 +1315,6 @@ body.dark .item-row.is-important {
   background: #fff0ed;
 }
 
-.list-toolbar {
-  display: none; /* legacy — replaced by list-meta-row */
-}
-
 .sort-toggle {
   display: inline-flex;
   align-items: center;
@@ -1491,10 +1349,6 @@ body.dark .item-row.is-important {
   background: var(--surface);
   color: var(--sage-dark);
   box-shadow: var(--shadow-sm);
-}
-
-.sort-hint {
-  display: none; /* lives in sort button titles now */
 }
 
 /* Thin "how far through the shop am I" bar under the meta row. */
@@ -3368,14 +3222,6 @@ body.dark .modal-backdrop {
   cursor: pointer;
 }
 
-.share-perms-note {
-  margin: 0.15rem 0 0;
-  font-size: 0.76rem;
-  font-weight: 500;
-  color: var(--ink-muted);
-  text-align: center;
-}
-
 .secondary-btn {
   min-height: 42px;
   flex: 1;
@@ -3538,23 +3384,6 @@ body.dark .modal-backdrop {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
-}
-
-.recaptcha-notice {
-  margin-top: 1rem;
-  font-size: 0.72rem;
-  color: var(--ink-faint);
-  line-height: 1.45;
-  text-align: center;
-}
-
-.recaptcha-notice a {
-  color: var(--ink-muted);
-  text-decoration: underline;
-}
-
-.recaptcha-notice a:hover {
-  color: var(--ink);
 }
 
 /* ===========================
@@ -3743,12 +3572,10 @@ body.dark .modal-backdrop {
     font-size: 1.9rem;
   }
 
-  .user-name,
   .nav-account-name {
     display: none;
   }
 
-  .user-chip,
   .nav-account-trigger {
     padding: 0.22rem;
   }
@@ -3764,12 +3591,7 @@ body.dark .modal-backdrop {
     gap: 0.35rem;
   }
 
-  .nav-icon-group {
-    gap: 0.3rem;
-  }
-
   .theme-toggle,
-  .logout-btn,
   .nav-overflow-trigger {
     width: 36px;
     height: 36px;
@@ -3831,7 +3653,6 @@ body.dark .modal-backdrop {
 /* Comfortable minimum targets for touch without making the lean layout bulky. */
 @media (pointer: coarse) {
   .theme-toggle,
-  .logout-btn,
   .modal-close,
   .edit-btn,
   .delete-btn {

@@ -16,7 +16,6 @@ import {
   readLocalUserPreferences,
   writeLocalUserPreferences,
   type InterfacePreferences,
-  type UserPreferences,
 } from "../lib/userPreferences";
 import {
   normalizeReminderSettings,
@@ -47,6 +46,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user } = useAuth();
+  const uid = user?.uid ?? null;
   const [interfacePrefs, setInterfaceState] = useState<InterfacePreferences>(
     () => readLocalUserPreferences().interface,
   );
@@ -66,9 +66,9 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
       writeLocalUserPreferences({ interface: nextInterface });
       writeLocalReminderSettings(nextReminders);
 
-      if (user?.uid && db) {
+      if (uid && db) {
         await setDoc(
-          doc(db, "userSettings", user.uid),
+          doc(db, "userSettings", uid),
           {
             interface: nextInterface,
             shoppingReminders: nextReminders,
@@ -78,7 +78,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       }
     },
-    [user?.uid],
+    [uid],
   );
 
   const setInterfacePrefs = useCallback(
@@ -101,7 +101,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const refreshFromCloud = useCallback(async () => {
-    if (!user?.uid || !db) {
+    if (!uid || !db) {
       const local = readLocalUserPreferences();
       setInterfaceState(local.interface);
       setReminderState(readLocalReminderSettings());
@@ -109,7 +109,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      const snap = await getDoc(doc(db, "userSettings", user.uid));
+      const snap = await getDoc(doc(db, "userSettings", uid));
       if (!snap.exists()) return;
       const data = snap.data();
       const next = normalizeUserPreferences({
@@ -124,7 +124,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (error) {
       console.error("Load user preferences error:", error);
     }
-  }, [user?.uid]);
+  }, [uid]);
 
   useEffect(() => {
     void refreshFromCloud();

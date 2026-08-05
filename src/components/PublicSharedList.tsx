@@ -33,6 +33,7 @@ import { groupItemsByCategory, isRecord } from "../lib/shoppingItem";
 import { useAuth } from "../context/useAuth";
 import { usePreferences } from "../context/PreferencesContext";
 import { useDarkMode } from "../hooks/useDarkMode";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import {
   clearLocalTicks,
   pruneTicks,
@@ -267,6 +268,7 @@ const PublicSharedList: React.FC = () => {
   const [localTicks, setLocalTicks] = useState<LocalTicks>(() =>
     shareId ? readLocalTicks(shareId) : {},
   );
+  useDocumentTitle(loading || error ? null : ownerName);
 
   useEffect(() => {
     if (!shareId || !db) return;
@@ -676,7 +678,7 @@ const PublicSharedList: React.FC = () => {
                     group.category !== DEFAULT_CATEGORY) && (
                     <div className="category-heading">{group.category}</div>
                   )}
-                  {group.items.map((item, index) => (
+                  {group.items.map((item) => (
                     <div
                       key={item.id}
                       className={`item-row public-item-row ${item.completed ? "completed" : ""} ${interfacePrefs.importantStars && item.important ? "is-important" : ""}`}

@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import BrandMark from "./BrandMark";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 interface LegalPageProps {
   title: string;
@@ -9,6 +10,7 @@ interface LegalPageProps {
 }
 
 const LegalPage: React.FC<LegalPageProps> = ({ title, updated, children }) => {
+  useDocumentTitle(title);
   return (
     <div className="legal-wrapper">
       <header className="legal-header">

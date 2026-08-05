@@ -12,6 +12,7 @@ import {
 import { useAuth } from "../context/useAuth";
 import { isFirebaseConfigured } from "../firebase";
 import { useDarkMode } from "../hooks/useDarkMode";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import BrandMark from "./BrandMark";
 
@@ -39,6 +40,7 @@ const Login: React.FC = () => {
   const { canInstall, install } = useInstallPrompt();
   const [loginError, setLoginError] = React.useState("");
   const [isLoggingIn, setIsLoggingIn] = React.useState(false);
+  useDocumentTitle("Sign in");
 
   const handleLogin = async () => {
     setLoginError("");

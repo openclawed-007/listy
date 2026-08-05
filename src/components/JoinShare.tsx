@@ -11,6 +11,7 @@ import {
 } from "../lib/shareCode";
 import { useAuth } from "../context/useAuth";
 import { useDarkMode } from "../hooks/useDarkMode";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import BrandMark from "./BrandMark";
 
 /**
@@ -27,6 +28,7 @@ const JoinShare: React.FC = () => {
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(Boolean(routeCode));
+  useDocumentTitle("Join a list");
 
   const openList = async (rawInput: string) => {
     if (!db) {

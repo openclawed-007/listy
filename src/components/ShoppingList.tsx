@@ -1277,7 +1277,6 @@ const ShoppingList: React.FC = () => {
   const {
     activeItems,
     doneItems,
-    activeGroups,
     doneGroups,
     activeCount,
     doneCount,
@@ -1294,7 +1293,6 @@ const ShoppingList: React.FC = () => {
     return {
       activeItems: stillNeeded,
       doneItems: alreadyGot,
-      activeGroups: groupItemsByCategory(stillNeeded),
       doneGroups: groupItemsByCategory(alreadyGot),
       activeCount: stillNeeded.length,
       doneCount: alreadyGot.length,

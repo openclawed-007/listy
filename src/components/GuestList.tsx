@@ -18,6 +18,7 @@ import NavOverflowMenu from "./NavOverflowMenu";
 import SettingsDialog from "./SettingsDialog";
 import { useAuth } from "../context/useAuth";
 import { useDarkMode } from "../hooks/useDarkMode";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import {
   startReminderWatch,
   syncReminderSchedule,
@@ -101,6 +102,7 @@ const GuestList: React.FC = () => {
   const flipFirstRef = useRef<Map<string, DOMRect> | null>(null);
   const activeItemsRef = useRef<GuestItem[]>([]);
   const preview = useMemo(() => parseItemInput(value), [value]);
+  useDocumentTitle("Guest list");
 
   useEffect(() => writeGuestItems(items), [items]);
   useEffect(() => {
@@ -119,17 +121,6 @@ const GuestList: React.FC = () => {
     if (!DEV_GUEST_SETTINGS || !interfacePrefs.shoppingBanners) return null;
     return shoppingDayBanner(reminderSettings);
   }, [interfacePrefs.shoppingBanners, reminderSettings]);
-
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-spinner" />
-      </div>
-    );
-  }
-
-  // Signed-in users belong on the synced list; guest items migrate there once.
-  if (user) return <Navigate to="/" replace />;
 
   const addItem = (event: React.FormEvent) => {
     event.preventDefault();
@@ -210,7 +201,6 @@ const GuestList: React.FC = () => {
   const {
     activeItems,
     doneItems,
-    activeGroups,
     doneGroups,
     filteredCount,
   } = useMemo(() => {
@@ -235,7 +225,6 @@ const GuestList: React.FC = () => {
     return {
       activeItems: stillNeeded,
       doneItems: alreadyGot,
-      activeGroups: groupItemsByCategory(stillNeeded),
       doneGroups: groupItemsByCategory(alreadyGot),
       filteredCount: visible.length,
     };
@@ -284,6 +273,19 @@ const GuestList: React.FC = () => {
     }
     activeItemsRef.current = activeItems;
   }, [activeItems]);
+
+  // Early returns must come after every hook — a conditional hook count
+  // crashes React when the auth state resolves.
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner" />
+      </div>
+    );
+  }
+
+  // Signed-in users belong on the synced list; guest items migrate there once.
+  if (user) return <Navigate to="/" replace />;
 
   const applyActiveReorder = (nextActive: GuestItem[]) => {
     const orders = assignSequentialOrders(nextActive);

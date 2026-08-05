@@ -1,8 +1,10 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { PackageOpen } from "lucide-react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 const NotFound: React.FC = () => {
+  useDocumentTitle("Page not found");
   return (
     <div className="not-found-wrapper">
       <div className="not-found-card">
