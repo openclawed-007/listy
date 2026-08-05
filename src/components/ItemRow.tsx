@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Check, GripVertical, Pencil, Trash2 } from "lucide-react";
+import { Check, GripVertical, Pencil, Star, Trash2 } from "lucide-react";
 import {
   formatQuantity,
   MAX_CATEGORY_LENGTH,
@@ -45,6 +45,7 @@ interface ItemRowProps {
   edit: ItemEditState;
   reorder?: ItemReorderState;
   onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
+  onToggleImportant?: (id: string, important: boolean) => void;
   onDelete: (id: string) => void;
 }
 
@@ -73,17 +74,22 @@ function rowIdFromPoint(x: number, y: number): string | null {
 
 export const ItemRow: React.FC<ItemRowProps> = ({
   item,
-  index,
+  index: _index,
   edit,
   reorder,
   onToggle,
+  onToggleImportant,
   onDelete,
 }) => {
+  void _index;
   const isEditing = edit.editingId === item.id;
   const handleEditKeys = useEditKeys(edit);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const canReorder = Boolean(reorder?.enabled && !item.completed && !isEditing);
   const isDragging = reorder?.draggingId === item.id;
+  const isImportant = item.important === true;
+  // Star control doubles as the gate for important row chrome.
+  const showImportantUi = Boolean(onToggleImportant) && isImportant;
   const isDropTarget =
     Boolean(reorder?.dropTargetId === item.id) &&
     Boolean(reorder?.draggingId) &&
@@ -158,12 +164,10 @@ export const ItemRow: React.FC<ItemRowProps> = ({
         return;
       }
 
+      // Always commit on release — live preview already moved rows; cancel
+      // only happens via pointercancel above.
       const targetId = rowIdFromPoint(clientX, clientY) ?? lastTargetId;
-      if (targetId && targetId !== item.id) {
-        reorder.onDrop(targetId);
-      } else {
-        reorder.onDragEnd();
-      }
+      reorder.onDrop(targetId ?? item.id);
     };
 
     const onMove = (moveEvent: PointerEvent) => {
@@ -194,8 +198,7 @@ export const ItemRow: React.FC<ItemRowProps> = ({
     <div
       ref={rowRef}
       data-item-id={item.id}
-      className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""} ${canReorder ? "is-reorderable" : ""}`}
-      style={{ animationDelay: `${Math.min(index, 8) * 0.03}s` }}
+      className={`item-row ${item.completed ? "completed" : ""} ${showImportantUi ? "is-important" : ""} ${isEditing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""} ${canReorder ? "is-reorderable" : ""}`}
     >
       {canReorder && reorder && (
         <button
@@ -290,6 +293,30 @@ export const ItemRow: React.FC<ItemRowProps> = ({
         </button>
       )}
 
+      {!isEditing && onToggleImportant && (
+        <button
+          className={`important-btn ${isImportant ? "is-active" : ""}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleImportant(item.id, isImportant);
+          }}
+          title={isImportant ? "Remove important" : "Mark important"}
+          type="button"
+          aria-label={
+            isImportant
+              ? `Unmark "${item.text}" as important`
+              : `Mark "${item.text}" as important`
+          }
+          aria-pressed={isImportant}
+        >
+          <Star
+            size={13}
+            strokeWidth={2.25}
+            fill={isImportant ? "currentColor" : "none"}
+          />
+        </button>
+      )}
+
       {!isEditing && (
         <button
           className="edit-btn"
@@ -327,6 +354,7 @@ interface CategoryGroupProps {
   edit: ItemEditState;
   reorder?: ItemReorderState;
   onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
+  onToggleImportant?: (id: string, important: boolean) => void;
   onDelete: (id: string) => void;
 }
 
@@ -336,6 +364,7 @@ export const CategoryGroup: React.FC<CategoryGroupProps> = ({
   edit,
   reorder,
   onToggle,
+  onToggleImportant,
   onDelete,
 }) => (
   <div className="category-group">
@@ -348,6 +377,7 @@ export const CategoryGroup: React.FC<CategoryGroupProps> = ({
         edit={edit}
         reorder={reorder}
         onToggle={onToggle}
+        onToggleImportant={onToggleImportant}
         onDelete={onDelete}
       />
     ))}

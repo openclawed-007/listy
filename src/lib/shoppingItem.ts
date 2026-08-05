@@ -31,6 +31,8 @@ export interface ShoppingItem {
   listId?: string;
   listName?: string;
   sharedFromUserId?: string;
+  /** Must-get items — floats to top in Aisle/A–Z sorts. */
+  important?: boolean;
   /** Lower values appear higher when sorted by manual order. */
   sortOrder?: number;
   createdAt?: Timestamp;
@@ -43,6 +45,7 @@ export interface SharedItemPayload {
   completed: boolean;
   quantity?: string;
   category?: string;
+  important?: boolean;
 }
 
 export interface SharedListSnapshot {
@@ -94,6 +97,7 @@ export function toSharedItemPayload(item: {
   completed: boolean;
   quantity?: string;
   category?: string;
+  important?: boolean;
 }): SharedItemPayload {
   return {
     ...(item.id ? { id: item.id } : {}),
@@ -101,6 +105,7 @@ export function toSharedItemPayload(item: {
     completed: item.completed,
     ...(item.quantity ? { quantity: item.quantity } : {}),
     ...(item.category ? { category: item.category } : {}),
+    ...(item.important ? { important: true } : {}),
   };
 }
 
@@ -145,6 +150,7 @@ export function normalizeShoppingItem(
     listId: normalizeOptionalString(data.listId, 200),
     listName: normalizeOptionalString(data.listName, 120),
     sharedFromUserId: normalizeOptionalString(data.sharedFromUserId, 128),
+    ...(data.important === true ? { important: true } : {}),
     ...(sortOrder !== undefined ? { sortOrder } : {}),
     createdAt:
       data.createdAt &&
@@ -173,6 +179,7 @@ export function normalizeSharedItems(items: unknown): SharedItemPayload[] {
         completed: item.completed === true,
         quantity: normalizeOptionalString(item.quantity, MAX_QUANTITY_LENGTH),
         category: normalizeOptionalString(item.category, MAX_CATEGORY_LENGTH),
+        ...(item.important === true ? { important: true } : {}),
       },
     ];
   });

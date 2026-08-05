@@ -36,6 +36,29 @@ describe("listOrder", () => {
     ]);
   });
 
+  it("floats important items first in aisle and alpha, not manual", () => {
+    const items = [
+      { id: "a", text: "Bread", sortOrder: 0 },
+      { id: "b", text: "Milk", sortOrder: 1, important: true },
+      { id: "c", text: "Eggs", sortOrder: 2 },
+    ];
+    expect(sortItemsForMode(items, "aisle").map((i) => i.id)).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
+    expect(sortItemsForMode(items, "alpha").map((i) => i.id)).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
+    expect(sortItemsForMode(items, "manual").map((i) => i.id)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
   it("reorders by id and assigns dense sortOrder", () => {
     const items = [
       { id: "a", text: "A" },

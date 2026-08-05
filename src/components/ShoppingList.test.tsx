@@ -657,7 +657,7 @@ describe("ShoppingList smart add field", () => {
   it("reads the quantity and aisle out of what the customer typed", async () => {
     renderShoppingList();
 
-    await userEvent.type(screen.getByLabelText("New shopping item"), "2 milk");
+    await userEvent.type(screen.getByLabelText("Add or search items"), "2 milk");
     await userEvent.click(screen.getByRole("button", { name: "Add item" }));
 
     await waitFor(() => {
@@ -687,7 +687,7 @@ describe("ShoppingList smart add field", () => {
     renderShoppingList();
 
     await userEvent.type(
-      await screen.findByLabelText("New shopping item"),
+      await screen.findByLabelText("Add or search items"),
       "milk",
     );
     await userEvent.click(screen.getByRole("button", { name: "Add item" }));

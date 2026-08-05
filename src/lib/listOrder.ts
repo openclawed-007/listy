@@ -61,6 +61,7 @@ export function writeDoneCollapsed(collapsed: boolean) {
 type Orderable = {
   id: string;
   text: string;
+  important?: boolean;
   sortOrder?: number;
   createdAt?: { toMillis?: () => number } | number;
 };
@@ -94,13 +95,28 @@ export function compareAlphaOrder(a: Orderable, b: Orderable): number {
   return compareManualOrder(a, b);
 }
 
+/**
+ * Sort for display.
+ * - Aisle / A–Z: important items float to the top (then aisle or alpha).
+ * - Manual: pure user order — star is visual only so "my order" stays trusted.
+ */
 export function sortItemsForMode<T extends Orderable>(
   items: T[],
   mode: ListSortMode,
 ): T[] {
   const copy = [...items];
-  if (mode === "alpha") copy.sort(compareAlphaOrder);
-  else copy.sort(compareManualOrder);
+  if (mode === "manual") {
+    copy.sort(compareManualOrder);
+    return copy;
+  }
+
+  copy.sort((a, b) => {
+    const aImportant = a.important === true;
+    const bImportant = b.important === true;
+    if (aImportant !== bImportant) return aImportant ? -1 : 1;
+    if (mode === "alpha") return compareAlphaOrder(a, b);
+    return compareManualOrder(a, b);
+  });
   return copy;
 }
 

@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   addDoc,
   collection,
@@ -18,14 +24,9 @@ import {
 import {
   ChevronDown,
   ChevronRight,
-  Download,
-  LogOut,
-  Moon,
   PackageOpen,
   Plus,
-  Search,
   Share2,
-  Sun,
   WifiOff,
   X,
 } from "lucide-react";
@@ -98,6 +99,7 @@ import {
   writeListSortMode,
   type ListSortMode,
 } from "../lib/listOrder";
+import { captureItemRects, playItemFlip } from "../lib/listFlip";
 import { useAuth } from "../context/useAuth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { useDarkMode } from "../hooks/useDarkMode";
@@ -105,8 +107,9 @@ import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import BrandMark from "./BrandMark";
 import ConfirmDialog, { type ConfirmAction } from "./ConfirmDialog";
 import DismissibleMessage from "./DismissibleMessage";
+import NavAccountMenu from "./NavAccountMenu";
+import SettingsDialog from "./SettingsDialog";
 import ShareDialog, { type ShareDialogTab } from "./ShareDialog";
-import UserAvatar from "./UserAvatar";
 import {
   CATEGORY_DATALIST_ID,
   CategoryGroup,
@@ -114,6 +117,12 @@ import {
   type ItemEditState,
   type ItemReorderState,
 } from "./ItemRow";
+import {
+  startReminderWatch,
+  syncReminderSchedule,
+} from "../lib/reminderNotifications";
+import { shoppingDayBanner } from "../lib/shoppingReminders";
+import { usePreferences } from "../context/PreferencesContext";
 
 interface ListTab {
   id: string;
@@ -125,10 +134,6 @@ interface PendingDelete {
   timeoutId: number;
 }
 
-// Below this many items, searching is slower than just looking at the list, so
-// the field stays out of the way until it earns its place (or "/" is pressed).
-const SEARCH_VISIBILITY_THRESHOLD = 8;
-
 const ShoppingList: React.FC = () => {
   const { user, logout } = useAuth();
   const { shareId } = useParams();
@@ -138,8 +143,6 @@ const ShoppingList: React.FC = () => {
   const online = useOnlineStatus();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [newItem, setNewItem] = useState("");
-  const [search, setSearch] = useState("");
-  const [searchPinned, setSearchPinned] = useState(false);
   const [activeListId, setActiveListId] = useState(PERSONAL_LIST_ID);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -147,6 +150,8 @@ const ShoppingList: React.FC = () => {
   const [editCategory, setEditCategory] = useState("");
   const [actionError, setActionError] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { interfacePrefs, reminderSettings } = usePreferences();
   const [shareTab, setShareTab] = useState<ShareDialogTab>("share");
   const [shareUrl, setShareUrl] = useState("");
   const [shareCode, setShareCode] = useState("");
@@ -171,14 +176,20 @@ const ShoppingList: React.FC = () => {
   const [doneCollapsed, setDoneCollapsed] = useState(readDoneCollapsed);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  // Display-only order while dragging — never mutates item data until drop.
+  const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null);
   // Ref so pointer-up drop always sees the id even before React re-renders.
   const draggingIdRef = useRef<string | null>(null);
+  const dragOrderIdsRef = useRef<string[] | null>(null);
+  // First-frame rects for FLIP; played in useLayoutEffect after the reorder.
+  const flipFirstRef = useRef<Map<string, DOMRect> | null>(null);
+  // Fresh active order for live drag (avoids stale closures between frames).
+  const activeItemsRef = useRef<ShoppingItem[]>([]);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(
     null,
   );
   const handledShareId = useRef<string | null>(null);
   const guestMigratedRef = useRef(false);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const addInputRef = useRef<HTMLInputElement | null>(null);
   // The snapshot we last pushed to sharedLists/{uid}. Everything the
   // collaborator listener does is measured against this, never against the
@@ -352,6 +363,7 @@ const ShoppingList: React.FC = () => {
               userId: user.uid,
               ...(guest.quantity ? { quantity: guest.quantity } : {}),
               ...(guest.category ? { category: guest.category } : {}),
+              ...(guest.important ? { important: true } : {}),
               ...(typeof guest.sortOrder === "number"
                 ? { sortOrder: guest.sortOrder }
                 : {}),
@@ -366,6 +378,7 @@ const ShoppingList: React.FC = () => {
               userId: user.uid,
               quantity: guest.quantity,
               category: guest.category,
+              important: guest.important,
               sortOrder: guest.sortOrder,
             });
             added += 1;
@@ -850,6 +863,20 @@ const ShoppingList: React.FC = () => {
     }
   };
 
+  const toggleImportant = async (id: string, important: boolean) => {
+    if (!db) return;
+
+    try {
+      setActionError("");
+      await updateDoc(doc(db, "shoppingItems", id), {
+        important: important ? deleteField() : true,
+      });
+    } catch (error) {
+      console.error("Toggle important error:", error);
+      setActionError("Unable to update this item right now. Please try again.");
+    }
+  };
+
   const deleteItem = async (id: string) => {
     if (!db) return;
 
@@ -908,6 +935,7 @@ const ShoppingList: React.FC = () => {
         ...(item.sharedFromUserId
           ? { sharedFromUserId: item.sharedFromUserId }
           : {}),
+        ...(item.important ? { important: true } : {}),
         ...(typeof item.sortOrder === "number"
           ? { sortOrder: item.sortOrder }
           : {}),
@@ -1218,8 +1246,9 @@ const ShoppingList: React.FC = () => {
     }
   };
 
+  // One field does both: typing filters the list; Enter / + adds the item.
   const filtered = useMemo(() => {
-    const normalizedQuery = search.trim().toLowerCase();
+    const normalizedQuery = newItem.trim().toLowerCase();
     if (!normalizedQuery) return currentListItems;
 
     return currentListItems.filter((item) =>
@@ -1229,7 +1258,7 @@ const ShoppingList: React.FC = () => {
         .toLowerCase()
         .includes(normalizedQuery),
     );
-  }, [currentListItems, search]);
+  }, [currentListItems, newItem]);
 
   const {
     activeItems,
@@ -1241,11 +1270,11 @@ const ShoppingList: React.FC = () => {
   } = useMemo(() => {
     const stillNeeded = sortItemsForMode(
       filtered.filter((item) => !item.completed),
-      sortMode === "aisle" ? "manual" : sortMode,
+      sortMode,
     );
     const alreadyGot = sortItemsForMode(
       filtered.filter((item) => item.completed),
-      sortMode === "aisle" ? "manual" : sortMode,
+      sortMode,
     );
 
     return {
@@ -1258,12 +1287,38 @@ const ShoppingList: React.FC = () => {
     };
   }, [filtered, sortMode]);
 
+  /**
+   * While dragging, reorder is a pure display list of ids — item objects stay
+   * untouched so the rest of the list does not re-render with new data.
+   */
+  const displayActiveItems = useMemo(() => {
+    if (!dragOrderIds) return activeItems;
+    const byId = new Map(activeItems.map((item) => [item.id, item]));
+    const ordered: ShoppingItem[] = [];
+    for (const id of dragOrderIds) {
+      const item = byId.get(id);
+      if (item) {
+        ordered.push(item);
+        byId.delete(id);
+      }
+    }
+    for (const item of byId.values()) ordered.push(item);
+    return ordered;
+  }, [activeItems, dragOrderIds]);
+
+  const displayActiveGroups = useMemo(
+    () => groupItemsByCategory(displayActiveItems),
+    [displayActiveItems],
+  );
+
   const changeSortMode = (mode: ListSortMode) => {
     setSortMode(mode);
     writeListSortMode(mode);
     draggingIdRef.current = null;
+    dragOrderIdsRef.current = null;
     setDraggingId(null);
     setDropTargetId(null);
+    setDragOrderIds(null);
   };
 
   const toggleDoneCollapsed = () => {
@@ -1274,28 +1329,57 @@ const ShoppingList: React.FC = () => {
     });
   };
 
+  useLayoutEffect(() => {
+    const first = flipFirstRef.current;
+    if (!first) return;
+    flipFirstRef.current = null;
+    playItemFlip(first);
+  });
+
+  // Keep a live ref of the active list so rapid drag-over reorders stay in sync.
+  useEffect(() => {
+    // During a drag, the display order lives in dragOrderIds — don't clobber it.
+    if (dragOrderIdsRef.current) {
+      const byId = new Map(activeItems.map((item) => [item.id, item]));
+      activeItemsRef.current = dragOrderIdsRef.current
+        .map((id) => byId.get(id))
+        .filter((item): item is ShoppingItem => Boolean(item));
+      return;
+    }
+    activeItemsRef.current = activeItems;
+  }, [activeItems]);
+
   /**
-   * Persist a new order for the active (unchecked) items. In aisle mode we
-   * only reorder within the same category so store layout stays intact.
+   * Commit a new order: one local write + optional Firestore batch.
+   * Used for keyboard moves and for the final drop after a drag preview.
    */
   const applyActiveReorder = async (
     nextActive: ShoppingItem[],
     scopeItems: ShoppingItem[],
   ) => {
-    if (!db || !user) return;
-    if (search.trim()) return;
+    if (!user) return;
+    if (newItem.trim()) return;
 
     const orders = assignSequentialOrders(nextActive);
-    const orderById = new Map(orders.map((entry) => [entry.id, entry.sortOrder]));
+    const orderById = new Map(
+      orders.map((entry) => [entry.id, entry.sortOrder]),
+    );
     const touched = scopeItems.filter((item) => orderById.has(item.id));
 
-    // Optimistic local update so the row snaps immediately.
+    activeItemsRef.current = nextActive.map((item) => ({
+      ...item,
+      sortOrder: orderById.get(item.id) ?? item.sortOrder,
+    }));
+
+    flipFirstRef.current = captureItemRects();
     setItems((current) =>
       current.map((item) => {
         const sortOrder = orderById.get(item.id);
         return sortOrder === undefined ? item : { ...item, sortOrder };
       }),
     );
+
+    if (!db) return;
 
     try {
       setActionError("");
@@ -1313,65 +1397,85 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const reorderActiveItems = async (
-    draggedId: string,
-    targetId: string,
-  ) => {
-    if (draggedId === targetId) return;
-    if (sortMode === "alpha") return;
+  /** Preview-only reorder while the finger/pointer is still down. */
+  const previewReorder = (draggedId: string, targetId: string) => {
+    if (draggedId === targetId || sortMode === "alpha") return;
 
-    if (sortMode === "manual") {
-      const next = reorderById(activeItems, draggedId, targetId);
-      if (next === activeItems) return;
-      await applyActiveReorder(next, activeItems);
+    const currentIds =
+      dragOrderIdsRef.current ??
+      activeItemsRef.current.map((item) => item.id);
+
+    if (sortMode === "aisle") {
+      const byId = new Map(
+        activeItemsRef.current.map((item) => [item.id, item]),
+      );
+      const dragged = byId.get(draggedId);
+      const target = byId.get(targetId);
+      if (!dragged || !target) return;
+      const draggedCat = dragged.category ?? DEFAULT_CATEGORY;
+      const targetCat = target.category ?? DEFAULT_CATEGORY;
+      if (draggedCat !== targetCat) return;
+
+      // Reorder only within the aisle, keep other aisles fixed.
+      const groupIds = currentIds.filter((id) => {
+        const item = byId.get(id);
+        return (item?.category ?? DEFAULT_CATEGORY) === draggedCat;
+      });
+      const reorderedGroup = reorderById(
+        groupIds.map((id) => ({ id })),
+        draggedId,
+        targetId,
+      ).map((entry) => entry.id);
+      if (reorderedGroup.join("\0") === groupIds.join("\0")) return;
+
+      const nextIds: string[] = [];
+      let groupInserted = false;
+      for (const id of currentIds) {
+        const item = byId.get(id);
+        const cat = item?.category ?? DEFAULT_CATEGORY;
+        if (cat !== draggedCat) {
+          nextIds.push(id);
+          continue;
+        }
+        if (!groupInserted) {
+          nextIds.push(...reorderedGroup);
+          groupInserted = true;
+        }
+      }
+      flipFirstRef.current = captureItemRects();
+      dragOrderIdsRef.current = nextIds;
+      setDragOrderIds(nextIds);
       return;
     }
 
-    // Aisle mode: only allow reordering inside the same category group.
-    const dragged = activeItems.find((item) => item.id === draggedId);
-    const target = activeItems.find((item) => item.id === targetId);
-    if (!dragged || !target) return;
-    const draggedCat = dragged.category ?? DEFAULT_CATEGORY;
-    const targetCat = target.category ?? DEFAULT_CATEGORY;
-    if (draggedCat !== targetCat) return;
+    const nextIds = reorderById(
+      currentIds.map((id) => ({ id })),
+      draggedId,
+      targetId,
+    ).map((entry) => entry.id);
+    if (nextIds.join("\0") === currentIds.join("\0")) return;
 
-    const groupItems = activeItems.filter(
-      (item) => (item.category ?? DEFAULT_CATEGORY) === draggedCat,
-    );
-    const reorderedGroup = reorderById(groupItems, draggedId, targetId);
-    if (reorderedGroup === groupItems) return;
-
-    // Rebuild full active list with the group swapped in place.
-    const nextActive: ShoppingItem[] = [];
-    let groupInserted = false;
-    for (const item of activeItems) {
-      const cat = item.category ?? DEFAULT_CATEGORY;
-      if (cat !== draggedCat) {
-        nextActive.push(item);
-        continue;
-      }
-      if (!groupInserted) {
-        nextActive.push(...reorderedGroup);
-        groupInserted = true;
-      }
-    }
-    await applyActiveReorder(nextActive, groupItems);
+    flipFirstRef.current = captureItemRects();
+    dragOrderIdsRef.current = nextIds;
+    setDragOrderIds(nextIds);
   };
 
   const moveActiveItem = async (id: string, offset: -1 | 1) => {
     if (sortMode === "alpha") return;
 
+    const currentActive = activeItemsRef.current;
+
     if (sortMode === "manual") {
-      const next = moveItemByOffset(activeItems, id, offset);
-      if (next === activeItems) return;
-      await applyActiveReorder(next, activeItems);
+      const next = moveItemByOffset(currentActive, id, offset);
+      if (next === currentActive) return;
+      await applyActiveReorder(next, currentActive);
       return;
     }
 
-    const item = activeItems.find((entry) => entry.id === id);
+    const item = currentActive.find((entry) => entry.id === id);
     if (!item) return;
     const cat = item.category ?? DEFAULT_CATEGORY;
-    const groupItems = activeItems.filter(
+    const groupItems = currentActive.filter(
       (entry) => (entry.category ?? DEFAULT_CATEGORY) === cat,
     );
     const reorderedGroup = moveItemByOffset(groupItems, id, offset);
@@ -1379,7 +1483,7 @@ const ShoppingList: React.FC = () => {
 
     const nextActive: ShoppingItem[] = [];
     let groupInserted = false;
-    for (const entry of activeItems) {
+    for (const entry of currentActive) {
       const entryCat = entry.category ?? DEFAULT_CATEGORY;
       if (entryCat !== cat) {
         nextActive.push(entry);
@@ -1393,8 +1497,65 @@ const ShoppingList: React.FC = () => {
     await applyActiveReorder(nextActive, groupItems);
   };
 
+  const commitDragOrder = async () => {
+    const orderIds = dragOrderIdsRef.current;
+    if (!orderIds || orderIds.length === 0) {
+      dragOrderIdsRef.current = null;
+      setDragOrderIds(null);
+      return;
+    }
+
+    // Use the pre-drag active list (from state) so object data stays stable.
+    const sourceById = new Map(activeItems.map((item) => [item.id, item]));
+    const nextActive = orderIds
+      .map((id) => sourceById.get(id))
+      .filter((item): item is ShoppingItem => Boolean(item));
+
+    const unchanged =
+      nextActive.length === activeItems.length &&
+      nextActive.every((item, index) => item.id === activeItems[index]?.id);
+
+    const orders = assignSequentialOrders(nextActive);
+    const orderById = new Map(
+      orders.map((entry) => [entry.id, entry.sortOrder]),
+    );
+
+    activeItemsRef.current = nextActive.map((item) => ({
+      ...item,
+      sortOrder: orderById.get(item.id) ?? item.sortOrder,
+    }));
+
+    // Write sortOrder under the existing visual order — no second FLIP/snap.
+    // Clearing the preview in the same tick keeps the list visually still.
+    setItems((current) =>
+      current.map((item) => {
+        const sortOrder = orderById.get(item.id);
+        return sortOrder === undefined ? item : { ...item, sortOrder };
+      }),
+    );
+    dragOrderIdsRef.current = null;
+    setDragOrderIds(null);
+
+    if (unchanged || !db || !user) return;
+
+    try {
+      setActionError("");
+      await commitBatchOperations(
+        db,
+        orders.map((entry) => (batch) => {
+          batch.update(doc(db, "shoppingItems", entry.id), {
+            sortOrder: entry.sortOrder,
+          });
+        }),
+      );
+    } catch (error) {
+      console.error("Reorder items error:", error);
+      setActionError("Couldn't save the new order. Try again.");
+    }
+  };
+
   const reorderEnabled =
-    !search.trim() && sortMode !== "alpha" && activeCount > 1;
+    !newItem.trim() && sortMode !== "alpha" && activeCount > 1;
 
   const clearDragState = () => {
     draggingIdRef.current = null;
@@ -1408,20 +1569,27 @@ const ShoppingList: React.FC = () => {
     dropTargetId,
     onDragStart: (id) => {
       draggingIdRef.current = id;
+      const ids = activeItemsRef.current.map((item) => item.id);
+      dragOrderIdsRef.current = ids;
+      setDragOrderIds(ids);
       setDraggingId(id);
       setDropTargetId(null);
     },
     onDragOver: (id) => {
       setDropTargetId((current) => (current === id ? current : id));
+      const fromId = draggingIdRef.current;
+      if (!fromId || fromId === id) return;
+      previewReorder(fromId, id);
     },
     onDragEnd: () => {
+      // Cancelled — discard preview order, keep original item data.
+      dragOrderIdsRef.current = null;
+      setDragOrderIds(null);
       clearDragState();
     },
-    onDrop: (targetId) => {
-      const fromId = draggingIdRef.current;
+    onDrop: () => {
       clearDragState();
-      if (!fromId || fromId === targetId) return;
-      void reorderActiveItems(fromId, targetId);
+      void commitDragOrder();
     },
     onMove: (id, offset) => {
       void moveActiveItem(id, offset);
@@ -1443,7 +1611,7 @@ const ShoppingList: React.FC = () => {
   const allDoneCount = currentListItems.filter((item) => item.completed).length;
   const totalCount = currentListItems.length;
   const allActiveCount = totalCount - allDoneCount;
-  const isSearching = search.trim().length > 0;
+  const isSearching = newItem.trim().length > 0;
   // Progress and "clear done" always describe the full list; the headline
   // numbers switch to match results while searching so left/done never disagree.
   const progress = totalCount
@@ -1453,11 +1621,19 @@ const ShoppingList: React.FC = () => {
   const statsDone = isSearching ? doneCount : allDoneCount;
   const activeTabName =
     listTabs.find((tab) => tab.id === activeListId)?.name ?? PERSONAL_LIST_NAME;
-  const showSearch =
-    searchPinned ||
-    totalCount > SEARCH_VISIBILITY_THRESHOLD ||
-    search.length > 0;
-  const modalOpen = shareOpen || confirmAction !== null;
+  const modalOpen =
+    shareOpen || settingsOpen || confirmAction !== null;
+
+  const reminderBanner = useMemo(() => {
+    if (!interfacePrefs.shoppingBanners) return null;
+    return shoppingDayBanner(reminderSettings);
+  }, [interfacePrefs.shoppingBanners, reminderSettings]);
+
+  // Keep shopping reminders armed while the list is open.
+  useEffect(() => {
+    void syncReminderSchedule(reminderSettings);
+    return startReminderWatch(() => reminderSettings);
+  }, [reminderSettings]);
 
   useEffect(() => {
     if (!modalOpen) return undefined;
@@ -1468,6 +1644,7 @@ const ShoppingList: React.FC = () => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       if (confirmAction) setConfirmAction(null);
+      else if (settingsOpen) setSettingsOpen(false);
       else setShareOpen(false);
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -1476,10 +1653,9 @@ const ShoppingList: React.FC = () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [confirmAction, modalOpen]);
+  }, [confirmAction, modalOpen, settingsOpen]);
 
-  // Keyboard shortcuts for people who live at a keyboard: "/" to search,
-  // "n" to jump to the add field. Ignored while typing or in a dialog.
+  // Keyboard shortcuts: "/" or "n" focuses the add/search field.
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if (modalOpen || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -1491,13 +1667,7 @@ const ShoppingList: React.FC = () => {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
       event.preventDefault();
-      if (event.key === "n") {
-        addInputRef.current?.focus();
-        return;
-      }
-
-      setSearchPinned(true);
-      window.requestAnimationFrame(() => searchInputRef.current?.focus());
+      addInputRef.current?.focus();
     };
 
     window.addEventListener("keydown", handleShortcut);
@@ -1508,10 +1678,14 @@ const ShoppingList: React.FC = () => {
     <div className="app-wrapper">
       <header className="navbar">
         <div className="navbar-content">
-          <div className="nav-brand">
-            <div className="nav-brand-icon">
-              <BrandMark className="brand-mark" />
-            </div>
+          <div
+            className={`nav-brand ${interfacePrefs.brandLogo ? "" : "is-text-only"}`}
+          >
+            {interfacePrefs.brandLogo && (
+              <div className="nav-brand-icon">
+                <BrandMark className="brand-mark" />
+              </div>
+            )}
             <span className="nav-brand-name">
               Cart<em>Link</em>
             </span>
@@ -1529,61 +1703,32 @@ const ShoppingList: React.FC = () => {
                 <span className="offline-pill-text">Offline</span>
               </span>
             )}
-            <div className="user-chip" title={user?.displayName ?? undefined}>
-              <UserAvatar user={user} />
-              <span className="user-name">
-                {user?.displayName?.split(" ")[0]}
-              </span>
-            </div>
-            <div className="nav-icon-group">
-              {canInstall && (
-                <button
-                  onClick={() => void install()}
-                  className="theme-toggle"
-                  title="Install CartLink"
-                  type="button"
-                  aria-label="Install CartLink"
-                >
-                  <Download size={16} />
-                </button>
+            <button
+              onClick={() => openShareDialog("share")}
+              className={`theme-toggle share-button ${isSharing ? "is-sharing" : ""}`}
+              title="Share & join"
+              type="button"
+              aria-label={
+                isSharing
+                  ? "Share and join (sharing is on)"
+                  : "Share and join"
+              }
+            >
+              <Share2 size={16} />
+              {isSharing && (
+                <span className="share-button-dot" aria-hidden="true" />
               )}
-              <button
-                onClick={toggleDark}
-                className="theme-toggle"
-                title={dark ? "Switch to light mode" : "Switch to dark mode"}
-                type="button"
-                aria-label={
-                  dark ? "Switch to light mode" : "Switch to dark mode"
-                }
-              >
-                {dark ? <Sun size={16} /> : <Moon size={16} />}
-              </button>
-              <button
-                onClick={() => openShareDialog("share")}
-                className={`theme-toggle share-button ${isSharing ? "is-sharing" : ""}`}
-                title="Share & join"
-                type="button"
-                aria-label={
-                  isSharing
-                    ? "Share and join (sharing is on)"
-                    : "Share and join"
-                }
-              >
-                <Share2 size={16} />
-                {isSharing && (
-                  <span className="share-button-dot" aria-hidden="true" />
-                )}
-              </button>
-              <button
-                onClick={logout}
-                className="logout-btn"
-                title="Sign out"
-                type="button"
-                aria-label="Sign out"
-              >
-                <LogOut size={16} />
-              </button>
-            </div>
+            </button>
+            <NavAccountMenu
+              user={user}
+              dark={dark}
+              onToggleDark={toggleDark}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onLogout={logout}
+              canInstall={canInstall}
+              onInstall={() => void install()}
+              settingsActive={reminderSettings.enabled}
+            />
           </div>
         </div>
       </header>
@@ -1605,47 +1750,21 @@ const ShoppingList: React.FC = () => {
               onDismiss={() => setActionError("")}
             />
           )}
+          {reminderBanner && (
+            <div className="reminder-banner" role="status">
+              <span>{reminderBanner.message}</span>
+              <button
+                type="button"
+                className="reminder-banner-action"
+                onClick={() => setSettingsOpen(true)}
+              >
+                Settings
+              </button>
+            </div>
+          )}
         </div>
 
-        {showSearch && (
-          <div className="search-bar">
-            <span className="search-bar-icon">
-              <Search size={16} />
-            </span>
-            <input
-              ref={searchInputRef}
-              type="text"
-              className="search-input"
-              placeholder="Search your list…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search items"
-            />
-            {search && (
-              <>
-                <span className="search-count" role="status">
-                  {filtered.length} of {totalCount}
-                </span>
-                <button
-                  className="search-clear"
-                  onClick={() => {
-                    setSearch("");
-                    // Clearing should also put the bar away on a short list,
-                    // otherwise "x" only half-dismisses it.
-                    setSearchPinned(false);
-                  }}
-                  type="button"
-                  aria-label="Clear search"
-                >
-                  <X size={14} />
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* One field, one button. Quantity and aisle are read from what you
-            type ("2 milk", "500g flour", "batteries #shed"). */}
+        {/* One field: type to filter the list, Enter / + to add. */}
         <form onSubmit={addItem} className="add-form">
           <div className="add-primary-row">
             <input
@@ -1654,12 +1773,23 @@ const ShoppingList: React.FC = () => {
               className="add-input"
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
-              placeholder="Add an item…"
-              aria-label="New shopping item"
+              placeholder="Add or search…"
+              aria-label="Add or search items"
               aria-describedby="add-hint"
               maxLength={MAX_ITEM_TEXT_LENGTH}
               autoComplete="off"
             />
+            {newItem.trim() && (
+              <button
+                type="button"
+                className="add-clear-btn"
+                onClick={() => setNewItem("")}
+                aria-label="Clear"
+                title="Clear"
+              >
+                <X size={16} />
+              </button>
+            )}
             <button
               type="submit"
               className="add-btn"
@@ -1671,13 +1801,26 @@ const ShoppingList: React.FC = () => {
             </button>
           </div>
 
-          <p id="add-hint" className="add-hint" aria-live="polite">
+          <p
+            id="add-hint"
+            className={`add-hint ${interfacePrefs.addHints || isSearching ? "" : "is-pref-hidden"}`}
+            aria-live="polite"
+          >
             {duplicateItem ? (
               <>
                 <strong>{duplicateItem.text}</strong> is already here — adding
                 bumps the quantity.
               </>
-            ) : preview.quantity || preview.category ? (
+            ) : isSearching && totalCount > 0 ? (
+              <>
+                <span className="add-hint-search">
+                  {filtered.length === 0
+                    ? "No matches — press + to add it"
+                    : `${filtered.length} match${filtered.length === 1 ? "" : "es"} · press + to add`}
+                </span>
+              </>
+            ) : interfacePrefs.addHints &&
+              (preview.quantity || preview.category) ? (
               <>
                 <strong>{preview.text}</strong>
                 {preview.quantity && (
@@ -1707,7 +1850,7 @@ const ShoppingList: React.FC = () => {
                 className={`list-tab ${activeListId === tab.id ? "active" : ""}`}
                 onClick={() => {
                   setActiveListId(tab.id);
-                  setSearch("");
+                  setNewItem("");
                 }}
                 type="button"
                 aria-pressed={activeListId === tab.id}
@@ -1720,7 +1863,7 @@ const ShoppingList: React.FC = () => {
 
         {totalCount > 0 && (
           <div className="list-summary">
-            <div className="stats-bar">
+            <div className="list-meta-row">
               <span className="stats-text">
                 {isSearching ? (
                   <>
@@ -1735,6 +1878,36 @@ const ShoppingList: React.FC = () => {
                   </>
                 )}
               </span>
+
+              <div
+                className="sort-toggle"
+                role="group"
+                aria-label="Sort list"
+              >
+                {LIST_SORT_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    className={`sort-toggle-btn ${sortMode === mode.id ? "active" : ""}`}
+                    aria-pressed={sortMode === mode.id}
+                    title={
+                      reorderEnabled && interfacePrefs.sortHints
+                        ? `${mode.label}${
+                            mode.id === "manual"
+                              ? " — drag to reorder"
+                              : mode.id === "aisle"
+                                ? " — drag within aisle"
+                                : ""
+                          }`
+                        : mode.label
+                    }
+                    onClick={() => changeSortMode(mode.id)}
+                  >
+                    {mode.shortLabel}
+                  </button>
+                ))}
+              </div>
+
               <div className="stats-actions">
                 {allDoneCount > 0 && !isSearching && (
                   <button
@@ -1742,7 +1915,7 @@ const ShoppingList: React.FC = () => {
                     onClick={() => setConfirmAction("clearCompleted")}
                     type="button"
                   >
-                    Clear {allDoneCount} done
+                    Clear done
                   </button>
                 )}
                 {activeListId !== PERSONAL_LIST_ID && (
@@ -1756,34 +1929,7 @@ const ShoppingList: React.FC = () => {
                 )}
               </div>
             </div>
-            <div className="list-toolbar">
-              <div
-                className="sort-toggle"
-                role="group"
-                aria-label="Sort list"
-              >
-                {LIST_SORT_MODES.map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    className={`sort-toggle-btn ${sortMode === mode.id ? "active" : ""}`}
-                    aria-pressed={sortMode === mode.id}
-                    title={mode.label}
-                    onClick={() => changeSortMode(mode.id)}
-                  >
-                    {mode.shortLabel}
-                  </button>
-                ))}
-              </div>
-              {reorderEnabled && (
-                <span className="sort-hint">
-                  {sortMode === "manual"
-                    ? "Drag to reorder"
-                    : "Drag within aisle"}
-                </span>
-              )}
-            </div>
-            {!isSearching && (
+            {!isSearching && interfacePrefs.progressBar && (
               <div
                 className="progress-track"
                 role="progressbar"
@@ -1819,12 +1965,14 @@ const ShoppingList: React.FC = () => {
                     ? "Add your first item above."
                     : `Nothing left on ${activeTabName}.`}
               </p>
-              {!isSearching && totalCount === 0 && (
-                <p className="empty-tip">
-                  Try <code>2 milk</code> to add a quantity and aisle
-                  automatically.
-                </p>
-              )}
+              {!isSearching &&
+                totalCount === 0 &&
+                interfacePrefs.emptyTips && (
+                  <p className="empty-tip">
+                    Try <code>2 milk</code> to add a quantity and aisle
+                    automatically.
+                  </p>
+                )}
             </div>
           ) : (
             <div className="items-list">
@@ -1837,21 +1985,26 @@ const ShoppingList: React.FC = () => {
                     </div>
                   )}
                   {sortMode === "aisle"
-                    ? activeGroups.map((group) => (
+                    ? displayActiveGroups.map((group) => (
                         <CategoryGroup
                           key={group.category}
                           group={group}
                           showHeading={
-                            activeGroups.length > 1 ||
+                            displayActiveGroups.length > 1 ||
                             group.category !== DEFAULT_CATEGORY
                           }
                           edit={edit}
                           reorder={reorderState}
                           onToggle={toggleComplete}
+                          onToggleImportant={
+                            interfacePrefs.importantStars
+                              ? toggleImportant
+                              : undefined
+                          }
                           onDelete={deleteItem}
                         />
                       ))
-                    : activeItems.map((item, index) => (
+                    : displayActiveItems.map((item, index) => (
                         <ItemRow
                           key={item.id}
                           item={item}
@@ -1859,6 +2012,11 @@ const ShoppingList: React.FC = () => {
                           edit={edit}
                           reorder={reorderState}
                           onToggle={toggleComplete}
+                          onToggleImportant={
+                            interfacePrefs.importantStars
+                              ? toggleImportant
+                              : undefined
+                          }
                           onDelete={deleteItem}
                         />
                       ))}
@@ -1895,6 +2053,11 @@ const ShoppingList: React.FC = () => {
                             }
                             edit={edit}
                             onToggle={toggleComplete}
+                            onToggleImportant={
+                              interfacePrefs.importantStars
+                                ? toggleImportant
+                                : undefined
+                            }
                             onDelete={deleteItem}
                           />
                         ))
@@ -1905,6 +2068,11 @@ const ShoppingList: React.FC = () => {
                             index={index}
                             edit={edit}
                             onToggle={toggleComplete}
+                            onToggleImportant={
+                              interfacePrefs.importantStars
+                                ? toggleImportant
+                                : undefined
+                            }
                             onDelete={deleteItem}
                           />
                         )))}
@@ -1940,6 +2108,13 @@ const ShoppingList: React.FC = () => {
           onSystemShare={shareViaSystem}
           onTogglePermission={togglePermission}
           onRequestStopSharing={() => setConfirmAction("stopSharing")}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsDialog
+          userId={user?.uid ?? null}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
 

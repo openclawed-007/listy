@@ -7,6 +7,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
+import { PreferencesProvider } from "./context/PreferencesContext";
 import { useAuth } from "./context/useAuth";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -54,43 +55,45 @@ const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <Router>
-          <Suspense fallback={<AppLoader />}>
-            <Routes>
-              <Route
-                path="/login"
-                element={
-                  <AuthRedirect>
-                    <Login />
-                  </AuthRedirect>
-                }
-              />
-              <Route
-                path="/"
-                element={
-                  <ProtectedRoute>
-                    <ShoppingList />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/import/:shareId"
-                element={
-                  <ProtectedRoute>
-                    <ShoppingList />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/guest" element={<GuestList />} />
-              <Route path="/join" element={<JoinShare />} />
-              <Route path="/c/:code" element={<JoinShare />} />
-              <Route path="/share/:shareId" element={<PublicSharedList />} />
-              <Route path="/privacy" element={<PrivacyPage />} />
-              <Route path="/terms" element={<TermsPage />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </Router>
+        <PreferencesProvider>
+          <Router>
+            <Suspense fallback={<AppLoader />}>
+              <Routes>
+                <Route
+                  path="/login"
+                  element={
+                    <AuthRedirect>
+                      <Login />
+                    </AuthRedirect>
+                  }
+                />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <ShoppingList />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/import/:shareId"
+                  element={
+                    <ProtectedRoute>
+                      <ShoppingList />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/guest" element={<GuestList />} />
+                <Route path="/join" element={<JoinShare />} />
+                <Route path="/c/:code" element={<JoinShare />} />
+                <Route path="/share/:shareId" element={<PublicSharedList />} />
+                <Route path="/privacy" element={<PrivacyPage />} />
+                <Route path="/terms" element={<TermsPage />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+          </Router>
+        </PreferencesProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

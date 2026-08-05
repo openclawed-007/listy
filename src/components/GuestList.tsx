@@ -1,17 +1,29 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ChevronDown,
   ChevronRight,
-  LogIn,
-  Moon,
   PackageOpen,
   Plus,
-  Sun,
+  X,
 } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import BrandMark from "./BrandMark";
+import NavOverflowMenu from "./NavOverflowMenu";
+import SettingsDialog from "./SettingsDialog";
 import { useAuth } from "../context/useAuth";
 import { useDarkMode } from "../hooks/useDarkMode";
+import {
+  startReminderWatch,
+  syncReminderSchedule,
+} from "../lib/reminderNotifications";
+import { shoppingDayBanner } from "../lib/shoppingReminders";
+import { usePreferences } from "../context/PreferencesContext";
 import {
   DEFAULT_CATEGORY,
   formatQuantity,
@@ -42,6 +54,7 @@ import {
   writeListSortMode,
   type ListSortMode,
 } from "../lib/listOrder";
+import { captureItemRects, playItemFlip } from "../lib/listFlip";
 import ItemRow, {
   CATEGORY_DATALIST_ID,
   CategoryGroup,
@@ -58,9 +71,13 @@ function asShoppingItem(item: GuestItem): ShoppingItem {
     userId: "guest",
     quantity: item.quantity,
     category: item.category,
+    important: item.important,
     sortOrder: item.sortOrder,
   };
 }
+
+/** Vite dev / test server only — never ships to production builds. */
+const DEV_GUEST_SETTINGS = import.meta.env.DEV;
 
 const GuestList: React.FC = () => {
   const { user, loading } = useAuth();
@@ -76,7 +93,13 @@ const GuestList: React.FC = () => {
   const [doneCollapsed, setDoneCollapsed] = useState(readDoneCollapsed);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const draggingIdRef = React.useRef<string | null>(null);
+  const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { interfacePrefs, reminderSettings } = usePreferences();
+  const draggingIdRef = useRef<string | null>(null);
+  const dragOrderIdsRef = useRef<string[] | null>(null);
+  const flipFirstRef = useRef<Map<string, DOMRect> | null>(null);
+  const activeItemsRef = useRef<GuestItem[]>([]);
   const preview = useMemo(() => parseItemInput(value), [value]);
 
   useEffect(() => writeGuestItems(items), [items]);
@@ -85,6 +108,17 @@ const GuestList: React.FC = () => {
     const timer = window.setTimeout(() => setMessage(""), 3000);
     return () => window.clearTimeout(timer);
   }, [message]);
+
+  useEffect(() => {
+    if (!DEV_GUEST_SETTINGS) return undefined;
+    void syncReminderSchedule(reminderSettings);
+    return startReminderWatch(() => reminderSettings);
+  }, [reminderSettings]);
+
+  const reminderBanner = useMemo(() => {
+    if (!DEV_GUEST_SETTINGS || !interfacePrefs.shoppingBanners) return null;
+    return shoppingDayBanner(reminderSettings);
+  }, [interfacePrefs.shoppingBanners, reminderSettings]);
 
   if (loading) {
     return (
@@ -170,27 +204,42 @@ const GuestList: React.FC = () => {
     setEditingId(null);
   };
 
+  const listQuery = value.trim().toLowerCase();
+  const isSearching = listQuery.length > 0;
+
   const {
     activeItems,
     doneItems,
     activeGroups,
     doneGroups,
+    filteredCount,
   } = useMemo(() => {
+    const visible = listQuery
+      ? items.filter((item) =>
+          [item.text, item.quantity, item.category]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(listQuery),
+        )
+      : items;
+
     const stillNeeded = sortItemsForMode(
-      items.filter((item) => !item.completed),
-      sortMode === "aisle" ? "manual" : sortMode,
+      visible.filter((item) => !item.completed),
+      sortMode,
     );
     const alreadyGot = sortItemsForMode(
-      items.filter((item) => item.completed),
-      sortMode === "aisle" ? "manual" : sortMode,
+      visible.filter((item) => item.completed),
+      sortMode,
     );
     return {
       activeItems: stillNeeded,
       doneItems: alreadyGot,
       activeGroups: groupItemsByCategory(stillNeeded),
       doneGroups: groupItemsByCategory(alreadyGot),
+      filteredCount: visible.length,
     };
-  }, [items, sortMode]);
+  }, [items, sortMode, listQuery]);
 
   const active = activeItems;
   const done = doneItems;
@@ -198,9 +247,56 @@ const GuestList: React.FC = () => {
     ? Math.round((done.length / items.length) * 100)
     : 0;
 
+  const displayActiveItems = useMemo(() => {
+    if (!dragOrderIds) return activeItems;
+    const byId = new Map(activeItems.map((item) => [item.id, item]));
+    const ordered: GuestItem[] = [];
+    for (const id of dragOrderIds) {
+      const item = byId.get(id);
+      if (item) {
+        ordered.push(item);
+        byId.delete(id);
+      }
+    }
+    for (const item of byId.values()) ordered.push(item);
+    return ordered;
+  }, [activeItems, dragOrderIds]);
+
+  const displayActiveGroups = useMemo(
+    () => groupItemsByCategory(displayActiveItems),
+    [displayActiveItems],
+  );
+
+  useLayoutEffect(() => {
+    const first = flipFirstRef.current;
+    if (!first) return;
+    flipFirstRef.current = null;
+    playItemFlip(first);
+  });
+
+  useEffect(() => {
+    if (dragOrderIdsRef.current) {
+      const byId = new Map(activeItems.map((item) => [item.id, item]));
+      activeItemsRef.current = dragOrderIdsRef.current
+        .map((id) => byId.get(id))
+        .filter((item): item is GuestItem => Boolean(item));
+      return;
+    }
+    activeItemsRef.current = activeItems;
+  }, [activeItems]);
+
   const applyActiveReorder = (nextActive: GuestItem[]) => {
     const orders = assignSequentialOrders(nextActive);
-    const orderById = new Map(orders.map((entry) => [entry.id, entry.sortOrder]));
+    const orderById = new Map(
+      orders.map((entry) => [entry.id, entry.sortOrder]),
+    );
+
+    activeItemsRef.current = nextActive.map((item) => ({
+      ...item,
+      sortOrder: orderById.get(item.id) ?? item.sortOrder,
+    }));
+
+    flipFirstRef.current = captureItemRects();
     setItems((current) =>
       current.map((item) => {
         const sortOrder = orderById.get(item.id);
@@ -209,57 +305,81 @@ const GuestList: React.FC = () => {
     );
   };
 
-  const reorderActiveItems = (draggedId: string, targetId: string) => {
+  const previewReorder = (draggedId: string, targetId: string) => {
     if (draggedId === targetId || sortMode === "alpha") return;
 
-    if (sortMode === "manual") {
-      const next = reorderById(activeItems, draggedId, targetId);
-      if (next !== activeItems) applyActiveReorder(next);
+    const currentIds =
+      dragOrderIdsRef.current ??
+      activeItemsRef.current.map((item) => item.id);
+
+    if (sortMode === "aisle") {
+      const byId = new Map(
+        activeItemsRef.current.map((item) => [item.id, item]),
+      );
+      const dragged = byId.get(draggedId);
+      const target = byId.get(targetId);
+      if (!dragged || !target) return;
+      const draggedCat = dragged.category ?? DEFAULT_CATEGORY;
+      const targetCat = target.category ?? DEFAULT_CATEGORY;
+      if (draggedCat !== targetCat) return;
+
+      const groupIds = currentIds.filter((id) => {
+        const item = byId.get(id);
+        return (item?.category ?? DEFAULT_CATEGORY) === draggedCat;
+      });
+      const reorderedGroup = reorderById(
+        groupIds.map((id) => ({ id })),
+        draggedId,
+        targetId,
+      ).map((entry) => entry.id);
+      if (reorderedGroup.join("\0") === groupIds.join("\0")) return;
+
+      const nextIds: string[] = [];
+      let groupInserted = false;
+      for (const id of currentIds) {
+        const item = byId.get(id);
+        const cat = item?.category ?? DEFAULT_CATEGORY;
+        if (cat !== draggedCat) {
+          nextIds.push(id);
+          continue;
+        }
+        if (!groupInserted) {
+          nextIds.push(...reorderedGroup);
+          groupInserted = true;
+        }
+      }
+      flipFirstRef.current = captureItemRects();
+      dragOrderIdsRef.current = nextIds;
+      setDragOrderIds(nextIds);
       return;
     }
 
-    const dragged = activeItems.find((item) => item.id === draggedId);
-    const target = activeItems.find((item) => item.id === targetId);
-    if (!dragged || !target) return;
-    const draggedCat = dragged.category ?? DEFAULT_CATEGORY;
-    const targetCat = target.category ?? DEFAULT_CATEGORY;
-    if (draggedCat !== targetCat) return;
+    const nextIds = reorderById(
+      currentIds.map((id) => ({ id })),
+      draggedId,
+      targetId,
+    ).map((entry) => entry.id);
+    if (nextIds.join("\0") === currentIds.join("\0")) return;
 
-    const groupItems = activeItems.filter(
-      (item) => (item.category ?? DEFAULT_CATEGORY) === draggedCat,
-    );
-    const reorderedGroup = reorderById(groupItems, draggedId, targetId);
-    if (reorderedGroup === groupItems) return;
-
-    const nextActive: GuestItem[] = [];
-    let groupInserted = false;
-    for (const item of activeItems) {
-      const cat = item.category ?? DEFAULT_CATEGORY;
-      if (cat !== draggedCat) {
-        nextActive.push(item);
-        continue;
-      }
-      if (!groupInserted) {
-        nextActive.push(...reorderedGroup);
-        groupInserted = true;
-      }
-    }
-    applyActiveReorder(nextActive);
+    flipFirstRef.current = captureItemRects();
+    dragOrderIdsRef.current = nextIds;
+    setDragOrderIds(nextIds);
   };
 
   const moveActiveItem = (id: string, offset: -1 | 1) => {
     if (sortMode === "alpha") return;
+    const currentActive = activeItemsRef.current;
 
     if (sortMode === "manual") {
-      const next = moveItemByOffset(activeItems, id, offset);
-      if (next !== activeItems) applyActiveReorder(next);
+      const next = moveItemByOffset(currentActive, id, offset);
+      if (next !== currentActive) applyActiveReorder(next);
       return;
     }
 
-    const item = activeItems.find((entry) => entry.id === id);
+    const item = currentActive.find((entry) => entry.id === id);
     if (!item) return;
     const cat = item.category ?? DEFAULT_CATEGORY;
-    const groupItems = activeItems.filter(
+    const groupItems = currentActive.filter(
       (entry) => (entry.category ?? DEFAULT_CATEGORY) === cat,
     );
     const reorderedGroup = moveItemByOffset(groupItems, id, offset);
@@ -267,7 +387,7 @@ const GuestList: React.FC = () => {
 
     const nextActive: GuestItem[] = [];
     let groupInserted = false;
-    for (const entry of activeItems) {
+    for (const entry of currentActive) {
       const entryCat = entry.category ?? DEFAULT_CATEGORY;
       if (entryCat !== cat) {
         nextActive.push(entry);
@@ -281,7 +401,37 @@ const GuestList: React.FC = () => {
     applyActiveReorder(nextActive);
   };
 
-  const reorderEnabled = sortMode !== "alpha" && active.length > 1;
+  const commitDragOrder = () => {
+    const orderIds = dragOrderIdsRef.current;
+    if (!orderIds || orderIds.length === 0) {
+      dragOrderIdsRef.current = null;
+      setDragOrderIds(null);
+      return;
+    }
+
+    const sourceById = new Map(activeItems.map((item) => [item.id, item]));
+    const nextActive = orderIds
+      .map((id) => sourceById.get(id))
+      .filter((item): item is GuestItem => Boolean(item));
+
+    const orders = assignSequentialOrders(nextActive);
+    const orderById = new Map(
+      orders.map((entry) => [entry.id, entry.sortOrder]),
+    );
+
+    // Persist under the current visual order without a second layout jump.
+    setItems((current) =>
+      current.map((item) => {
+        const sortOrder = orderById.get(item.id);
+        return sortOrder === undefined ? item : { ...item, sortOrder };
+      }),
+    );
+    dragOrderIdsRef.current = null;
+    setDragOrderIds(null);
+  };
+
+  const reorderEnabled =
+    !isSearching && sortMode !== "alpha" && active.length > 1;
 
   const clearDragState = () => {
     draggingIdRef.current = null;
@@ -295,20 +445,26 @@ const GuestList: React.FC = () => {
     dropTargetId,
     onDragStart: (id) => {
       draggingIdRef.current = id;
+      const ids = activeItemsRef.current.map((item) => item.id);
+      dragOrderIdsRef.current = ids;
+      setDragOrderIds(ids);
       setDraggingId(id);
       setDropTargetId(null);
     },
     onDragOver: (id) => {
       setDropTargetId((current) => (current === id ? current : id));
+      const fromId = draggingIdRef.current;
+      if (!fromId || fromId === id) return;
+      previewReorder(fromId, id);
     },
     onDragEnd: () => {
+      dragOrderIdsRef.current = null;
+      setDragOrderIds(null);
       clearDragState();
     },
-    onDrop: (targetId) => {
-      const fromId = draggingIdRef.current;
+    onDrop: () => {
       clearDragState();
-      if (!fromId || fromId === targetId) return;
-      reorderActiveItems(fromId, targetId);
+      commitDragOrder();
     },
     onMove: (id, offset) => moveActiveItem(id, offset),
   };
@@ -340,9 +496,23 @@ const GuestList: React.FC = () => {
     setItems((current) => current.filter((entry) => entry.id !== id));
   };
 
-  const shoppingActive = activeItems.map(asShoppingItem);
+  const toggleImportant = (id: string, important: boolean) => {
+    setItems((current) =>
+      current.map((entry) => {
+        if (entry.id !== id) return entry;
+        if (important) {
+          const { important: _drop, ...rest } = entry;
+          void _drop;
+          return rest;
+        }
+        return { ...entry, important: true };
+      }),
+    );
+  };
+
+  const shoppingActive = displayActiveItems.map(asShoppingItem);
   const shoppingDone = doneItems.map(asShoppingItem);
-  const shoppingActiveGroups = activeGroups.map((group) => ({
+  const shoppingActiveGroups = displayActiveGroups.map((group) => ({
     category: group.category,
     items: group.items.map(asShoppingItem),
   }));
@@ -355,32 +525,30 @@ const GuestList: React.FC = () => {
     <div className="app-wrapper">
       <header className="navbar">
         <div className="navbar-content">
-          <div className="nav-brand">
-            <div className="nav-brand-icon">
-              <BrandMark className="brand-mark" />
-            </div>
+          <div
+            className={`nav-brand ${interfacePrefs.brandLogo ? "" : "is-text-only"}`}
+          >
+            {interfacePrefs.brandLogo && (
+              <div className="nav-brand-icon">
+                <BrandMark className="brand-mark" />
+              </div>
+            )}
             <span className="nav-brand-name">
               Cart<em>Link</em>
             </span>
           </div>
           <div className="user-actions">
-            <span className="guest-badge">Guest</span>
-            <button
-              className="theme-toggle"
-              type="button"
-              onClick={toggle}
-              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {dark ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <Link
-              className="theme-toggle"
-              to="/login?redirect=/"
-              aria-label="Sign in"
-              title="Sign in"
-            >
-              <LogIn size={16} />
-            </Link>
+            <span className="guest-badge">
+              Guest{DEV_GUEST_SETTINGS ? " · test" : ""}
+            </span>
+            <NavOverflowMenu
+              dark={dark}
+              onToggleDark={toggle}
+              showSettings={DEV_GUEST_SETTINGS}
+              settingsActive={reminderSettings.enabled}
+              onOpenSettings={() => setSettingsOpen(true)}
+              signInTo="/login?redirect=/"
+            />
           </div>
         </div>
       </header>
@@ -388,15 +556,35 @@ const GuestList: React.FC = () => {
       <main className="container">
         <div className="page-heading">
           <h1 className="page-title">My List</h1>
-          <p className="guest-note">
-            Saved only on this device.{" "}
-            <Link to="/login?redirect=/">Sign in</Link> to share and sync —
-            your items come with you.{" "}
-            <Link to="/join">Have a share code?</Link>
-          </p>
+          {interfacePrefs.onboardingCopy && (
+            <p className="guest-note">
+              Saved only on this device.{" "}
+              <Link to="/login?redirect=/">Sign in</Link> to share and sync —
+              your items come with you.{" "}
+              <Link to="/join">Have a share code?</Link>
+            </p>
+          )}
           {message && (
             <p className="form-success inline-error" role="status">
               {message}
+            </p>
+          )}
+          {reminderBanner && (
+            <div className="reminder-banner" role="status">
+              <span>{reminderBanner.message}</span>
+              <button
+                type="button"
+                className="reminder-banner-action"
+                onClick={() => setSettingsOpen(true)}
+              >
+                Settings
+              </button>
+            </div>
+          )}
+          {DEV_GUEST_SETTINGS && interfacePrefs.onboardingCopy && (
+            <p className="guest-note" style={{ marginTop: "0.35rem" }}>
+              Dev only: settings &amp; reminders are available while logged out
+              on the test server.
             </p>
           )}
         </div>
@@ -407,12 +595,23 @@ const GuestList: React.FC = () => {
               className="add-input"
               value={value}
               onChange={(event) => setValue(event.target.value)}
-              placeholder="Add an item…"
-              aria-label="New shopping item"
+              placeholder="Add or search…"
+              aria-label="Add or search items"
               autoFocus
               maxLength={MAX_ITEM_TEXT_LENGTH}
               autoComplete="off"
             />
+            {value.trim() && (
+              <button
+                type="button"
+                className="add-clear-btn"
+                onClick={() => setValue("")}
+                aria-label="Clear"
+                title="Clear"
+              >
+                <X size={16} />
+              </button>
+            )}
             <button
               className="add-btn"
               type="submit"
@@ -422,19 +621,31 @@ const GuestList: React.FC = () => {
               <Plus size={20} />
             </button>
           </div>
-          <p className="add-hint" aria-live="polite">
-            {(preview.quantity || preview.category) && (
-              <>
-                <strong>{preview.text}</strong>
-                {preview.quantity && (
-                  <span className="add-hint-chip">
-                    {formatQuantity(preview.quantity)}
-                  </span>
-                )}
-                {preview.category && (
-                  <span className="add-hint-chip">{preview.category}</span>
-                )}
-              </>
+          <p
+            className={`add-hint ${interfacePrefs.addHints || isSearching ? "" : "is-pref-hidden"}`}
+            aria-live="polite"
+          >
+            {isSearching && items.length > 0 ? (
+              <span className="add-hint-search">
+                {filteredCount === 0
+                  ? "No matches — press + to add it"
+                  : `${filteredCount} match${filteredCount === 1 ? "" : "es"} · press + to add`}
+              </span>
+            ) : (
+              interfacePrefs.addHints &&
+              (preview.quantity || preview.category) && (
+                <>
+                  <strong>{preview.text}</strong>
+                  {preview.quantity && (
+                    <span className="add-hint-chip">
+                      {formatQuantity(preview.quantity)}
+                    </span>
+                  )}
+                  {preview.category && (
+                    <span className="add-hint-chip">{preview.category}</span>
+                  )}
+                </>
+              )
             )}
           </p>
         </form>
@@ -445,26 +656,22 @@ const GuestList: React.FC = () => {
 
         {items.length > 0 && (
           <div className="list-summary">
-            <div className="stats-bar">
+            <div className="list-meta-row">
               <span className="stats-text">
-                <strong>{active.length}</strong> left
-                {done.length > 0 && ` · ${done.length} done`}
+                {isSearching ? (
+                  <>
+                    <strong>{filteredCount}</strong> match
+                    {filteredCount === 1 ? "" : "es"}
+                    {done.length > 0 && ` · ${done.length} done`}
+                  </>
+                ) : (
+                  <>
+                    <strong>{active.length}</strong> left
+                    {done.length > 0 && ` · ${done.length} done`}
+                  </>
+                )}
               </span>
-              {done.length > 0 && (
-                <button
-                  className="clear-done-btn"
-                  type="button"
-                  onClick={() =>
-                    setItems((current) =>
-                      current.filter((item) => !item.completed),
-                    )
-                  }
-                >
-                  Clear {done.length} done
-                </button>
-              )}
-            </div>
-            <div className="list-toolbar">
+
               <div className="sort-toggle" role="group" aria-label="Sort list">
                 {LIST_SORT_MODES.map((mode) => (
                   <button
@@ -472,40 +679,63 @@ const GuestList: React.FC = () => {
                     type="button"
                     className={`sort-toggle-btn ${sortMode === mode.id ? "active" : ""}`}
                     aria-pressed={sortMode === mode.id}
-                    title={mode.label}
+                    title={
+                      reorderEnabled && interfacePrefs.sortHints
+                        ? `${mode.label}${
+                            mode.id === "manual"
+                              ? " — drag to reorder"
+                              : mode.id === "aisle"
+                                ? " — drag within aisle"
+                                : ""
+                          }`
+                        : mode.label
+                    }
                     onClick={() => {
                       setSortMode(mode.id);
                       writeListSortMode(mode.id);
                       draggingIdRef.current = null;
+                      dragOrderIdsRef.current = null;
                       setDraggingId(null);
                       setDropTargetId(null);
+                      setDragOrderIds(null);
                     }}
                   >
                     {mode.shortLabel}
                   </button>
                 ))}
               </div>
-              {reorderEnabled && (
-                <span className="sort-hint">
-                  {sortMode === "manual"
-                    ? "Drag to reorder"
-                    : "Drag within aisle"}
-                </span>
-              )}
+
+              <div className="stats-actions">
+                {done.length > 0 && (
+                  <button
+                    className="clear-done-btn"
+                    type="button"
+                    onClick={() =>
+                      setItems((current) =>
+                        current.filter((item) => !item.completed),
+                      )
+                    }
+                  >
+                    Clear done
+                  </button>
+                )}
+              </div>
             </div>
-            <div
-              className="progress-track"
-              role="progressbar"
-              aria-label={`${done.length} of ${items.length} items picked up`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progress}
-            >
+            {interfacePrefs.progressBar && (
               <div
-                className="progress-fill"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+                className="progress-track"
+                role="progressbar"
+                aria-label={`${done.length} of ${items.length} items picked up`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress}
+              >
+                <div
+                  className="progress-fill"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -514,9 +744,12 @@ const GuestList: React.FC = () => {
             <PackageOpen size={40} className="empty-icon" />
             <p className="empty-title">Ready when you are</p>
             <p className="empty-text">Add your first item above.</p>
-            <p className="empty-tip">
-              Try <code>2 milk</code> to add a quantity and aisle automatically.
-            </p>
+            {interfacePrefs.emptyTips && (
+              <p className="empty-tip">
+                Try <code>2 milk</code> to add a quantity and aisle
+                automatically.
+              </p>
+            )}
           </div>
         ) : (
           <div className="items-list">
@@ -533,6 +766,11 @@ const GuestList: React.FC = () => {
                       edit={edit}
                       reorder={reorderState}
                       onToggle={(id) => toggleItem(id)}
+                      onToggleImportant={
+                        interfacePrefs.importantStars
+                          ? toggleImportant
+                          : undefined
+                      }
                       onDelete={deleteItem}
                     />
                   ))
@@ -544,6 +782,11 @@ const GuestList: React.FC = () => {
                       edit={edit}
                       reorder={reorderState}
                       onToggle={(id) => toggleItem(id)}
+                      onToggleImportant={
+                        interfacePrefs.importantStars
+                          ? toggleImportant
+                          : undefined
+                      }
                       onDelete={deleteItem}
                     />
                   )))}
@@ -584,6 +827,11 @@ const GuestList: React.FC = () => {
                           }
                           edit={edit}
                           onToggle={(id) => toggleItem(id)}
+                          onToggleImportant={
+                            interfacePrefs.importantStars
+                              ? toggleImportant
+                              : undefined
+                          }
                           onDelete={deleteItem}
                         />
                       ))
@@ -594,6 +842,11 @@ const GuestList: React.FC = () => {
                           index={index}
                           edit={edit}
                           onToggle={(id) => toggleItem(id)}
+                          onToggleImportant={
+                            interfacePrefs.importantStars
+                              ? toggleImportant
+                              : undefined
+                          }
                           onDelete={deleteItem}
                         />
                       )))}
@@ -602,6 +855,13 @@ const GuestList: React.FC = () => {
           </div>
         )}
       </main>
+
+      {DEV_GUEST_SETTINGS && settingsOpen && (
+        <SettingsDialog
+          userId={null}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </div>
   );
 };

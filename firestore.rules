@@ -126,5 +126,47 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && request.auth.uid == ownerId;
     }
+
+    function isTimeString(value) {
+      return value is string && value.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+    }
+
+    function isRemindWhen(value) {
+      return value == 'day_of' || value == 'day_before' || value == 'both';
+    }
+
+    // Per-user preferences (shopping reminders, interface). Owner-only.
+    function isShoppingRemindersValid(value) {
+      return value is map
+        && value.enabled is bool
+        && value.days is list
+        && value.days.size() <= 7
+        && isTimeString(value.shopTime)
+        && isTimeString(value.notifyTime)
+        && isRemindWhen(value.when);
+    }
+
+    function isInterfacePrefsValid(value) {
+      return value is map
+        && (!('emptyTips' in value) || value.emptyTips is bool)
+        && (!('addHints' in value) || value.addHints is bool)
+        && (!('onboardingCopy' in value) || value.onboardingCopy is bool)
+        && (!('sortHints' in value) || value.sortHints is bool)
+        && (!('shoppingBanners' in value) || value.shoppingBanners is bool)
+        && (!('progressBar' in value) || value.progressBar is bool)
+        && (!('importantStars' in value) || value.importantStars is bool)
+        && (!('brandLogo' in value) || value.brandLogo is bool);
+    }
+
+    match /userSettings/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && (!('shoppingReminders' in request.resource.data)
+          || isShoppingRemindersValid(request.resource.data.shoppingReminders))
+        && (!('interface' in request.resource.data)
+          || isInterfacePrefsValid(request.resource.data.interface));
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
   }
 }

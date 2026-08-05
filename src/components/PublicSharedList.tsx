@@ -31,6 +31,7 @@ import {
 } from "../lib/itemInput";
 import { groupItemsByCategory, isRecord } from "../lib/shoppingItem";
 import { useAuth } from "../context/useAuth";
+import { usePreferences } from "../context/PreferencesContext";
 import { useDarkMode } from "../hooks/useDarkMode";
 import {
   clearLocalTicks,
@@ -62,6 +63,7 @@ interface SharedItemData {
   completed: boolean;
   quantity?: string;
   category?: string;
+  important?: boolean;
 }
 
 interface SharedListSnapshot {
@@ -79,6 +81,7 @@ interface PublicItem {
   completed: boolean;
   quantity?: string;
   category?: string;
+  important?: boolean;
 }
 
 function getSafeOwnerName(value: unknown) {
@@ -116,6 +119,7 @@ function normalizeSharedItems(items: unknown): PublicItem[] {
           typeof item.category === "string" && item.category.trim()
             ? item.category.trim().slice(0, 80)
             : undefined,
+        ...(item.important === true ? { important: true } : {}),
       },
     ];
   });
@@ -154,6 +158,7 @@ function toPayloadItem(
     ...(typeof record.category === "string" && record.category
       ? { category: record.category }
       : {}),
+    ...(record.important === true ? { important: true } : {}),
   };
 
   return { ...base, ...override };
@@ -244,6 +249,7 @@ function buildAddedPayload(
 const PublicSharedList: React.FC = () => {
   const { shareId } = useParams();
   const { user } = useAuth();
+  const { interfacePrefs } = usePreferences();
   const [ownerName, setOwnerName] = useState("Shared list");
   const [items, setItems] = useState<PublicItem[]>([]);
   const [permissions, setPermissions] =
@@ -348,7 +354,16 @@ const PublicSharedList: React.FC = () => {
     [items, localTicks, ticksAreLocal],
   );
 
-  const groups = useMemo(() => groupItemsByCategory(viewItems), [viewItems]);
+  const groups = useMemo(() => {
+    // Important floats first within each aisle so must-get items stay obvious.
+    const ordered = [...viewItems].sort((a, b) => {
+      const aImportant = a.important === true;
+      const bImportant = b.important === true;
+      if (aImportant !== bImportant) return aImportant ? -1 : 1;
+      return 0;
+    });
+    return groupItemsByCategory(ordered);
+  }, [viewItems]);
   const doneCount = useMemo(
     () => viewItems.filter((item) => item.completed).length,
     [viewItems],
@@ -476,10 +491,14 @@ const PublicSharedList: React.FC = () => {
     <div className="app-wrapper">
       <header className="navbar">
         <div className="navbar-content">
-          <div className="nav-brand">
-            <div className="nav-brand-icon">
-              <BrandMark className="brand-mark" />
-            </div>
+          <div
+            className={`nav-brand ${interfacePrefs.brandLogo ? "" : "is-text-only"}`}
+          >
+            {interfacePrefs.brandLogo && (
+              <div className="nav-brand-icon">
+                <BrandMark className="brand-mark" />
+              </div>
+            )}
             <span className="nav-brand-name">
               Cart<em>Link</em>
             </span>
@@ -609,37 +628,41 @@ const PublicSharedList: React.FC = () => {
             {/* Same progress summary as the owner's screen — a shared list is
                 still a shop to get through. */}
             <div className="list-summary">
-              <div className="stats-bar">
+              <div className="list-meta-row">
                 <span className="stats-text">
                   <strong>{viewItems.length - doneCount}</strong> left
                   {doneCount > 0 && ` · ${doneCount} done`}
                 </span>
-                {ticksAreLocal && doneCount > 0 && (
-                  <button
-                    className="clear-done-btn"
-                    type="button"
-                    onClick={resetLocalTicks}
-                  >
-                    Reset ticks
-                  </button>
-                )}
+                <div className="stats-actions">
+                  {ticksAreLocal && doneCount > 0 && (
+                    <button
+                      className="clear-done-btn"
+                      type="button"
+                      onClick={resetLocalTicks}
+                    >
+                      Reset ticks
+                    </button>
+                  )}
+                </div>
               </div>
-              <div
-                className="progress-track"
-                role="progressbar"
-                aria-label={`${doneCount} of ${viewItems.length} items picked up`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progress}
-              >
+              {interfacePrefs.progressBar && (
                 <div
-                  className="progress-fill"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
+                  className="progress-track"
+                  role="progressbar"
+                  aria-label={`${doneCount} of ${viewItems.length} items picked up`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progress}
+                >
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              )}
             </div>
 
-            {ticksAreLocal && (
+            {ticksAreLocal && interfacePrefs.onboardingCopy && (
               <p className="local-ticks-note">
                 Ticking items keeps your place on this device. It does not
                 change the list for {ownerName}.
@@ -656,10 +679,7 @@ const PublicSharedList: React.FC = () => {
                   {group.items.map((item, index) => (
                     <div
                       key={item.id}
-                      className={`item-row public-item-row ${item.completed ? "completed" : ""}`}
-                      style={{
-                        animationDelay: `${Math.min(index, 8) * 0.04}s`,
-                      }}
+                      className={`item-row public-item-row ${item.completed ? "completed" : ""} ${interfacePrefs.importantStars && item.important ? "is-important" : ""}`}
                     >
                       <button
                         className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
@@ -679,12 +699,23 @@ const PublicSharedList: React.FC = () => {
                         onClick={() => toggleItem(item)}
                         type="button"
                         aria-pressed={item.completed}
-                        aria-label={item.text}
+                        aria-label={
+                          item.important ? `Important: ${item.text}` : item.text
+                        }
                       >
                         <span className="item-text">{item.text}</span>
                         {item.quantity && (
                           <span className="item-qty">
                             {formatQuantity(item.quantity)}
+                          </span>
+                        )}
+                        {interfacePrefs.importantStars && item.important && (
+                          <span
+                            className="item-important-badge"
+                            aria-hidden="true"
+                            title="Important"
+                          >
+                            ★
                           </span>
                         )}
                       </button>
