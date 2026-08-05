@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Check,
+  ChevronDown,
+  ChevronRight,
   LogIn,
   Moon,
   PackageOpen,
-  Pencil,
   Plus,
   Sun,
-  Trash2,
 } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import BrandMark from "./BrandMark";
@@ -30,6 +29,38 @@ import {
   type GuestItem,
 } from "../lib/guestItems";
 import { groupItemsByCategory } from "../lib/shoppingItem";
+import {
+  assignSequentialOrders,
+  LIST_SORT_MODES,
+  moveItemByOffset,
+  nextTopSortOrder,
+  readDoneCollapsed,
+  readListSortMode,
+  reorderById,
+  sortItemsForMode,
+  writeDoneCollapsed,
+  writeListSortMode,
+  type ListSortMode,
+} from "../lib/listOrder";
+import ItemRow, {
+  CATEGORY_DATALIST_ID,
+  CategoryGroup,
+  type ItemEditState,
+  type ItemReorderState,
+} from "./ItemRow";
+import type { ShoppingItem } from "../lib/shoppingItem";
+
+function asShoppingItem(item: GuestItem): ShoppingItem {
+  return {
+    id: item.id,
+    text: item.text,
+    completed: item.completed,
+    userId: "guest",
+    quantity: item.quantity,
+    category: item.category,
+    sortOrder: item.sortOrder,
+  };
+}
 
 const GuestList: React.FC = () => {
   const { user, loading } = useAuth();
@@ -41,6 +72,11 @@ const GuestList: React.FC = () => {
   const [editText, setEditText] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [sortMode, setSortMode] = useState<ListSortMode>(readListSortMode);
+  const [doneCollapsed, setDoneCollapsed] = useState(readDoneCollapsed);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const draggingIdRef = React.useRef<string | null>(null);
   const preview = useMemo(() => parseItemInput(value), [value]);
 
   useEffect(() => writeGuestItems(items), [items]);
@@ -82,6 +118,9 @@ const GuestList: React.FC = () => {
         `${duplicate.text} was already here${quantity ? ` — now ${formatQuantity(quantity)}` : ""}.`,
       );
     } else {
+      const sortOrder = nextTopSortOrder(
+        items.filter((item) => !item.completed),
+      );
       setItems((current) => [
         {
           id: createGuestId(),
@@ -89,6 +128,7 @@ const GuestList: React.FC = () => {
           completed: false,
           quantity: parsed.quantity,
           category: parsed.category,
+          sortOrder,
           createdAt: Date.now(),
         },
         ...current,
@@ -97,7 +137,7 @@ const GuestList: React.FC = () => {
     setValue("");
   };
 
-  const startEdit = (item: GuestItem) => {
+  const startEdit = (item: GuestItem | ShoppingItem) => {
     setEditingId(item.id);
     setEditText(item.text);
     setEditQuantity(item.quantity ?? "");
@@ -130,152 +170,186 @@ const GuestList: React.FC = () => {
     setEditingId(null);
   };
 
-  const handleEditKeys = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      commitEdit();
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setEditingId(null);
-    }
-  };
+  const {
+    activeItems,
+    doneItems,
+    activeGroups,
+    doneGroups,
+  } = useMemo(() => {
+    const stillNeeded = sortItemsForMode(
+      items.filter((item) => !item.completed),
+      sortMode === "aisle" ? "manual" : sortMode,
+    );
+    const alreadyGot = sortItemsForMode(
+      items.filter((item) => item.completed),
+      sortMode === "aisle" ? "manual" : sortMode,
+    );
+    return {
+      activeItems: stillNeeded,
+      doneItems: alreadyGot,
+      activeGroups: groupItemsByCategory(stillNeeded),
+      doneGroups: groupItemsByCategory(alreadyGot),
+    };
+  }, [items, sortMode]);
 
-  const active = items.filter((item) => !item.completed);
-  const done = items.filter((item) => item.completed);
-  const activeGroups = groupItemsByCategory(active);
-  const doneGroups = groupItemsByCategory(done);
+  const active = activeItems;
+  const done = doneItems;
   const progress = items.length
     ? Math.round((done.length / items.length) * 100)
     : 0;
 
-  const renderGroups = (
-    groups: ReturnType<typeof groupItemsByCategory<GuestItem>>,
-  ) =>
-    groups.map((group) => (
-      <div className="category-group" key={group.category}>
-        {(groups.length > 1 || group.category !== DEFAULT_CATEGORY) && (
-          <div className="category-heading">{group.category}</div>
-        )}
-        {group.items.map((item) => {
-          const isEditing = editingId === item.id;
-          return (
-            <div
-              className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
-              key={item.id}
-            >
-              <button
-                className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
-                type="button"
-                aria-pressed={item.completed}
-                aria-label={`${item.completed ? "Mark as needed" : "Mark as completed"}: ${item.text}`}
-                onClick={() => {
-                  if (isEditing) return;
-                  setItems((current) =>
-                    current.map((entry) =>
-                      entry.id === item.id
-                        ? { ...entry, completed: !entry.completed }
-                        : entry,
-                    ),
-                  );
-                }}
-              >
-                {item.completed && <Check size={13} strokeWidth={3} />}
-              </button>
+  const applyActiveReorder = (nextActive: GuestItem[]) => {
+    const orders = assignSequentialOrders(nextActive);
+    const orderById = new Map(orders.map((entry) => [entry.id, entry.sortOrder]));
+    setItems((current) =>
+      current.map((item) => {
+        const sortOrder = orderById.get(item.id);
+        return sortOrder === undefined ? item : { ...item, sortOrder };
+      }),
+    );
+  };
 
-              {isEditing ? (
-                <div
-                  className="item-edit-fields"
-                  onBlur={(event) => {
-                    if (
-                      !event.currentTarget.contains(
-                        event.relatedTarget as Node | null,
-                      )
-                    ) {
-                      commitEdit();
-                    }
-                  }}
-                >
-                  <input
-                    className="item-edit-input"
-                    value={editText}
-                    autoFocus
-                    onChange={(event) => setEditText(event.target.value)}
-                    maxLength={MAX_ITEM_TEXT_LENGTH}
-                    onKeyDown={handleEditKeys}
-                    aria-label="Edit item text"
-                  />
-                  <input
-                    className="item-edit-input item-edit-meta"
-                    value={editQuantity}
-                    onChange={(event) => setEditQuantity(event.target.value)}
-                    maxLength={MAX_QUANTITY_LENGTH}
-                    onKeyDown={handleEditKeys}
-                    placeholder="Qty"
-                    aria-label="Edit item quantity"
-                  />
-                  <input
-                    className="item-edit-input item-edit-meta"
-                    value={editCategory}
-                    onChange={(event) => setEditCategory(event.target.value)}
-                    maxLength={MAX_CATEGORY_LENGTH}
-                    onKeyDown={handleEditKeys}
-                    placeholder="Aisle"
-                    aria-label="Edit item category"
-                  />
-                </div>
-              ) : (
-                <button
-                  className="item-content"
-                  type="button"
-                  onClick={() =>
-                    setItems((current) =>
-                      current.map((entry) =>
-                        entry.id === item.id
-                          ? { ...entry, completed: !entry.completed }
-                          : entry,
-                      ),
-                    )
-                  }
-                >
-                  <span className="item-text">{item.text}</span>
-                  {item.quantity && (
-                    <span className="item-qty">
-                      {formatQuantity(item.quantity)}
-                    </span>
-                  )}
-                </button>
-              )}
+  const reorderActiveItems = (draggedId: string, targetId: string) => {
+    if (draggedId === targetId || sortMode === "alpha") return;
 
-              {!isEditing && (
-                <button
-                  className="edit-btn"
-                  type="button"
-                  aria-label={`Edit "${item.text}"`}
-                  title="Edit item"
-                  onClick={() => startEdit(item)}
-                >
-                  <Pencil size={14} />
-                </button>
-              )}
+    if (sortMode === "manual") {
+      const next = reorderById(activeItems, draggedId, targetId);
+      if (next !== activeItems) applyActiveReorder(next);
+      return;
+    }
 
-              <button
-                className="delete-btn"
-                type="button"
-                aria-label={`Remove "${item.text}"`}
-                onClick={() =>
-                  setItems((current) =>
-                    current.filter((entry) => entry.id !== item.id),
-                  )
-                }
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    ));
+    const dragged = activeItems.find((item) => item.id === draggedId);
+    const target = activeItems.find((item) => item.id === targetId);
+    if (!dragged || !target) return;
+    const draggedCat = dragged.category ?? DEFAULT_CATEGORY;
+    const targetCat = target.category ?? DEFAULT_CATEGORY;
+    if (draggedCat !== targetCat) return;
+
+    const groupItems = activeItems.filter(
+      (item) => (item.category ?? DEFAULT_CATEGORY) === draggedCat,
+    );
+    const reorderedGroup = reorderById(groupItems, draggedId, targetId);
+    if (reorderedGroup === groupItems) return;
+
+    const nextActive: GuestItem[] = [];
+    let groupInserted = false;
+    for (const item of activeItems) {
+      const cat = item.category ?? DEFAULT_CATEGORY;
+      if (cat !== draggedCat) {
+        nextActive.push(item);
+        continue;
+      }
+      if (!groupInserted) {
+        nextActive.push(...reorderedGroup);
+        groupInserted = true;
+      }
+    }
+    applyActiveReorder(nextActive);
+  };
+
+  const moveActiveItem = (id: string, offset: -1 | 1) => {
+    if (sortMode === "alpha") return;
+
+    if (sortMode === "manual") {
+      const next = moveItemByOffset(activeItems, id, offset);
+      if (next !== activeItems) applyActiveReorder(next);
+      return;
+    }
+
+    const item = activeItems.find((entry) => entry.id === id);
+    if (!item) return;
+    const cat = item.category ?? DEFAULT_CATEGORY;
+    const groupItems = activeItems.filter(
+      (entry) => (entry.category ?? DEFAULT_CATEGORY) === cat,
+    );
+    const reorderedGroup = moveItemByOffset(groupItems, id, offset);
+    if (reorderedGroup === groupItems) return;
+
+    const nextActive: GuestItem[] = [];
+    let groupInserted = false;
+    for (const entry of activeItems) {
+      const entryCat = entry.category ?? DEFAULT_CATEGORY;
+      if (entryCat !== cat) {
+        nextActive.push(entry);
+        continue;
+      }
+      if (!groupInserted) {
+        nextActive.push(...reorderedGroup);
+        groupInserted = true;
+      }
+    }
+    applyActiveReorder(nextActive);
+  };
+
+  const reorderEnabled = sortMode !== "alpha" && active.length > 1;
+
+  const clearDragState = () => {
+    draggingIdRef.current = null;
+    setDraggingId(null);
+    setDropTargetId(null);
+  };
+
+  const reorderState: ItemReorderState = {
+    enabled: reorderEnabled,
+    draggingId,
+    dropTargetId,
+    onDragStart: (id) => {
+      draggingIdRef.current = id;
+      setDraggingId(id);
+      setDropTargetId(null);
+    },
+    onDragOver: (id) => {
+      setDropTargetId((current) => (current === id ? current : id));
+    },
+    onDragEnd: () => {
+      clearDragState();
+    },
+    onDrop: (targetId) => {
+      const fromId = draggingIdRef.current;
+      clearDragState();
+      if (!fromId || fromId === targetId) return;
+      reorderActiveItems(fromId, targetId);
+    },
+    onMove: (id, offset) => moveActiveItem(id, offset),
+  };
+
+  const edit: ItemEditState = {
+    editingId,
+    text: editText,
+    quantity: editQuantity,
+    category: editCategory,
+    onStart: startEdit,
+    onTextChange: setEditText,
+    onQuantityChange: setEditQuantity,
+    onCategoryChange: setEditCategory,
+    onCommit: commitEdit,
+    onCancel: () => setEditingId(null),
+  };
+
+  const toggleItem = (id: string) => {
+    setItems((current) =>
+      current.map((entry) =>
+        entry.id === id
+          ? { ...entry, completed: !entry.completed }
+          : entry,
+      ),
+    );
+  };
+
+  const deleteItem = (id: string) => {
+    setItems((current) => current.filter((entry) => entry.id !== id));
+  };
+
+  const shoppingActive = activeItems.map(asShoppingItem);
+  const shoppingDone = doneItems.map(asShoppingItem);
+  const shoppingActiveGroups = activeGroups.map((group) => ({
+    category: group.category,
+    items: group.items.map(asShoppingItem),
+  }));
+  const shoppingDoneGroups = doneGroups.map((group) => ({
+    category: group.category,
+    items: group.items.map(asShoppingItem),
+  }));
 
   return (
     <div className="app-wrapper">
@@ -345,7 +419,7 @@ const GuestList: React.FC = () => {
               disabled={!preview.text}
               aria-label="Add item"
             >
-              <Plus size={22} />
+              <Plus size={20} />
             </button>
           </div>
           <p className="add-hint" aria-live="polite">
@@ -364,6 +438,10 @@ const GuestList: React.FC = () => {
             )}
           </p>
         </form>
+
+        <datalist id={CATEGORY_DATALIST_ID}>
+          {/* Guest list has no cloud aisles; built-ins still help while editing. */}
+        </datalist>
 
         {items.length > 0 && (
           <div className="list-summary">
@@ -386,6 +464,35 @@ const GuestList: React.FC = () => {
                 </button>
               )}
             </div>
+            <div className="list-toolbar">
+              <div className="sort-toggle" role="group" aria-label="Sort list">
+                {LIST_SORT_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    className={`sort-toggle-btn ${sortMode === mode.id ? "active" : ""}`}
+                    aria-pressed={sortMode === mode.id}
+                    title={mode.label}
+                    onClick={() => {
+                      setSortMode(mode.id);
+                      writeListSortMode(mode.id);
+                      draggingIdRef.current = null;
+                      setDraggingId(null);
+                      setDropTargetId(null);
+                    }}
+                  >
+                    {mode.shortLabel}
+                  </button>
+                ))}
+              </div>
+              {reorderEnabled && (
+                <span className="sort-hint">
+                  {sortMode === "manual"
+                    ? "Drag to reorder"
+                    : "Drag within aisle"}
+                </span>
+              )}
+            </div>
             <div
               className="progress-track"
               role="progressbar"
@@ -404,7 +511,7 @@ const GuestList: React.FC = () => {
 
         {items.length === 0 ? (
           <div className="empty-state">
-            <PackageOpen size={56} className="empty-icon" />
+            <PackageOpen size={40} className="empty-icon" />
             <p className="empty-title">Ready when you are</p>
             <p className="empty-text">Add your first item above.</p>
             <p className="empty-tip">
@@ -413,15 +520,84 @@ const GuestList: React.FC = () => {
           </div>
         ) : (
           <div className="items-list">
-            {active.length > 0 && renderGroups(activeGroups)}
+            {active.length > 0 &&
+              (sortMode === "aisle"
+                ? shoppingActiveGroups.map((group) => (
+                    <CategoryGroup
+                      key={group.category}
+                      group={group}
+                      showHeading={
+                        shoppingActiveGroups.length > 1 ||
+                        group.category !== DEFAULT_CATEGORY
+                      }
+                      edit={edit}
+                      reorder={reorderState}
+                      onToggle={(id) => toggleItem(id)}
+                      onDelete={deleteItem}
+                    />
+                  ))
+                : shoppingActive.map((item, index) => (
+                    <ItemRow
+                      key={item.id}
+                      item={item}
+                      index={index}
+                      edit={edit}
+                      reorder={reorderState}
+                      onToggle={(id) => toggleItem(id)}
+                      onDelete={deleteItem}
+                    />
+                  )))}
+
             {done.length > 0 && (
-              <>
-                <div className="items-divider">
-                  <span className="items-divider-label">Done</span>
+              <div className="done-section">
+                <button
+                  type="button"
+                  className="items-divider items-divider-btn"
+                  onClick={() => {
+                    setDoneCollapsed((current) => {
+                      const next = !current;
+                      writeDoneCollapsed(next);
+                      return next;
+                    });
+                  }}
+                  aria-expanded={!doneCollapsed}
+                >
+                  {doneCollapsed ? (
+                    <ChevronRight size={14} strokeWidth={2.5} />
+                  ) : (
+                    <ChevronDown size={14} strokeWidth={2.5} />
+                  )}
+                  <span className="items-divider-label">
+                    Done · {done.length}
+                  </span>
                   <div className="items-divider-line" />
-                </div>
-                {renderGroups(doneGroups)}
-              </>
+                </button>
+                {!doneCollapsed &&
+                  (sortMode === "aisle"
+                    ? shoppingDoneGroups.map((group) => (
+                        <CategoryGroup
+                          key={group.category}
+                          group={group}
+                          showHeading={
+                            shoppingDoneGroups.length > 1 ||
+                            group.category !== DEFAULT_CATEGORY
+                          }
+                          edit={edit}
+                          onToggle={(id) => toggleItem(id)}
+                          onDelete={deleteItem}
+                        />
+                      ))
+                    : shoppingDone.map((item, index) => (
+                        <ItemRow
+                          key={item.id}
+                          item={item}
+                          index={index}
+                          edit={edit}
+                          onToggle={(id) => toggleItem(id)}
+                          onDelete={deleteItem}
+                        />
+                      )))}
+              </div>
             )}
           </div>
         )}

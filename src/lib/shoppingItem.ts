@@ -31,6 +31,8 @@ export interface ShoppingItem {
   listId?: string;
   listName?: string;
   sharedFromUserId?: string;
+  /** Lower values appear higher when sorted by manual order. */
+  sortOrder?: number;
   createdAt?: Timestamp;
 }
 
@@ -128,6 +130,11 @@ export function normalizeShoppingItem(
   const userId = normalizeOptionalString(data.userId, 128);
   if (!text || !userId || typeof data.completed !== "boolean") return null;
 
+  const sortOrder =
+    typeof data.sortOrder === "number" && Number.isFinite(data.sortOrder)
+      ? data.sortOrder
+      : undefined;
+
   return {
     id,
     text,
@@ -138,6 +145,7 @@ export function normalizeShoppingItem(
     listId: normalizeOptionalString(data.listId, 200),
     listName: normalizeOptionalString(data.listName, 120),
     sharedFromUserId: normalizeOptionalString(data.sharedFromUserId, 128),
+    ...(sortOrder !== undefined ? { sortOrder } : {}),
     createdAt:
       data.createdAt &&
       typeof data.createdAt === "object" &&
@@ -187,6 +195,7 @@ export function normalizeSharedListSnapshot(
 
 /**
  * Group items by category, keeping the catch-all group last.
+ * Within each group, item order is preserved (callers sort first).
  *
  * Generic over the item shape so the owner's list and the public share page
  * group identically — a shared list should not look different just because

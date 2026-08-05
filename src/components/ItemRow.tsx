@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Check, Pencil, Trash2 } from "lucide-react";
+import { Check, GripVertical, Pencil, Trash2 } from "lucide-react";
 import {
   formatQuantity,
   MAX_CATEGORY_LENGTH,
@@ -28,10 +28,22 @@ export interface ItemEditState {
   onCancel: () => void;
 }
 
+export interface ItemReorderState {
+  enabled: boolean;
+  draggingId: string | null;
+  dropTargetId: string | null;
+  onDragStart: (id: string) => void;
+  onDragOver: (id: string) => void;
+  onDragEnd: () => void;
+  onDrop: (targetId: string) => void;
+  onMove: (id: string, offset: -1 | 1) => void;
+}
+
 interface ItemRowProps {
   item: ShoppingItem;
   index: number;
   edit: ItemEditState;
+  reorder?: ItemReorderState;
   onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
   onDelete: (id: string) => void;
 }
@@ -51,16 +63,31 @@ function useEditKeys(edit: ItemEditState) {
   };
 }
 
-const ItemRow: React.FC<ItemRowProps> = ({
+function rowIdFromPoint(x: number, y: number): string | null {
+  const node = document.elementFromPoint(x, y);
+  if (!node || !(node instanceof Element)) return null;
+  const row = node.closest("[data-item-id]");
+  if (!(row instanceof HTMLElement)) return null;
+  return row.dataset.itemId ?? null;
+}
+
+export const ItemRow: React.FC<ItemRowProps> = ({
   item,
   index,
   edit,
+  reorder,
   onToggle,
   onDelete,
 }) => {
   const isEditing = edit.editingId === item.id;
   const handleEditKeys = useEditKeys(edit);
   const rowRef = useRef<HTMLDivElement | null>(null);
+  const canReorder = Boolean(reorder?.enabled && !item.completed && !isEditing);
+  const isDragging = reorder?.draggingId === item.id;
+  const isDropTarget =
+    Boolean(reorder?.dropTargetId === item.id) &&
+    Boolean(reorder?.draggingId) &&
+    reorder?.draggingId !== item.id;
 
   // Soft keyboard can cover lower rows; bring the edit target into view.
   useEffect(() => {
@@ -84,12 +111,113 @@ const ItemRow: React.FC<ItemRowProps> = ({
     return () => window.cancelAnimationFrame(frame);
   }, [isEditing]);
 
+  /**
+   * Pointer drag from the grip only — starts immediately (no long-press).
+   * Native HTML5 drag forces a hold on many touch browsers; this avoids that.
+   */
+  const startHandleDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!canReorder || !reorder) return;
+    if (event.button !== 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const handle = event.currentTarget;
+    const pointerId = event.pointerId;
+    handle.setPointerCapture(pointerId);
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousTouchAction = document.body.style.touchAction;
+    document.body.style.userSelect = "none";
+    document.body.style.touchAction = "none";
+    document.body.classList.add("is-reordering");
+
+    // Begin as soon as the dotted handle is pressed — no delay / long-press.
+    reorder.onDragStart(item.id);
+    let lastTargetId = item.id;
+    let finished = false;
+
+    const finish = (clientX: number, clientY: number, cancelled: boolean) => {
+      if (finished) return;
+      finished = true;
+
+      try {
+        handle.releasePointerCapture(pointerId);
+      } catch {
+        // Already released.
+      }
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.touchAction = previousTouchAction;
+      document.body.classList.remove("is-reordering");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+
+      if (cancelled) {
+        reorder.onDragEnd();
+        return;
+      }
+
+      const targetId = rowIdFromPoint(clientX, clientY) ?? lastTargetId;
+      if (targetId && targetId !== item.id) {
+        reorder.onDrop(targetId);
+      } else {
+        reorder.onDragEnd();
+      }
+    };
+
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      moveEvent.preventDefault();
+      const targetId = rowIdFromPoint(moveEvent.clientX, moveEvent.clientY);
+      if (!targetId || targetId === lastTargetId) return;
+      lastTargetId = targetId;
+      reorder.onDragOver(targetId);
+    };
+
+    const onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      finish(upEvent.clientX, upEvent.clientY, false);
+    };
+
+    const onCancel = (cancelEvent: PointerEvent) => {
+      if (cancelEvent.pointerId !== pointerId) return;
+      finish(cancelEvent.clientX, cancelEvent.clientY, true);
+    };
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  };
+
   return (
     <div
       ref={rowRef}
-      className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""}`}
-      style={{ animationDelay: `${Math.min(index, 8) * 0.04}s` }}
+      data-item-id={item.id}
+      className={`item-row ${item.completed ? "completed" : ""} ${isEditing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""} ${canReorder ? "is-reorderable" : ""}`}
+      style={{ animationDelay: `${Math.min(index, 8) * 0.03}s` }}
     >
+      {canReorder && reorder && (
+        <button
+          type="button"
+          className="drag-handle"
+          aria-label={`Reorder "${item.text}". Use arrow keys to move.`}
+          title="Drag to reorder"
+          onPointerDown={startHandleDrag}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              reorder.onMove(item.id, -1);
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              reorder.onMove(item.id, 1);
+            }
+          }}
+        >
+          <GripVertical size={14} strokeWidth={2.25} />
+        </button>
+      )}
+
       <button
         className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
         onClick={(event) => {
@@ -104,7 +232,7 @@ const ItemRow: React.FC<ItemRowProps> = ({
         }
         aria-pressed={item.completed}
       >
-        {item.completed && <Check size={13} strokeWidth={3} />}
+        {item.completed && <Check size={12} strokeWidth={3} />}
       </button>
 
       {isEditing ? (
@@ -156,8 +284,6 @@ const ItemRow: React.FC<ItemRowProps> = ({
           aria-label={`${item.completed ? "Mark as needed" : "Mark as completed"}: ${item.text}`}
         >
           <span className="item-text">{item.text}</span>
-          {/* The aisle is already the group heading above, so the row only
-              needs the quantity — one less thing to read per line. */}
           {item.quantity && (
             <span className="item-qty">{formatQuantity(item.quantity)}</span>
           )}
@@ -175,7 +301,7 @@ const ItemRow: React.FC<ItemRowProps> = ({
           type="button"
           aria-label={`Edit "${item.text}"`}
         >
-          <Pencil size={14} />
+          <Pencil size={13} />
         </button>
       )}
 
@@ -189,7 +315,7 @@ const ItemRow: React.FC<ItemRowProps> = ({
         type="button"
         aria-label={`Remove "${item.text}"`}
       >
-        <Trash2 size={15} />
+        <Trash2 size={14} />
       </button>
     </div>
   );
@@ -199,6 +325,7 @@ interface CategoryGroupProps {
   group: { category: string; items: ShoppingItem[] };
   showHeading: boolean;
   edit: ItemEditState;
+  reorder?: ItemReorderState;
   onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
   onDelete: (id: string) => void;
 }
@@ -207,6 +334,7 @@ export const CategoryGroup: React.FC<CategoryGroupProps> = ({
   group,
   showHeading,
   edit,
+  reorder,
   onToggle,
   onDelete,
 }) => (
@@ -218,6 +346,7 @@ export const CategoryGroup: React.FC<CategoryGroupProps> = ({
         item={item}
         index={index}
         edit={edit}
+        reorder={reorder}
         onToggle={onToggle}
         onDelete={onDelete}
       />

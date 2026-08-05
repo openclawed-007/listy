@@ -16,6 +16,8 @@ import {
   type WriteBatch,
 } from "firebase/firestore";
 import {
+  ChevronDown,
+  ChevronRight,
   Download,
   LogOut,
   Moon,
@@ -82,6 +84,20 @@ import {
   formatShareCode,
   isValidShareCode,
 } from "../lib/shareCode";
+import {
+  assignSequentialOrders,
+  compareManualOrder,
+  LIST_SORT_MODES,
+  moveItemByOffset,
+  nextTopSortOrder,
+  readDoneCollapsed,
+  readListSortMode,
+  reorderById,
+  sortItemsForMode,
+  writeDoneCollapsed,
+  writeListSortMode,
+  type ListSortMode,
+} from "../lib/listOrder";
 import { useAuth } from "../context/useAuth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { useDarkMode } from "../hooks/useDarkMode";
@@ -94,7 +110,9 @@ import UserAvatar from "./UserAvatar";
 import {
   CATEGORY_DATALIST_ID,
   CategoryGroup,
+  ItemRow,
   type ItemEditState,
+  type ItemReorderState,
 } from "./ItemRow";
 
 interface ListTab {
@@ -149,6 +167,12 @@ const ShoppingList: React.FC = () => {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
     null,
   );
+  const [sortMode, setSortMode] = useState<ListSortMode>(readListSortMode);
+  const [doneCollapsed, setDoneCollapsed] = useState(readDoneCollapsed);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  // Ref so pointer-up drop always sees the id even before React re-renders.
+  const draggingIdRef = useRef<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(
     null,
   );
@@ -197,11 +221,7 @@ const ShoppingList: React.FC = () => {
           return item ? [item] : [];
         });
 
-        itemsData.sort((a, b) => {
-          const timeA = a.createdAt?.toMillis() || 0;
-          const timeB = b.createdAt?.toMillis() || 0;
-          return timeB - timeA;
-        });
+        itemsData.sort(compareManualOrder);
 
         setItems(itemsData);
         setItemsLoaded(true);
@@ -332,6 +352,9 @@ const ShoppingList: React.FC = () => {
               userId: user.uid,
               ...(guest.quantity ? { quantity: guest.quantity } : {}),
               ...(guest.category ? { category: guest.category } : {}),
+              ...(typeof guest.sortOrder === "number"
+                ? { sortOrder: guest.sortOrder }
+                : {}),
               listId: PERSONAL_LIST_ID,
               listName: PERSONAL_LIST_NAME,
               createdAt: serverTimestamp(),
@@ -343,6 +366,7 @@ const ShoppingList: React.FC = () => {
               userId: user.uid,
               quantity: guest.quantity,
               category: guest.category,
+              sortOrder: guest.sortOrder,
             });
             added += 1;
           }
@@ -768,6 +792,10 @@ const ShoppingList: React.FC = () => {
         ? activeListId.slice("shared:".length)
         : undefined;
 
+      const sortOrder = nextTopSortOrder(
+        currentListItems.filter((item) => !item.completed),
+      );
+
       await addDoc(collection(db, "shoppingItems"), {
         text,
         completed: false,
@@ -777,6 +805,7 @@ const ShoppingList: React.FC = () => {
         listId: activeListId,
         listName: activeTab?.name ?? PERSONAL_LIST_NAME,
         ...(sharedFromUserId ? { sharedFromUserId } : {}),
+        sortOrder,
         createdAt: serverTimestamp(),
       });
 
@@ -878,6 +907,9 @@ const ShoppingList: React.FC = () => {
         listName: getItemListName(item),
         ...(item.sharedFromUserId
           ? { sharedFromUserId: item.sharedFromUserId }
+          : {}),
+        ...(typeof item.sortOrder === "number"
+          ? { sortOrder: item.sortOrder }
           : {}),
         createdAt: item.createdAt ?? serverTimestamp(),
       });
@@ -1199,17 +1231,202 @@ const ShoppingList: React.FC = () => {
     );
   }, [currentListItems, search]);
 
-  const { activeGroups, doneGroups, activeCount, doneCount } = useMemo(() => {
-    const stillNeeded = filtered.filter((item) => !item.completed);
-    const alreadyGot = filtered.filter((item) => item.completed);
+  const {
+    activeItems,
+    doneItems,
+    activeGroups,
+    doneGroups,
+    activeCount,
+    doneCount,
+  } = useMemo(() => {
+    const stillNeeded = sortItemsForMode(
+      filtered.filter((item) => !item.completed),
+      sortMode === "aisle" ? "manual" : sortMode,
+    );
+    const alreadyGot = sortItemsForMode(
+      filtered.filter((item) => item.completed),
+      sortMode === "aisle" ? "manual" : sortMode,
+    );
 
     return {
+      activeItems: stillNeeded,
+      doneItems: alreadyGot,
       activeGroups: groupItemsByCategory(stillNeeded),
       doneGroups: groupItemsByCategory(alreadyGot),
       activeCount: stillNeeded.length,
       doneCount: alreadyGot.length,
     };
-  }, [filtered]);
+  }, [filtered, sortMode]);
+
+  const changeSortMode = (mode: ListSortMode) => {
+    setSortMode(mode);
+    writeListSortMode(mode);
+    draggingIdRef.current = null;
+    setDraggingId(null);
+    setDropTargetId(null);
+  };
+
+  const toggleDoneCollapsed = () => {
+    setDoneCollapsed((current) => {
+      const next = !current;
+      writeDoneCollapsed(next);
+      return next;
+    });
+  };
+
+  /**
+   * Persist a new order for the active (unchecked) items. In aisle mode we
+   * only reorder within the same category so store layout stays intact.
+   */
+  const applyActiveReorder = async (
+    nextActive: ShoppingItem[],
+    scopeItems: ShoppingItem[],
+  ) => {
+    if (!db || !user) return;
+    if (search.trim()) return;
+
+    const orders = assignSequentialOrders(nextActive);
+    const orderById = new Map(orders.map((entry) => [entry.id, entry.sortOrder]));
+    const touched = scopeItems.filter((item) => orderById.has(item.id));
+
+    // Optimistic local update so the row snaps immediately.
+    setItems((current) =>
+      current.map((item) => {
+        const sortOrder = orderById.get(item.id);
+        return sortOrder === undefined ? item : { ...item, sortOrder };
+      }),
+    );
+
+    try {
+      setActionError("");
+      await commitBatchOperations(
+        db,
+        touched.map((item) => (batch) => {
+          const sortOrder = orderById.get(item.id);
+          if (sortOrder === undefined) return;
+          batch.update(doc(db, "shoppingItems", item.id), { sortOrder });
+        }),
+      );
+    } catch (error) {
+      console.error("Reorder items error:", error);
+      setActionError("Couldn't save the new order. Try again.");
+    }
+  };
+
+  const reorderActiveItems = async (
+    draggedId: string,
+    targetId: string,
+  ) => {
+    if (draggedId === targetId) return;
+    if (sortMode === "alpha") return;
+
+    if (sortMode === "manual") {
+      const next = reorderById(activeItems, draggedId, targetId);
+      if (next === activeItems) return;
+      await applyActiveReorder(next, activeItems);
+      return;
+    }
+
+    // Aisle mode: only allow reordering inside the same category group.
+    const dragged = activeItems.find((item) => item.id === draggedId);
+    const target = activeItems.find((item) => item.id === targetId);
+    if (!dragged || !target) return;
+    const draggedCat = dragged.category ?? DEFAULT_CATEGORY;
+    const targetCat = target.category ?? DEFAULT_CATEGORY;
+    if (draggedCat !== targetCat) return;
+
+    const groupItems = activeItems.filter(
+      (item) => (item.category ?? DEFAULT_CATEGORY) === draggedCat,
+    );
+    const reorderedGroup = reorderById(groupItems, draggedId, targetId);
+    if (reorderedGroup === groupItems) return;
+
+    // Rebuild full active list with the group swapped in place.
+    const nextActive: ShoppingItem[] = [];
+    let groupInserted = false;
+    for (const item of activeItems) {
+      const cat = item.category ?? DEFAULT_CATEGORY;
+      if (cat !== draggedCat) {
+        nextActive.push(item);
+        continue;
+      }
+      if (!groupInserted) {
+        nextActive.push(...reorderedGroup);
+        groupInserted = true;
+      }
+    }
+    await applyActiveReorder(nextActive, groupItems);
+  };
+
+  const moveActiveItem = async (id: string, offset: -1 | 1) => {
+    if (sortMode === "alpha") return;
+
+    if (sortMode === "manual") {
+      const next = moveItemByOffset(activeItems, id, offset);
+      if (next === activeItems) return;
+      await applyActiveReorder(next, activeItems);
+      return;
+    }
+
+    const item = activeItems.find((entry) => entry.id === id);
+    if (!item) return;
+    const cat = item.category ?? DEFAULT_CATEGORY;
+    const groupItems = activeItems.filter(
+      (entry) => (entry.category ?? DEFAULT_CATEGORY) === cat,
+    );
+    const reorderedGroup = moveItemByOffset(groupItems, id, offset);
+    if (reorderedGroup === groupItems) return;
+
+    const nextActive: ShoppingItem[] = [];
+    let groupInserted = false;
+    for (const entry of activeItems) {
+      const entryCat = entry.category ?? DEFAULT_CATEGORY;
+      if (entryCat !== cat) {
+        nextActive.push(entry);
+        continue;
+      }
+      if (!groupInserted) {
+        nextActive.push(...reorderedGroup);
+        groupInserted = true;
+      }
+    }
+    await applyActiveReorder(nextActive, groupItems);
+  };
+
+  const reorderEnabled =
+    !search.trim() && sortMode !== "alpha" && activeCount > 1;
+
+  const clearDragState = () => {
+    draggingIdRef.current = null;
+    setDraggingId(null);
+    setDropTargetId(null);
+  };
+
+  const reorderState: ItemReorderState = {
+    enabled: reorderEnabled,
+    draggingId,
+    dropTargetId,
+    onDragStart: (id) => {
+      draggingIdRef.current = id;
+      setDraggingId(id);
+      setDropTargetId(null);
+    },
+    onDragOver: (id) => {
+      setDropTargetId((current) => (current === id ? current : id));
+    },
+    onDragEnd: () => {
+      clearDragState();
+    },
+    onDrop: (targetId) => {
+      const fromId = draggingIdRef.current;
+      clearDragState();
+      if (!fromId || fromId === targetId) return;
+      void reorderActiveItems(fromId, targetId);
+    },
+    onMove: (id, offset) => {
+      void moveActiveItem(id, offset);
+    },
+  };
 
   // Aisle suggestions while editing: the customer's own categories first, then
   // the built-in aisles.
@@ -1518,23 +1735,52 @@ const ShoppingList: React.FC = () => {
                   </>
                 )}
               </span>
-              {allDoneCount > 0 && !isSearching && (
-                <button
-                  className="clear-done-btn"
-                  onClick={() => setConfirmAction("clearCompleted")}
-                  type="button"
-                >
-                  Clear {allDoneCount} done
-                </button>
-              )}
-              {activeListId !== PERSONAL_LIST_ID && (
-                <button
-                  className="clear-done-btn"
-                  onClick={() => setConfirmAction("removeSharedList")}
-                  type="button"
-                >
-                  Remove list
-                </button>
+              <div className="stats-actions">
+                {allDoneCount > 0 && !isSearching && (
+                  <button
+                    className="clear-done-btn"
+                    onClick={() => setConfirmAction("clearCompleted")}
+                    type="button"
+                  >
+                    Clear {allDoneCount} done
+                  </button>
+                )}
+                {activeListId !== PERSONAL_LIST_ID && (
+                  <button
+                    className="clear-done-btn"
+                    onClick={() => setConfirmAction("removeSharedList")}
+                    type="button"
+                  >
+                    Remove list
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="list-toolbar">
+              <div
+                className="sort-toggle"
+                role="group"
+                aria-label="Sort list"
+              >
+                {LIST_SORT_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    className={`sort-toggle-btn ${sortMode === mode.id ? "active" : ""}`}
+                    aria-pressed={sortMode === mode.id}
+                    title={mode.label}
+                    onClick={() => changeSortMode(mode.id)}
+                  >
+                    {mode.shortLabel}
+                  </button>
+                ))}
+              </div>
+              {reorderEnabled && (
+                <span className="sort-hint">
+                  {sortMode === "manual"
+                    ? "Drag to reorder"
+                    : "Drag within aisle"}
+                </span>
               )}
             </div>
             {!isSearching && (
@@ -1558,7 +1804,7 @@ const ShoppingList: React.FC = () => {
         <div className="items-section">
           {filtered.length === 0 ? (
             <div className="empty-state">
-              <PackageOpen size={56} className="empty-icon" strokeWidth={1} />
+              <PackageOpen size={40} className="empty-icon" strokeWidth={1.25} />
               <p className="empty-title">
                 {isSearching
                   ? "No matches"
@@ -1590,42 +1836,79 @@ const ShoppingList: React.FC = () => {
                       <div className="items-divider-line" />
                     </div>
                   )}
-                  {activeGroups.map((group) => (
-                    <CategoryGroup
-                      key={group.category}
-                      group={group}
-                      showHeading={
-                        activeGroups.length > 1 ||
-                        group.category !== DEFAULT_CATEGORY
-                      }
-                      edit={edit}
-                      onToggle={toggleComplete}
-                      onDelete={deleteItem}
-                    />
-                  ))}
+                  {sortMode === "aisle"
+                    ? activeGroups.map((group) => (
+                        <CategoryGroup
+                          key={group.category}
+                          group={group}
+                          showHeading={
+                            activeGroups.length > 1 ||
+                            group.category !== DEFAULT_CATEGORY
+                          }
+                          edit={edit}
+                          reorder={reorderState}
+                          onToggle={toggleComplete}
+                          onDelete={deleteItem}
+                        />
+                      ))
+                    : activeItems.map((item, index) => (
+                        <ItemRow
+                          key={item.id}
+                          item={item}
+                          index={index}
+                          edit={edit}
+                          reorder={reorderState}
+                          onToggle={toggleComplete}
+                          onDelete={deleteItem}
+                        />
+                      ))}
                 </>
               )}
 
               {doneCount > 0 && (
-                <>
-                  <div className="items-divider">
-                    <span className="items-divider-label">Done</span>
+                <div className="done-section">
+                  <button
+                    type="button"
+                    className="items-divider items-divider-btn"
+                    onClick={toggleDoneCollapsed}
+                    aria-expanded={!doneCollapsed}
+                  >
+                    {doneCollapsed ? (
+                      <ChevronRight size={14} strokeWidth={2.5} />
+                    ) : (
+                      <ChevronDown size={14} strokeWidth={2.5} />
+                    )}
+                    <span className="items-divider-label">
+                      Done · {doneCount}
+                    </span>
                     <div className="items-divider-line" />
-                  </div>
-                  {doneGroups.map((group) => (
-                    <CategoryGroup
-                      key={group.category}
-                      group={group}
-                      showHeading={
-                        doneGroups.length > 1 ||
-                        group.category !== DEFAULT_CATEGORY
-                      }
-                      edit={edit}
-                      onToggle={toggleComplete}
-                      onDelete={deleteItem}
-                    />
-                  ))}
-                </>
+                  </button>
+                  {!doneCollapsed &&
+                    (sortMode === "aisle"
+                      ? doneGroups.map((group) => (
+                          <CategoryGroup
+                            key={group.category}
+                            group={group}
+                            showHeading={
+                              doneGroups.length > 1 ||
+                              group.category !== DEFAULT_CATEGORY
+                            }
+                            edit={edit}
+                            onToggle={toggleComplete}
+                            onDelete={deleteItem}
+                          />
+                        ))
+                      : doneItems.map((item, index) => (
+                          <ItemRow
+                            key={item.id}
+                            item={item}
+                            index={index}
+                            edit={edit}
+                            onToggle={toggleComplete}
+                            onDelete={deleteItem}
+                          />
+                        )))}
+                </div>
               )}
             </div>
           )}

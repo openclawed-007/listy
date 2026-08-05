@@ -13,6 +13,8 @@ export interface GuestItem {
   completed: boolean;
   quantity?: string;
   category?: string;
+  /** Lower values appear higher when sorted by manual order. */
+  sortOrder?: number;
   createdAt: number;
 }
 
@@ -25,12 +27,17 @@ export function readGuestItems(): GuestItem[] {
       const item = value as Record<string, unknown>;
       const text = typeof item.text === "string" ? item.text.trim().slice(0, MAX_ITEM_TEXT_LENGTH) : "";
       if (!text || typeof item.id !== "string") return [];
+      const sortOrder =
+        typeof item.sortOrder === "number" && Number.isFinite(item.sortOrder)
+          ? item.sortOrder
+          : undefined;
       return [{
         id: item.id,
         text,
         completed: item.completed === true,
         quantity: typeof item.quantity === "string" ? item.quantity.trim().slice(0, MAX_QUANTITY_LENGTH) || undefined : undefined,
         category: typeof item.category === "string" ? item.category.trim().slice(0, MAX_CATEGORY_LENGTH) || undefined : undefined,
+        ...(sortOrder !== undefined ? { sortOrder } : {}),
         createdAt: typeof item.createdAt === "number" ? item.createdAt : 0,
       }];
     });
