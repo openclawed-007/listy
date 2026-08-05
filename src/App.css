@@ -2539,6 +2539,50 @@ body.dark .modal-backdrop {
   color: var(--sage-dark);
 }
 
+.settings-notif-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.settings-notif-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 40px;
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
+  border: 1.5px solid var(--sage);
+  background: var(--sage);
+  color: white;
+  font: 700 0.78rem "DM Sans", sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.settings-notif-btn.is-secondary {
+  background: var(--surface);
+  border-color: var(--cream-deep);
+  color: var(--ink-muted);
+}
+
+.settings-notif-btn:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
+
+.settings-notif-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.settings-notif-status {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--ink-muted);
+  line-height: 1.35;
+}
+
 .settings-preview {
   display: flex;
   flex-direction: column;

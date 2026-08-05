@@ -4,6 +4,8 @@ import { useDialogFocus } from "../hooks/useDialogFocus";
 import { usePreferences } from "../context/PreferencesContext";
 import {
   enableRemindersWithPermission,
+  promptAllowNotifications,
+  sendTestNotification,
   syncReminderSchedule,
 } from "../lib/reminderNotifications";
 import {
@@ -55,6 +57,8 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
   const [iface, setIface] = useState<InterfacePreferences>(interfacePrefs);
   const [permission, setPermission] = useState(notificationPermission);
   const [status, setStatus] = useState("");
+  const [notifStatus, setNotifStatus] = useState("");
+  const [notifBusy, setNotifBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
@@ -156,6 +160,67 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
   };
 
   const ready = !reminders.enabled || reminders.days.length > 0;
+
+  const refreshPermission = () => {
+    setPermission(notificationPermission());
+  };
+
+  const handleAllowNotifications = async () => {
+    setNotifBusy(true);
+    setNotifStatus("");
+    try {
+      const result = await promptAllowNotifications();
+      setPermission(result);
+      const reason = notificationBlockReason();
+      if (result === "granted") {
+        setNotifStatus("Notifications allowed for this site.");
+      } else if (reason === "insecure_context") {
+        setNotifStatus(
+          "This page needs HTTPS or localhost before the browser will allow notifications.",
+        );
+      } else if (result === "denied") {
+        setNotifStatus(
+          "Blocked. Open the browser’s site settings (lock icon) and allow notifications for this site.",
+        );
+      } else if (result === "unsupported") {
+        setNotifStatus("This browser doesn’t support notifications.");
+      } else {
+        setNotifStatus("Permission was not granted yet.");
+      }
+    } finally {
+      setNotifBusy(false);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    setNotifBusy(true);
+    setNotifStatus("");
+    try {
+      const result = await sendTestNotification();
+      refreshPermission();
+      if (result.ok) {
+        setNotifStatus("Test notification sent — check your device.");
+        return;
+      }
+      if (result.reason === "insecure_context") {
+        setNotifStatus(
+          "Can’t send a test on this HTTP network URL. Use HTTPS or localhost.",
+        );
+      } else if (result.reason === "denied") {
+        setNotifStatus(
+          "Notifications are blocked. Tap “Allow notifications” or change site settings.",
+        );
+      } else if (result.reason === "unsupported") {
+        setNotifStatus("This browser doesn’t support notifications.");
+      } else if (result.reason === "default") {
+        setNotifStatus("Allow notifications first, then try the test again.");
+      } else {
+        setNotifStatus("Couldn’t send a test notification.");
+      }
+    } finally {
+      setNotifBusy(false);
+    }
+  };
 
   const permissionCopy = (() => {
     if (block === "granted" || permission === "granted") {
@@ -383,6 +448,31 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
                       )}
                       <span>{permissionCopy.text}</span>
                     </div>
+
+                    <div className="settings-notif-actions">
+                      <button
+                        type="button"
+                        className="settings-notif-btn"
+                        disabled={notifBusy}
+                        onClick={() => void handleAllowNotifications()}
+                      >
+                        <Bell size={14} strokeWidth={2.25} />
+                        Allow notifications
+                      </button>
+                      <button
+                        type="button"
+                        className="settings-notif-btn is-secondary"
+                        disabled={notifBusy}
+                        onClick={() => void handleTestNotification()}
+                      >
+                        Send test
+                      </button>
+                    </div>
+                    {notifStatus && (
+                      <p className="settings-notif-status" role="status">
+                        {notifStatus}
+                      </p>
+                    )}
 
                     {reminders.enabled &&
                       reminders.days.length > 0 &&

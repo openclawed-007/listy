@@ -8,6 +8,8 @@ import {
   dueReminders,
   markReminderFired,
   notificationPermission,
+  notificationsAvailableInThisContext,
+  notificationsSupported,
   readFiredReminderKeys,
   readLocalReminderSettings,
   requestNotificationPermission,
@@ -219,6 +221,72 @@ export async function enableRemindersWithPermission(
     scheduled: result.scheduled,
     mode: result.mode,
   };
+}
+
+/**
+ * Ask the browser for notification permission (must be from a user gesture).
+ * Returns the resulting permission string.
+ */
+export async function promptAllowNotifications(): Promise<
+  NotificationPermission | "unsupported"
+> {
+  return requestNotificationPermission();
+}
+
+/**
+ * Fire an immediate test notification so the user can verify alerts work.
+ * Requires permission already granted (or will request it once).
+ */
+export async function sendTestNotification(): Promise<{
+  ok: boolean;
+  reason:
+    | "sent"
+    | "unsupported"
+    | "insecure_context"
+    | "denied"
+    | "default"
+    | "error";
+}> {
+  if (!notificationsSupported()) {
+    return { ok: false, reason: "unsupported" };
+  }
+  if (!notificationsAvailableInThisContext()) {
+    return { ok: false, reason: "insecure_context" };
+  }
+
+  let permission = Notification.permission;
+  if (permission === "default") {
+    permission = await requestNotificationPermission();
+  }
+  if (permission === "denied" || permission === "unsupported") {
+    return { ok: false, reason: permission === "denied" ? "denied" : "unsupported" };
+  }
+  if (permission !== "granted") {
+    return { ok: false, reason: "default" };
+  }
+
+  const registration = await getReadyRegistration();
+  const title = "CartLink test";
+  const body = "Notifications are working. You’ll get shopping reminders here.";
+  const options = {
+    tag: `${SW_TAG_PREFIX}test`,
+    body,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    data: { url: "/" },
+  };
+
+  try {
+    if (registration) {
+      await registration.showNotification(title, options);
+    } else {
+      // eslint-disable-next-line no-new
+      new Notification(title, options);
+    }
+    return { ok: true, reason: "sent" };
+  } catch {
+    return { ok: false, reason: "error" };
+  }
 }
 
 /** Keep reminders honest while a tab is open. */
