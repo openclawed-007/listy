@@ -1,16 +1,8 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "./useAuth";
 import {
-  DEFAULT_USER_PREFERENCES,
   normalizeInterfacePreferences,
   normalizeUserPreferences,
   readLocalUserPreferences,
@@ -23,24 +15,10 @@ import {
   writeLocalReminderSettings,
   type ShoppingReminderSettings,
 } from "../lib/shoppingReminders";
-
-interface PreferencesContextValue {
-  interfacePrefs: InterfacePreferences;
-  reminderSettings: ShoppingReminderSettings;
-  /** Replace interface prefs and persist (local + cloud when signed in). */
-  setInterfacePrefs: (next: InterfacePreferences) => Promise<void>;
-  /** Replace reminder settings locally (cloud save still goes through Settings save). */
-  setReminderSettingsLocal: (next: ShoppingReminderSettings) => void;
-  /** Load remote userSettings when auth changes. */
-  refreshFromCloud: () => Promise<void>;
-  /** Persist a full snapshot (used by Settings dialog Save). */
-  persistUserSettings: (input: {
-    interface: InterfacePreferences;
-    shoppingReminders: ShoppingReminderSettings;
-  }) => Promise<void>;
-}
-
-const PreferencesContext = createContext<PreferencesContextValue | null>(null);
+import {
+  PreferencesContext,
+  type PreferencesContextValue,
+} from "./PreferencesContext.shared";
 
 export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -100,6 +78,9 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
     [],
   );
 
+  // Cloud-only refresh. Signed-out state already mirrors local storage —
+  // every change writes through to it — so there is no sync fallback here,
+  // which also keeps setState out of the synchronous effect path.
   const refreshFromCloud = useCallback(async () => {
     if (!uid || !db) {
       const local = readLocalUserPreferences();
@@ -127,6 +108,9 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [uid]);
 
   useEffect(() => {
+    // Legitimate external sync: state updates only land after the Firestore
+    // read resolves, never synchronously within the effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshFromCloud();
   }, [refreshFromCloud]);
 
@@ -155,19 +139,3 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
     </PreferencesContext.Provider>
   );
 };
-
-export function usePreferences(): PreferencesContextValue {
-  const ctx = useContext(PreferencesContext);
-  if (!ctx) {
-    // Safe fallback for tests that don't wrap the provider.
-    return {
-      interfacePrefs: DEFAULT_USER_PREFERENCES.interface,
-      reminderSettings: readLocalReminderSettings(),
-      setInterfacePrefs: async () => undefined,
-      setReminderSettingsLocal: () => undefined,
-      refreshFromCloud: async () => undefined,
-      persistUserSettings: async () => undefined,
-    };
-  }
-  return ctx;
-}

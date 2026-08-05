@@ -31,7 +31,7 @@ import {
 } from "../lib/itemInput";
 import { groupItemsByCategory, isRecord } from "../lib/shoppingItem";
 import { useAuth } from "../context/useAuth";
-import { usePreferences } from "../context/PreferencesContext";
+import { usePreferences } from "../context/usePreferences";
 import { useDarkMode } from "../hooks/useDarkMode";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import {

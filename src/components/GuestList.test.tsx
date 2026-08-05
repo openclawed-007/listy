@@ -70,6 +70,34 @@ describe("GuestList", () => {
     expect(screen.queryByText("Milkk")).not.toBeInTheDocument();
   });
 
+  it("survives auth resolving after the loading screen (hook order)", () => {
+    // Regression: early returns above later hooks crashed React with
+    // "Rendered more hooks than during the previous render" when
+    // Firebase auth flipped loading -> loaded on real devices.
+    const value = {
+      user: null,
+      loading: true,
+      login: vi.fn(),
+      logout: vi.fn(),
+    };
+    const ui = (auth: typeof value) => (
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter initialEntries={["/guest"]}>
+          <Routes>
+            <Route path="/guest" element={<GuestList />} />
+            <Route path="/" element={<div>Signed-in home</div>} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
+    );
+
+    const view = render(ui(value));
+    expect(screen.queryByLabelText("Add or search items")).toBeNull();
+
+    view.rerender(ui({ ...value, loading: false }));
+    expect(screen.getByLabelText("Add or search items")).toBeInTheDocument();
+  });
+
   it("sends signed-in users to the synced list", () => {
     renderGuest({
       uid: "u1",

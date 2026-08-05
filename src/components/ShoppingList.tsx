@@ -122,7 +122,7 @@ import {
   syncReminderSchedule,
 } from "../lib/reminderNotifications";
 import { shoppingDayBanner } from "../lib/shoppingReminders";
-import { usePreferences } from "../context/PreferencesContext";
+import { usePreferences } from "../context/usePreferences";
 
 interface ListTab {
   id: string;

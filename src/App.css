@@ -1122,6 +1122,31 @@ body.dark .item-row.is-important {
   transform: scale(0.92);
 }
 
+/*
+ * Row controls render small (22–26px) to keep the list compact, but that is
+ * well under comfortable thumb size. Invisible expanded hit areas make them
+ * reliable to tap one-handed without changing the visual density.
+ * Horizontal padding stays inside the gaps so neighbouring buttons never
+ * steal each other's taps.
+ */
+.toggle-btn,
+.important-btn,
+.edit-btn,
+.delete-btn,
+.drag-handle {
+  position: relative;
+}
+
+.toggle-btn::after,
+.important-btn::after,
+.edit-btn::after,
+.delete-btn::after,
+.drag-handle::after {
+  content: "";
+  position: absolute;
+  inset: -8px -3px;
+}
+
 /* Inline edit input */
 .item-edit-fields {
   flex: 1;

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Bell, BellOff, X } from "lucide-react";
 import { useDialogFocus } from "../hooks/useDialogFocus";
-import { usePreferences } from "../context/PreferencesContext";
+import { usePreferences } from "../context/usePreferences";
 import {
   enableRemindersWithPermission,
   promptAllowNotifications,

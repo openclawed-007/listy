@@ -124,7 +124,7 @@ async function showNow(
 
   if (notificationPermission() === "granted") {
     try {
-      // eslint-disable-next-line no-new
+       
       new Notification(reminder.title, {
         tag: `${SW_TAG_PREFIX}${reminder.key}`,
         body: reminder.body,
@@ -285,7 +285,7 @@ export async function sendTestNotification(): Promise<{
     if (registration) {
       await registration.showNotification(title, options);
     } else {
-      // eslint-disable-next-line no-new
+       
       new Notification(title, options);
     }
     return { ok: true, reason: "sent" };

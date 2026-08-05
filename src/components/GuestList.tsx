@@ -24,7 +24,7 @@ import {
   syncReminderSchedule,
 } from "../lib/reminderNotifications";
 import { shoppingDayBanner } from "../lib/shoppingReminders";
-import { usePreferences } from "../context/PreferencesContext";
+import { usePreferences } from "../context/usePreferences";
 import {
   DEFAULT_CATEGORY,
   formatQuantity,
