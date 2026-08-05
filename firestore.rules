@@ -4,6 +4,8 @@ service cloud.firestore {
 
     function isShoppingItemValid(data) {
       return data.userId is string
+        && data.userId.size() > 0
+        && data.userId.size() <= 128
         && data.text is string
         && data.text.size() > 0
         && data.text.size() <= 500
@@ -12,12 +14,17 @@ service cloud.firestore {
         && (!('category' in data) || (data.category is string && data.category.size() <= 80))
         && (!('listId' in data) || (data.listId is string && data.listId.size() <= 200))
         && (!('listName' in data) || (data.listName is string && data.listName.size() <= 120))
-        && (!('sharedFromUserId' in data) || (data.sharedFromUserId is string && data.sharedFromUserId.size() <= 128));
+        && (!('sharedFromUserId' in data) || (data.sharedFromUserId is string && data.sharedFromUserId.size() <= 128))
+        // Important flag + manual sort order (undo restore writes these too).
+        && (!('important' in data) || data.important is bool)
+        && (!('sortOrder' in data) || data.sortOrder is number)
+        && (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     match /shoppingItems/{itemId} {
       allow read, delete: if request.auth != null
         && request.auth.uid == resource.data.userId;
+      // create covers first write and undo-restore via setDoc on a deleted id.
       allow create: if request.auth != null
         && request.auth.uid == request.resource.data.userId
         && isShoppingItemValid(request.resource.data);

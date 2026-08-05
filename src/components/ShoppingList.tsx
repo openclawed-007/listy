@@ -907,40 +907,54 @@ const ShoppingList: React.FC = () => {
   };
 
   const undoDeleteItem = async () => {
-    if (!db || !pendingDelete) return;
+    if (!db || !pendingDelete || !user) return;
 
     const { item, timeoutId } = pendingDelete;
     window.clearTimeout(timeoutId);
     setPendingDelete(null);
 
+    // Build a rules-safe payload. Always use the signed-in uid (not a stale
+    // snapshot field) and serverTimestamp for createdAt — replaying a cached
+    // Timestamp has caused restore failures in the wild.
+    const payload: Record<string, unknown> = {
+      text: item.text,
+      completed: item.completed,
+      userId: user.uid,
+      listId: getItemListId(item),
+      listName: getItemListName(item),
+      createdAt: serverTimestamp(),
+    };
+    if (item.quantity) payload.quantity = item.quantity;
+    if (item.category) payload.category = item.category;
+    if (item.sharedFromUserId) payload.sharedFromUserId = item.sharedFromUserId;
+    if (item.important === true) payload.important = true;
+    if (typeof item.sortOrder === "number" && Number.isFinite(item.sortOrder)) {
+      payload.sortOrder = item.sortOrder;
+    }
+
     try {
       setActionError("");
       const itemRef = doc(db, "shoppingItems", item.id);
-      // If the row was re-created or edited elsewhere during the undo window,
-      // do not overwrite that newer document with the stale snapshot.
-      const existing = await getDoc(itemRef);
-      if (existing.exists()) {
-        setNotice("That item is already back on your list.");
-        return;
+
+      // Existence check is best-effort only — never block restore if getDoc fails.
+      try {
+        const existing = await getDoc(itemRef);
+        if (existing.exists()) {
+          setNotice("That item is already back on your list.");
+          return;
+        }
+      } catch (lookupError) {
+        console.warn("Undo existence check failed; continuing restore:", lookupError);
       }
 
-      await setDoc(itemRef, {
-        text: item.text,
-        completed: item.completed,
-        userId: item.userId,
-        ...(item.quantity ? { quantity: item.quantity } : {}),
-        ...(item.category ? { category: item.category } : {}),
-        listId: getItemListId(item),
-        listName: getItemListName(item),
-        ...(item.sharedFromUserId
-          ? { sharedFromUserId: item.sharedFromUserId }
-          : {}),
-        ...(item.important ? { important: true } : {}),
-        ...(typeof item.sortOrder === "number"
-          ? { sortOrder: item.sortOrder }
-          : {}),
-        createdAt: item.createdAt ?? serverTimestamp(),
-      });
+      try {
+        await setDoc(itemRef, payload);
+      } catch (writeError) {
+        // If the original id cannot be recreated (rules/offline race), fall back
+        // to a fresh document so the user still gets their item back.
+        console.warn("Undo setDoc failed; falling back to addDoc:", writeError);
+        await addDoc(collection(db, "shoppingItems"), payload);
+      }
 
       // The delete was pushed to the list owner, so the undo has to be too —
       // otherwise the item comes back here and stays gone for everyone else.
