@@ -81,15 +81,10 @@ service cloud.firestore {
       let canAdd = perms.add == true;
       let canRemove = perms.remove == true;
       let canToggle = perms.toggle == true;
-
-      // No add permission: list may not grow.
-      if (!canAdd && newN > oldN) return false;
-      // No remove permission: list may not shrink.
-      if (!canRemove && newN < oldN) return false;
-      // Toggle-only: size must stay the same.
-      if (canToggle && !canAdd && !canRemove && newN != oldN) return false;
-
-      return canAdd || canRemove || canToggle;
+      // No add → cannot grow; no remove → cannot shrink; need at least one flag.
+      return (canAdd || canRemove || canToggle)
+        && (canAdd || newN <= oldN)
+        && (canRemove || newN >= oldN);
     }
 
     // A collaborator (signed-in, non-owner) may change the `items` array while
