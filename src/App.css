@@ -1902,13 +1902,14 @@ body.dark .modal-backdrop {
   border: 1.5px solid var(--cream-deep);
   border-radius: var(--radius);
   background: var(--cream);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
+/* Keep focus quiet — the blinking caret is the main active cue */
 .share-join-row:focus-within {
-  border-color: var(--sage);
-  box-shadow: 0 0 0 3px rgba(107, 143, 113, 0.16);
-  background: var(--surface);
+  border-color: var(--cream-deep);
+  box-shadow: none;
+  background: var(--cream);
 }
 
 .share-join-input {
@@ -1922,12 +1923,24 @@ body.dark .modal-backdrop {
   text-transform: uppercase;
   outline: none;
   padding: 0.55rem 0;
+  caret-color: var(--sage-dark);
+  caret-shape: bar;
+}
+
+.share-join-input:focus,
+.share-join-input:focus-visible {
+  outline: none;
 }
 
 .share-join-input::placeholder {
   color: var(--ink-faint);
   font-weight: 600;
   letter-spacing: 0.08em;
+}
+
+.share-join-input::selection {
+  background: rgba(107, 143, 113, 0.18);
+  color: var(--ink);
 }
 
 .share-join-submit {
@@ -2009,12 +2022,13 @@ body.dark .modal-backdrop {
   border: 1.5px solid var(--cream-deep);
   border-radius: var(--radius);
   background: var(--surface);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
+/* Keep focus quiet — the blinking caret is the main active cue */
 .join-input-row:focus-within {
-  border-color: var(--sage);
-  box-shadow: 0 0 0 3px rgba(107, 143, 113, 0.18);
+  border-color: var(--cream-deep);
+  box-shadow: none;
 }
 
 .join-input-icon {
@@ -2034,12 +2048,24 @@ body.dark .modal-backdrop {
   text-transform: uppercase;
   outline: none;
   padding: 0.7rem 0;
+  caret-color: var(--sage-dark);
+  caret-shape: bar;
+}
+
+.join-input:focus,
+.join-input:focus-visible {
+  outline: none;
 }
 
 .join-input::placeholder {
   color: var(--ink-faint);
   letter-spacing: 0.1em;
   font-weight: 600;
+}
+
+.join-input::selection {
+  background: rgba(107, 143, 113, 0.18);
+  color: var(--ink);
 }
 
 .join-hint {
