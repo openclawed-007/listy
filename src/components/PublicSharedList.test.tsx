@@ -242,6 +242,33 @@ describe("PublicSharedList", () => {
     ]);
   });
 
+  it("chains rapid collaborator toggles without losing the first change", async () => {
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      permissions: { toggle: true },
+      items: [
+        { id: "a1", text: "Apples", completed: false },
+        { id: "t1", text: "Tea", completed: false },
+      ],
+    });
+
+    renderPublicSharedList("/share/alex-uid", visitor);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Apples" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Tea" }));
+
+    await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(2));
+    const [, secondPayload] = mockUpdateDoc.mock.calls[1];
+    expect(secondPayload.items).toEqual([
+      { id: "a1", text: "Apples", completed: true },
+      { id: "t1", text: "Tea", completed: true },
+    ]);
+  });
+
   it("lets a collaborator with add permission append an item", async () => {
     emitSharedSnapshot({
       ownerId: "alex-uid",
@@ -261,12 +288,17 @@ describe("PublicSharedList", () => {
 
     await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
     const [, payload] = mockUpdateDoc.mock.calls[0];
-    expect(payload.items).toEqual([
-      { text: "Apples", completed: false },
-      // The aisle is filled in automatically so the owner sees it in the right
-      // place without the visitor having to think about it.
-      { text: "Bread", completed: false, category: "Bakery" },
-    ]);
+    expect(payload.items).toHaveLength(2);
+    expect(payload.items[0]).toEqual({ text: "Apples", completed: false });
+    // Collaborator-added rows get a stable id; aisle is filled in automatically.
+    expect(payload.items[1]).toEqual(
+      expect.objectContaining({
+        text: "Bread",
+        completed: false,
+        category: "Bakery",
+        id: expect.any(String),
+      }),
+    );
   });
 
   it("keeps a collaborator from adding a duplicate row and says so", async () => {

@@ -261,7 +261,7 @@ describe("ShoppingList sharing", () => {
         expect.objectContaining({
           ownerId: "owner-uid",
           ownerName: "Brad Owner",
-          items: [{ text: "Milk", completed: false }],
+          items: [{ id: "personal-1", text: "Milk", completed: false }],
           shareCode: "AB3DK7MP",
         }),
       );
@@ -556,7 +556,12 @@ describe("ShoppingList imported-list editing", () => {
       expect(mockUpdateDoc).toHaveBeenCalledWith(
         { path: "sharedLists/alex-uid" },
         expect.objectContaining({
-          items: [{ text: "Green apples", completed: false }],
+          items: [
+            expect.objectContaining({
+              text: "Green apples",
+              completed: false,
+            }),
+          ],
         }),
       ),
     );
@@ -625,7 +630,8 @@ describe("ShoppingList collaborator sync-back", () => {
       ownerName: "Brad Owner",
       allowEdits: true,
       permissions: { toggle: true, add: true, remove: true },
-      items: [{ text: "Milk", completed: true }],
+      // Stable id matches the personal shoppingItems doc so sync-back finds it.
+      items: [{ id: "personal-1", text: "Milk", completed: true }],
     });
     mockGetDoc.mockResolvedValue({
       exists: () => true,
@@ -633,7 +639,7 @@ describe("ShoppingList collaborator sync-back", () => {
     });
     localStorage.setItem(
       "cartlink:published:owner-uid",
-      JSON.stringify({ "Milk\u0000\u0000": false }),
+      JSON.stringify({ "id:personal-1": false }),
     );
 
     renderShoppingList();

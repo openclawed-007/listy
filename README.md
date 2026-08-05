@@ -82,7 +82,9 @@ In short: a signed-in user can only read and write their own `shoppingItems`,
 and `sharedLists/{ownerId}` is world-readable by document ID but only the owner
 may create it, rename it or change its permissions. A signed-in collaborator
 may change nothing but the `items` array, and only while the owner has editing
-switched on.
+switched on. Rules also block list-size changes that the permission flags
+forbid (e.g. adding when only “check off” is granted). Per-item content limits
+are still enforced in the client.
 
 ## Deploy
 

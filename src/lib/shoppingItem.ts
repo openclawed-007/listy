@@ -35,6 +35,8 @@ export interface ShoppingItem {
 }
 
 export interface SharedItemPayload {
+  /** Stable identity (owner's shoppingItems doc id when published). */
+  id?: string;
   text: string;
   completed: boolean;
   quantity?: string;
@@ -59,8 +61,8 @@ export function getItemCategory(item: ShoppingItem) {
   return item.category ?? DEFAULT_CATEGORY;
 }
 
-/** Stable identity for matching a personal item to its shared-doc counterpart. */
-export function getSharedItemKey(item: {
+/** Content-only key used for legacy shared docs that have no stable id. */
+export function getSharedItemContentKey(item: {
   text: string;
   quantity?: string;
   category?: string;
@@ -68,14 +70,31 @@ export function getSharedItemKey(item: {
   return [item.text, item.quantity ?? "", item.category ?? ""].join("\u0000");
 }
 
+/**
+ * Stable identity for matching a personal item to its shared-doc counterpart.
+ * Prefer a published `id` so quantity/category edits do not look like
+ * remove+add. Fall back to content for older shared docs without ids.
+ */
+export function getSharedItemKey(item: {
+  id?: string;
+  text: string;
+  quantity?: string;
+  category?: string;
+}) {
+  if (item.id) return `id:${item.id}`;
+  return getSharedItemContentKey(item);
+}
+
 /** Strip an item down to the fields published on a public shared list. */
 export function toSharedItemPayload(item: {
+  id?: string;
   text: string;
   completed: boolean;
   quantity?: string;
   category?: string;
 }): SharedItemPayload {
   return {
+    ...(item.id ? { id: item.id } : {}),
     text: item.text,
     completed: item.completed,
     ...(item.quantity ? { quantity: item.quantity } : {}),
@@ -137,8 +156,11 @@ export function normalizeSharedItems(items: unknown): SharedItemPayload[] {
     const text = normalizeOptionalString(item.text, MAX_ITEM_TEXT_LENGTH);
     if (!text) return [];
 
+    const id = normalizeOptionalString(item.id, 128);
+
     return [
       {
+        ...(id ? { id } : {}),
         text,
         completed: item.completed === true,
         quantity: normalizeOptionalString(item.quantity, MAX_QUANTITY_LENGTH),

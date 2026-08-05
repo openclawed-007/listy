@@ -46,7 +46,18 @@ import BrandMark from "./BrandMark";
 
 const MAX_ITEMS = 500;
 
+let collaboratorIdSeq = 0;
+
+function createCollaboratorItemId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  collaboratorIdSeq += 1;
+  return `c-${collaboratorIdSeq}`;
+}
+
 interface SharedItemData {
+  id?: string;
   text: string;
   completed: boolean;
   quantity?: string;
@@ -85,9 +96,15 @@ function normalizeSharedItems(items: unknown): PublicItem[] {
     const trimmed = item.text.trim();
     if (!trimmed) return [];
 
+    const stableId =
+      typeof item.id === "string" && item.id.trim()
+        ? item.id.trim().slice(0, 128)
+        : undefined;
+
     return [
       {
-        id: `${index}-${trimmed}`,
+        // Prefer published stable id so UI keys survive quantity edits.
+        id: stableId ?? `${index}-${trimmed}`,
         index,
         text: trimmed.slice(0, 500),
         completed: item.completed === true,
@@ -126,6 +143,9 @@ function toPayloadItem(
 ): SharedItemData {
   const record = isRecord(item) ? item : {};
   const base: SharedItemData = {
+    ...(typeof record.id === "string" && record.id.trim()
+      ? { id: record.id.trim().slice(0, 128) }
+      : {}),
     text: typeof record.text === "string" ? record.text : "",
     completed: record.completed === true,
     ...(typeof record.quantity === "string" && record.quantity
@@ -139,12 +159,51 @@ function toPayloadItem(
   return { ...base, ...override };
 }
 
+function findRawItemIndex(
+  rawItems: unknown[],
+  target: Pick<PublicItem, "id" | "index" | "text">,
+) {
+  // Prefer stable id match so optimistic reorders/removes don't desync indices.
+  const byId = rawItems.findIndex((item) => {
+    if (!isRecord(item) || typeof item.id !== "string") return false;
+    return item.id === target.id;
+  });
+  if (byId !== -1) return byId;
+
+  if (
+    Number.isInteger(target.index) &&
+    target.index >= 0 &&
+    target.index < rawItems.length
+  ) {
+    return target.index;
+  }
+
+  return rawItems.findIndex((item) => {
+    if (!isRecord(item) || typeof item.text !== "string") return false;
+    return item.text.trim() === target.text;
+  });
+}
+
+function payloadToPublicItems(payload: SharedItemData[]): PublicItem[] {
+  return payload.map((item, index) => ({
+    id: item.id ?? `${index}-${item.text}`,
+    index,
+    text: item.text,
+    completed: item.completed,
+    quantity: item.quantity,
+    category: item.category,
+  }));
+}
+
 // Rebuild the items array from the owner's raw data, toggling one item.
 function buildToggledPayload(
   rawItems: unknown,
-  toggledIndex: number,
+  target: Pick<PublicItem, "id" | "index" | "text">,
 ): SharedItemData[] {
   if (!Array.isArray(rawItems)) return [];
+
+  const toggledIndex = findRawItemIndex(rawItems, target);
+  if (toggledIndex === -1) return rawItems.map((item) => toPayloadItem(item));
 
   return rawItems.map((item, index) =>
     index === toggledIndex
@@ -155,12 +214,15 @@ function buildToggledPayload(
   );
 }
 
-// Rebuild the items array, removing one item by index.
+// Rebuild the items array, removing one item.
 function buildRemovedPayload(
   rawItems: unknown,
-  removedIndex: number,
+  target: Pick<PublicItem, "id" | "index" | "text">,
 ): SharedItemData[] {
   if (!Array.isArray(rawItems)) return [];
+
+  const removedIndex = findRawItemIndex(rawItems, target);
+  if (removedIndex === -1) return rawItems.map((item) => toPayloadItem(item));
 
   return rawItems
     .filter((_item, index) => index !== removedIndex)
@@ -299,6 +361,10 @@ const PublicSharedList: React.FC = () => {
   const persistItems = (payload: SharedItemData[], onError: () => void) => {
     if (!db || !shareId) return;
 
+    // Chain subsequent rapid edits onto this optimistic payload so a second
+    // toggle/remove before the snapshot returns does not clobber the first.
+    rawItemsRef.current = payload;
+
     updateDoc(doc(db, "sharedLists", shareId), {
       items: payload,
       updatedAt: serverTimestamp(),
@@ -319,19 +385,17 @@ const PublicSharedList: React.FC = () => {
       return;
     }
 
-    const flip = () =>
-      setItems((currentItems) =>
-        currentItems.map((current) =>
-          current.id === item.id
-            ? { ...current, completed: !current.completed }
-            : current,
-        ),
-      );
+    const previousRaw = rawItemsRef.current;
+    const payload = buildToggledPayload(previousRaw, item);
+    const previousItems = items;
 
-    // Optimistic local feedback first.
-    flip();
+    // Optimistic local feedback (reindexed) so chained edits stay consistent.
+    setItems(payloadToPublicItems(payload));
     setSaveError("");
-    persistItems(buildToggledPayload(rawItemsRef.current, item.index), flip);
+    persistItems(payload, () => {
+      rawItemsRef.current = previousRaw;
+      setItems(previousItems);
+    });
   };
 
   const resetLocalTicks = () => {
@@ -343,14 +407,16 @@ const PublicSharedList: React.FC = () => {
   const removeItem = (item: PublicItem) => {
     if (!canRemove) return;
 
+    const previousRaw = rawItemsRef.current;
     const previousItems = items;
-    setItems((currentItems) =>
-      currentItems.filter((current) => current.id !== item.id),
-    );
+    const payload = buildRemovedPayload(previousRaw, item);
+
+    setItems(payloadToPublicItems(payload));
     setSaveError("");
-    persistItems(buildRemovedPayload(rawItemsRef.current, item.index), () =>
-      setItems(previousItems),
-    );
+    persistItems(payload, () => {
+      rawItemsRef.current = previousRaw;
+      setItems(previousItems);
+    });
   };
 
   // Visitors get the same smart field as the list owner: "2 milk" sets the
@@ -376,32 +442,26 @@ const PublicSharedList: React.FC = () => {
       return;
     }
 
+    const newId = createCollaboratorItemId();
     const newItem: SharedItemData = {
+      id: newId,
       text,
       completed: false,
       ...(quantity ? { quantity } : {}),
       ...(category ? { category } : {}),
     };
+    const previousRaw = rawItemsRef.current;
     const previousItems = items;
-    const nextIndex = items.length;
+    const payload = buildAddedPayload(previousRaw, newItem);
 
-    setItems((currentItems) => [
-      ...currentItems,
-      {
-        id: `${nextIndex}-${text}`,
-        index: nextIndex,
-        text,
-        completed: false,
-        quantity,
-        category,
-      },
-    ]);
+    setItems(payloadToPublicItems(payload));
     setNewItemText("");
     setSaveError("");
     setAddNotice("");
-    persistItems(buildAddedPayload(rawItemsRef.current, newItem), () =>
-      setItems(previousItems),
-    );
+    persistItems(payload, () => {
+      rawItemsRef.current = previousRaw;
+      setItems(previousItems);
+    });
   };
 
   if (loading && !unavailableError) {

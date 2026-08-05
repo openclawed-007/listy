@@ -56,13 +56,24 @@ describe("diffSharedState", () => {
     expect(diff.toggled).toEqual([]);
   });
 
-  it("treats a quantity change as a different item, not a toggle", () => {
+  it("treats a quantity change as a different item when there is no stable id", () => {
     const published = buildPublishedState([milk]);
     const remote = buildPublishedState([{ ...milk, quantity: "3" }]);
     const diff = diffSharedState(published, remote);
 
     expect(diff.added).toHaveLength(1);
     expect(diff.removed).toHaveLength(1);
+  });
+
+  it("keeps identity across quantity edits when a stable id is present", () => {
+    const withId = { id: "item-1", text: "Milk", completed: false, quantity: "2" };
+    const published = buildPublishedState([withId]);
+    const remote = buildPublishedState([{ ...withId, quantity: "3" }]);
+    const diff = diffSharedState(published, remote);
+
+    expect(diff.added).toEqual([]);
+    expect(diff.removed).toEqual([]);
+    expect(diff.toggled).toEqual([]);
   });
 });
 

@@ -60,6 +60,7 @@ import {
   commitBatchOperations,
   getItemListId,
   getItemListName,
+  getSharedItemContentKey,
   getSharedItemKey,
   groupItemsByCategory,
   isRecord,
@@ -442,8 +443,11 @@ const ShoppingList: React.FC = () => {
 
         const sharedByKey = indexSharedItems(shared.items);
         const personalByKey = new Map<string, ShoppingItem>();
+        // Index by stable id and by content so legacy shared docs (no id)
+        // still match personal rows after we started publishing ids.
         personalItemsRef.current.forEach((item) => {
           personalByKey.set(getSharedItemKey(item), item);
+          personalByKey.set(getSharedItemContentKey(item), item);
         });
 
         // Accept the collaborator's version as the new baseline up front, so a
@@ -632,17 +636,26 @@ const ShoppingList: React.FC = () => {
       if (!ownerAllowsEdits || !permitted) return;
 
       const rawItems = Array.isArray(raw?.items) ? raw.items : [];
-      const itemKey = getSharedItemKey(item);
+      const contentKey = getSharedItemContentKey(item);
       const matchIndex = rawItems.findIndex((rawItem) => {
         const record = isRecord(rawItem) ? rawItem : {};
+        // Prefer stable published id so quantity edits still match.
+        if (
+          item.id &&
+          typeof record.id === "string" &&
+          record.id === item.id
+        ) {
+          return true;
+        }
+        // Fall back to content for older shared docs that never published ids.
         return (
-          getSharedItemKey({
+          getSharedItemContentKey({
             text: typeof record.text === "string" ? record.text : "",
             quantity:
               typeof record.quantity === "string" ? record.quantity : undefined,
             category:
               typeof record.category === "string" ? record.category : undefined,
-          }) === itemKey
+          }) === contentKey
         );
       });
 
@@ -679,6 +692,7 @@ const ShoppingList: React.FC = () => {
           rawItem && typeof rawItem === "object" ? rawItem : {}
         ) as Record<string, unknown>;
         return toSharedItemPayload({
+          id: typeof record.id === "string" ? record.id : undefined,
           text: typeof record.text === "string" ? record.text : "",
           completed: record.completed === true,
           quantity:
@@ -845,7 +859,16 @@ const ShoppingList: React.FC = () => {
 
     try {
       setActionError("");
-      await setDoc(doc(db, "shoppingItems", item.id), {
+      const itemRef = doc(db, "shoppingItems", item.id);
+      // If the row was re-created or edited elsewhere during the undo window,
+      // do not overwrite that newer document with the stale snapshot.
+      const existing = await getDoc(itemRef);
+      if (existing.exists()) {
+        setNotice("That item is already back on your list.");
+        return;
+      }
+
+      await setDoc(itemRef, {
         text: item.text,
         completed: item.completed,
         userId: item.userId,

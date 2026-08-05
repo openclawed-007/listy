@@ -70,13 +70,32 @@ service cloud.firestore {
         && data.permissions is map;
     }
 
+    // Size-based guards for collaborator permission flags.
+    // Full per-item content checks are not practical in rules without
+    // subcollections; these still block clear violations (e.g. adding when
+    // only toggle is granted). Finer limits remain client-enforced.
+    function collaboratorSizeAllowed(existing, incoming) {
+      let perms = existing.permissions;
+      let oldN = existing.items.size();
+      let newN = incoming.items.size();
+      let canAdd = perms.add == true;
+      let canRemove = perms.remove == true;
+      let canToggle = perms.toggle == true;
+
+      // No add permission: list may not grow.
+      if (!canAdd && newN > oldN) return false;
+      // No remove permission: list may not shrink.
+      if (!canRemove && newN < oldN) return false;
+      // Toggle-only: size must stay the same.
+      if (canToggle && !canAdd && !canRemove && newN != oldN) return false;
+
+      return canAdd || canRemove || canToggle;
+    }
+
     // A collaborator (signed-in, non-owner) may change the `items` array while
     // sharing + editing is enabled. The owner identity, name and the
     // permissions map must stay exactly as the owner left them; only `items`
     // and `updatedAt` may change, and the list must stay well-formed.
-    // Granular limits (toggle vs add vs remove) are enforced in the client;
-    // the rules guarantee a collaborator cannot take ownership, change the
-    // permission set, or write a malformed list.
     function isCollaboratorListUpdate(existing, incoming) {
       return collaboratorsEnabled(existing)
         && collaboratorsEnabled(incoming)
@@ -86,6 +105,7 @@ service cloud.firestore {
         && incoming.allowEdits == existing.allowEdits
         && incoming.items is list
         && incoming.items.size() <= 500
+        && collaboratorSizeAllowed(existing, incoming)
         && incoming.diff(existing).affectedKeys().hasOnly(['items', 'updatedAt']);
     }
 
