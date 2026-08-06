@@ -71,7 +71,8 @@ vi.mock("firebase/firestore", () => ({
         first.type === "collection"
       ) {
         autoDocId += 1;
-        return { path: `${first.path}/auto-${autoDocId}` };
+        const col = first as { path?: string };
+        return { path: `${col.path}/auto-${autoDocId}` };
       }
 
       return { path: segments.join("/") };

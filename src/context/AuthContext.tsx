@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
+  signInWithRedirect,
   signOut,
   type AuthError,
   type User,
@@ -40,6 +41,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
+      const code = (error as Partial<AuthError> | undefined)?.code ?? "";
+      if (code === "auth/popup-blocked") {
+        // Popups are unreliable in installed PWAs and some mobile browsers;
+        // fall back to a full-page redirect sign-in.
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch (redirectError) {
+          console.error("Redirect Login Error:", redirectError);
+          throw new Error(getLoginErrorMessage(redirectError));
+        }
+      }
       console.error("Login Error:", error);
       throw new Error(getLoginErrorMessage(error));
     }

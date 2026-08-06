@@ -1,5 +1,5 @@
-/// <reference types="vitest" />
-import { defineConfig, loadEnv, type Plugin } from 'vite'
+import { defineConfig } from 'vitest/config'
+import { loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const REQUIRED_FIREBASE_ENV = [

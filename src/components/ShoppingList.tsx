@@ -250,10 +250,11 @@ const ShoppingList: React.FC = () => {
 
   useEffect(() => {
     if (!user || !db) return;
+    const firestore = db;
 
     const loadShareState = async () => {
       try {
-        const snapshot = await getDoc(doc(db, "sharedLists", user.uid));
+        const snapshot = await getDoc(doc(firestore, "sharedLists", user.uid));
         if (!snapshot.exists()) return;
 
         const data = snapshot.data();
@@ -267,8 +268,8 @@ const ShoppingList: React.FC = () => {
             ? data.shareCode
             : "";
         if (!code) {
-          code = await allocateShareCode(db, user.uid);
-          await updateDoc(doc(db, "sharedLists", user.uid), {
+          code = await allocateShareCode(firestore, user.uid);
+          await updateDoc(doc(firestore, "sharedLists", user.uid), {
             shareCode: code,
           });
         }
@@ -404,6 +405,7 @@ const ShoppingList: React.FC = () => {
 
   useEffect(() => {
     if (!isSharing || !itemsLoaded || !user || !db) return;
+    const firestore = db;
 
     const timeout = window.setTimeout(() => {
       const published = personalItems.map(toSharedItemPayload);
@@ -415,7 +417,7 @@ const ShoppingList: React.FC = () => {
       writePublishedState(user.uid, publishedRef.current);
 
       Promise.resolve(
-        setDoc(doc(db, "sharedLists", user.uid), {
+        setDoc(doc(firestore, "sharedLists", user.uid), {
           ownerId: user.uid,
           ownerName,
           allowEdits,
@@ -454,9 +456,10 @@ const ShoppingList: React.FC = () => {
   // deletions as collaborator activity and undo them.
   useEffect(() => {
     if (!isSharing || !allowEdits || !user || !db) return;
+    const firestore = db;
 
     const unsubscribe = onSnapshot(
-      doc(db, "sharedLists", user.uid),
+      doc(firestore, "sharedLists", user.uid),
       (snapshot) => {
         if (!snapshot.exists()) return;
 
@@ -497,7 +500,7 @@ const ShoppingList: React.FC = () => {
             const item = personalByKey.get(key);
             if (!item || item.completed === completed) return;
 
-            updateDoc(doc(db, "shoppingItems", item.id), { completed }).catch(
+            updateDoc(doc(firestore, "shoppingItems", item.id), { completed }).catch(
               (error) => {
                 console.error("Collaborator toggle sync-back error:", error);
               },
@@ -510,7 +513,7 @@ const ShoppingList: React.FC = () => {
             const sharedItem = sharedByKey.get(key);
             if (!sharedItem || personalByKey.has(key)) return;
 
-            addDoc(collection(db, "shoppingItems"), {
+            addDoc(collection(firestore, "shoppingItems"), {
               text: sharedItem.text,
               completed: sharedItem.completed,
               userId: user.uid,
@@ -530,7 +533,7 @@ const ShoppingList: React.FC = () => {
             const item = personalByKey.get(key);
             if (!item) return;
 
-            deleteDoc(doc(db, "shoppingItems", item.id)).catch((error) => {
+            deleteDoc(doc(firestore, "shoppingItems", item.id)).catch((error) => {
               console.error("Collaborator remove sync-back error:", error);
             });
           });
@@ -553,6 +556,7 @@ const ShoppingList: React.FC = () => {
       handledShareId.current === shareId
     )
       return;
+    const firestore = db;
 
     const importSharedList = async () => {
       handledShareId.current = shareId;
@@ -561,7 +565,7 @@ const ShoppingList: React.FC = () => {
       setActionError("");
 
       try {
-        const snapshot = await getDoc(doc(db, "sharedLists", shareId));
+        const snapshot = await getDoc(doc(firestore, "sharedLists", shareId));
         if (!snapshot.exists()) {
           setActionError("That shared list is no longer available.");
           navigate("/", { replace: true });
@@ -586,7 +590,7 @@ const ShoppingList: React.FC = () => {
         const importedListId = `shared:${data.ownerId}`;
         const existingItems = await getDocs(
           query(
-            collection(db, "shoppingItems"),
+            collection(firestore, "shoppingItems"),
             where("userId", "==", user.uid),
           ),
         );
@@ -596,13 +600,13 @@ const ShoppingList: React.FC = () => {
           const item = normalizeShoppingItem(itemDoc.id, itemDoc.data());
           if (item && getItemListId(item) === importedListId) {
             operations.push((batch) =>
-              batch.delete(doc(db, "shoppingItems", itemDoc.id)),
+              batch.delete(doc(firestore, "shoppingItems", itemDoc.id)),
             );
           }
         });
 
         sharedItems.forEach((item) => {
-          const itemRef = doc(collection(db, "shoppingItems"));
+          const itemRef = doc(collection(firestore, "shoppingItems"));
           operations.push((batch) =>
             batch.set(itemRef, {
               text: item.text,
@@ -618,7 +622,7 @@ const ShoppingList: React.FC = () => {
           );
         });
 
-        await commitBatchOperations(db, operations);
+        await commitBatchOperations(firestore, operations);
         setActiveListId(importedListId);
         setNotice(`${sharedOwnerName}'s list was added to your tabs.`);
         navigate("/", { replace: true });
@@ -1051,6 +1055,7 @@ const ShoppingList: React.FC = () => {
 
   const clearCompleted = async () => {
     if (!db) return;
+    const firestore = db;
 
     const done = currentListItems.filter((item) => item.completed);
     if (done.length === 0) return;
@@ -1058,9 +1063,9 @@ const ShoppingList: React.FC = () => {
     try {
       setActionError("");
       await commitBatchOperations(
-        db,
+        firestore,
         done.map(
-          (item) => (batch) => batch.delete(doc(db, "shoppingItems", item.id)),
+          (item) => (batch) => batch.delete(doc(firestore, "shoppingItems", item.id)),
         ),
       );
 
@@ -1081,13 +1086,14 @@ const ShoppingList: React.FC = () => {
 
   const removeActiveSharedList = async () => {
     if (!db || activeListId === PERSONAL_LIST_ID) return;
+    const firestore = db;
 
     try {
       setActionError("");
       await commitBatchOperations(
-        db,
+        firestore,
         currentListItems.map(
-          (item) => (batch) => batch.delete(doc(db, "shoppingItems", item.id)),
+          (item) => (batch) => batch.delete(doc(firestore, "shoppingItems", item.id)),
         ),
       );
       setActiveListId(PERSONAL_LIST_ID);
@@ -1392,15 +1398,16 @@ const ShoppingList: React.FC = () => {
     );
 
     if (!db) return;
+    const firestore = db;
 
     try {
       setActionError("");
       await commitBatchOperations(
-        db,
+        firestore,
         touched.map((item) => (batch) => {
           const sortOrder = orderById.get(item.id);
           if (sortOrder === undefined) return;
-          batch.update(doc(db, "shoppingItems", item.id), { sortOrder });
+          batch.update(doc(firestore, "shoppingItems", item.id), { sortOrder });
         }),
       );
     } catch (error) {
@@ -1549,13 +1556,14 @@ const ShoppingList: React.FC = () => {
     setDragOrderIds(null);
 
     if (unchanged || !db || !user) return;
+    const firestore = db;
 
     try {
       setActionError("");
       await commitBatchOperations(
-        db,
+        firestore,
         orders.map((entry) => (batch) => {
-          batch.update(doc(db, "shoppingItems", entry.id), {
+          batch.update(doc(firestore, "shoppingItems", entry.id), {
             sortOrder: entry.sortOrder,
           });
         }),

@@ -304,7 +304,7 @@ const PublicSharedList: React.FC = () => {
         setOwnerName(data.ownerName);
         setOwnerId(data.ownerId);
         setPermissions(data.permissions);
-        setItems(data.items);
+        setItems(payloadToPublicItems(data.items));
         setLoading(false);
       },
       (loadError) => {

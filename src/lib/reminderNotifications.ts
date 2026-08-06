@@ -92,7 +92,7 @@ async function scheduleViaTriggers(
         icon: NOTIFICATION_ICON,
         badge: NOTIFICATION_BADGE,
         data: { url: "/", reminderKey: item.key },
-        // @ts-expect-error showTrigger is experimental (Notification Triggers).
+        // showTrigger is experimental (Notification Triggers).
         showTrigger: new Trigger(item.at),
       } as NotificationOptions),
     ),
@@ -259,7 +259,7 @@ export async function sendTestNotification(): Promise<{
     return { ok: false, reason: "insecure_context" };
   }
 
-  let permission = Notification.permission;
+  let permission: NotificationPermission | "unsupported" = Notification.permission;
   if (permission === "default") {
     permission = await requestNotificationPermission();
   }

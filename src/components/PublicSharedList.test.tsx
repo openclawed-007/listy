@@ -155,7 +155,7 @@ describe("PublicSharedList", () => {
           exists: () => boolean;
           data: () => Record<string, unknown>;
         }) => void)
-      | null = null;
+      | undefined;
     mockOnSnapshot.mockImplementation((_doc, next) => {
       listener = next;
       next({
@@ -448,7 +448,7 @@ describe("PublicSharedList", () => {
           exists: () => boolean;
           data: () => Record<string, unknown>;
         }) => void)
-      | null = null;
+      | undefined;
     mockOnSnapshot.mockImplementation((_doc, next) => {
       listener = next;
       next({
