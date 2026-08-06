@@ -44,6 +44,28 @@ body.dark {
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55);
 }
 
+/* Smooth dark/light cross-fade (Chromium / Safari View Transitions API). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.4s;
+  animation-timing-function: ease;
+}
+
+/* Fallback when View Transitions aren't available: brief global color ease. */
+html.theme-animating,
+html.theme-animating *,
+html.theme-animating *::before,
+html.theme-animating *::after {
+  transition:
+    background-color 0.35s ease,
+    background 0.35s ease,
+    color 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease,
+    fill 0.35s ease,
+    stroke 0.35s ease !important;
+}
+
 html.dark .item-row.is-dragging,
 body.dark .item-row.is-dragging {
   box-shadow:
@@ -70,7 +92,7 @@ body {
   line-height: 1.6;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: background-color 0.4s ease, color 0.4s ease;
 }
 
 /* Subtle paper grain overlay */
@@ -1530,18 +1552,33 @@ body.dark .item-row.is-important {
 /* ===========================
    LOGIN PAGE
    =========================== */
+/* Kill document scroll on login/join — content is designed to fit one screen. */
+html:has(.login-container),
+body:has(.login-container) {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .login-container {
-  min-height: 100vh;
+  /* Lock to the visible viewport so mobile chrome doesn't create a dead scroll. */
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: max(1.5rem, env(safe-area-inset-top, 0px))
-    max(1.25rem, env(safe-area-inset-right, 0px))
+  /* Room for the half-off theme toggle on the card corner. */
+  padding: max(1.75rem, env(safe-area-inset-top, 0px))
+    max(1.5rem, env(safe-area-inset-right, 0px))
     max(1.5rem, env(safe-area-inset-bottom, 0px))
     max(1.25rem, env(safe-area-inset-left, 0px));
   background: var(--cream);
   position: relative;
   overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  transition: background-color 0.4s ease;
 }
 
 /* Soft brand wash — not busy blobs */
@@ -1556,13 +1593,16 @@ body.dark .item-row.is-important {
   pointer-events: none;
 }
 
+/* Half on / half off the card’s top-right corner. */
 .login-theme-toggle {
   position: absolute;
-  top: max(1rem, env(safe-area-inset-top, 0px));
-  right: max(1rem, env(safe-area-inset-right, 0px));
-  z-index: 2;
+  top: 0;
+  right: 0;
+  z-index: 5;
   width: 40px;
   height: 40px;
+  margin: 0;
+  padding: 0;
   border-radius: 50%;
   border: 1.5px solid var(--cream-deep);
   background: var(--surface);
@@ -1572,9 +1612,18 @@ body.dark .item-row.is-important {
   justify-content: center;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transform: translate(50%, -50%);
+  transition:
+    color 0.35s ease,
+    border-color 0.35s ease,
+    background 0.35s ease,
+    box-shadow 0.35s ease;
   -webkit-tap-highlight-color: transparent;
   outline: none;
+}
+
+.login-theme-toggle svg {
+  transition: opacity 0.25s ease, transform 0.35s ease;
 }
 
 .login-theme-toggle:hover {
@@ -1601,36 +1650,29 @@ body.dark .item-row.is-important {
   border-radius: 22px;
   padding: clamp(1.35rem, 3.5vh, 2.25rem) clamp(1.35rem, 4vw, 2rem)
     clamp(1.1rem, 3vh, 1.75rem);
-  max-width: 420px;
+  max-width: 400px;
   width: 100%;
   text-align: center;
   box-shadow: var(--shadow-lg);
   animation: slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
   position: relative;
   z-index: 1;
-}
-
-.login-hero {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.9rem;
-  margin-bottom: clamp(0.55rem, 1.8vh, 1rem);
-  text-align: left;
-}
-
-.login-hero-copy {
-  min-width: 0;
+  overflow: visible;
+  transition:
+    background-color 0.4s ease,
+    border-color 0.4s ease,
+    box-shadow 0.4s ease,
+    color 0.4s ease;
 }
 
 .login-logo {
-  flex: 0 0 auto;
-  width: clamp(46px, 7vh, 56px);
-  height: clamp(46px, 7vh, 56px);
+  width: clamp(48px, 7vh, 56px);
+  height: clamp(48px, 7vh, 56px);
   border-radius: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 0 auto clamp(0.65rem, 1.8vh, 1rem);
   overflow: hidden;
   border: 1px solid var(--cream-deep);
   box-shadow: var(--shadow-sm);
@@ -1644,7 +1686,7 @@ body.dark .item-row.is-important {
 }
 
 .login-kicker {
-  margin: 0 0 0.15rem;
+  margin: 0 0 0.25rem;
   color: var(--sage-dark);
   font-size: 0.72rem;
   font-weight: 800;
@@ -1654,12 +1696,12 @@ body.dark .item-row.is-important {
 
 .login-title {
   font-family: "Playfair Display", serif;
-  font-size: clamp(1.9rem, 5vh, 2.3rem);
+  font-size: clamp(1.9rem, 5vh, 2.25rem);
   font-weight: 900;
   color: var(--ink);
   letter-spacing: -0.03em;
-  line-height: 1.05;
-  margin: 0;
+  line-height: 1.1;
+  margin: 0 0 0.4rem;
 }
 
 .login-title em {
@@ -1672,9 +1714,9 @@ body.dark .item-row.is-important {
   font-size: 0.9rem;
   font-weight: 450;
   color: var(--ink-muted);
-  margin: 0 auto clamp(0.8rem, 2.2vh, 1.35rem);
-  line-height: 1.45;
-  max-width: 32ch;
+  margin: 0 auto clamp(0.8rem, 2.2vh, 1.25rem);
+  line-height: 1.4;
+  max-width: 28ch;
 }
 
 .login-benefits {
@@ -1865,11 +1907,11 @@ body.dark .item-row.is-important {
 
 
 .login-trust {
-  margin: 0.6rem auto 0;
+  margin: 0.55rem auto 0;
   color: var(--ink-muted);
-  font-size: 0.75rem;
-  line-height: 1.4;
-  max-width: 36ch;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  max-width: 30ch;
 }
 
 .login-footer-links {
@@ -3670,19 +3712,20 @@ body.dark .modal-backdrop {
   }
 
   .login-container {
-    padding-top: 0.75rem;
+    padding-top: max(1.5rem, env(safe-area-inset-top, 0px));
     padding-bottom: 0.75rem;
   }
 }
 
 /* Respect mobile browser chrome and user motion preferences. */
 .app-wrapper,
-.login-container,
 .legal-wrapper,
 .not-found-wrapper,
 .error-boundary {
   min-height: 100dvh;
 }
+
+/* login-container sets its own 100dvh height lock above. */
 
 .loading-screen {
   height: 100dvh;

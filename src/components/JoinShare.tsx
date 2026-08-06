@@ -83,16 +83,16 @@ const JoinShare: React.FC = () => {
 
   return (
     <div className="login-container">
-      <button
-        type="button"
-        className="login-theme-toggle"
-        onClick={toggle}
-        aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-      >
-        {dark ? <Sun size={16} /> : <Moon size={16} />}
-      </button>
-
       <div className="login-card join-card">
+        <button
+          type="button"
+          className="login-theme-toggle"
+          onClick={toggle}
+          aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {dark ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+
         <div className="login-logo" aria-hidden="true">
           <BrandMark className="brand-mark login-brand-mark" />
         </div>

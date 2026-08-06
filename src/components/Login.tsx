@@ -19,17 +19,17 @@ const BENEFITS = [
   {
     icon: ShoppingBasket,
     label: "Smart add",
-    detail: "“2 milk” just works",
+    detail: "Quantity and aisle, automatic",
   },
   {
     icon: Link2,
     label: "Share live",
-    detail: "Shop together, in sync",
+    detail: "Code, link, or QR",
   },
   {
     icon: Check,
     label: "Works offline",
-    detail: "Syncs when you're back",
+    detail: "Syncs when you’re back",
   },
 ] as const;
 
@@ -79,35 +79,29 @@ const Login: React.FC = () => {
 
   return (
     <div className="login-container">
-      <button
-        type="button"
-        className="login-theme-toggle"
-        onClick={toggle}
-        aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-        title={dark ? "Light mode" : "Dark mode"}
-      >
-        {dark ? <Sun size={16} /> : <Moon size={16} />}
-      </button>
-
       <div className="login-card">
-        <div className="login-hero">
-          <div className="login-logo" aria-hidden="true">
-            <BrandMark className="brand-mark login-brand-mark" />
-          </div>
-          <div className="login-hero-copy">
-            <p className="login-kicker">Welcome to</p>
-            <h1 className="login-title">
-              Cart<em>Link</em>
-            </h1>
-          </div>
+        <button
+          type="button"
+          className="login-theme-toggle"
+          onClick={toggle}
+          aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+          title={dark ? "Light mode" : "Dark mode"}
+        >
+          {dark ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+
+        <div className="login-logo" aria-hidden="true">
+          <BrandMark className="brand-mark login-brand-mark" />
         </div>
 
+        <h1 className="login-title">
+          Cart<em>Link</em>
+        </h1>
         <p className="login-subtitle">
-          Grocery runs, minus the chaos. One smart list, sorted by aisle and
-          shared with the people you shop with.
+          Smart shopping lists — sorted by aisle, shared in real time.
         </p>
 
-        <ul className="login-benefits" aria-label="Why you'll like CartLink">
+        <ul className="login-benefits" aria-label="Why use CartLink">
           {BENEFITS.map(({ icon: Icon, label, detail }) => (
             <li key={label}>
               <span className="login-benefit-icon" aria-hidden="true">
@@ -156,11 +150,10 @@ const Login: React.FC = () => {
             </div>
 
             <Link className="guest-button" to="/guest">
-              Try it as a guest
+              Continue as guest
             </Link>
             <p className="login-trust">
-              No account needed to start — your list stays private on this
-              device and comes with you when you sign in.
+              Private on this device. Sign in later — your list comes with you.
             </p>
 
             <div className="login-footer-links">

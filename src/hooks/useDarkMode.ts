@@ -1,10 +1,19 @@
 import React from "react";
 
 const THEME_KEY = "theme";
+const THEME_TRANSITION_MS = 400;
 
 function readStoredTheme(): boolean {
   try {
     return localStorage.getItem(THEME_KEY) === "dark";
+  } catch {
+    return false;
+  }
+}
+
+function prefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   } catch {
     return false;
   }
@@ -20,20 +29,60 @@ function applyThemeClass(dark: boolean) {
   document.body?.classList.toggle("dark", dark);
 }
 
-/**
- * Apply the remembered theme immediately, before React renders, so dark-mode
- * users never flash white — including on share / sign-in / legal / 404.
- */
+/** Instant paint — used on first load / FOUC prevention. */
 export function applyStoredTheme() {
   applyThemeClass(readStoredTheme());
+}
+
+/**
+ * Cross-fade the palette instead of snapping. Prefer the View Transitions
+ * API; fall back to a short global color transition.
+ */
+function applyThemeClassSmooth(dark: boolean) {
+  const root = document.documentElement;
+  const run = () => applyThemeClass(dark);
+
+  if (prefersReducedMotion()) {
+    run();
+    return;
+  }
+
+  const doc = document as Document & {
+    startViewTransition?: (update: () => void) => { finished: Promise<void> };
+  };
+
+  if (typeof doc.startViewTransition === "function") {
+    try {
+      void doc.startViewTransition(run).finished.catch(() => {
+        /* transition aborted (e.g. rapid toggles) — class already applied */
+      });
+      return;
+    } catch {
+      // Fall through to CSS fallback.
+    }
+  }
+
+  root.classList.add("theme-animating");
+  run();
+  window.setTimeout(() => {
+    root.classList.remove("theme-animating");
+  }, THEME_TRANSITION_MS);
 }
 
 /** Dark mode preference, mirrored onto the document and remembered. */
 export function useDarkMode() {
   const [dark, setDark] = React.useState<boolean>(readStoredTheme);
+  const isFirstPaint = React.useRef(true);
 
   React.useEffect(() => {
-    applyThemeClass(dark);
+    if (isFirstPaint.current) {
+      // Initial mount: already painted by applyStoredTheme() — no animation.
+      isFirstPaint.current = false;
+      applyThemeClass(dark);
+    } else {
+      applyThemeClassSmooth(dark);
+    }
+
     try {
       localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
     } catch {
