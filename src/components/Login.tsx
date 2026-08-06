@@ -12,7 +12,6 @@ import {
 import { useAuth } from "../context/useAuth";
 import { isFirebaseConfigured } from "../firebase";
 import { useDarkMode } from "../hooks/useDarkMode";
-import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import BrandMark from "./BrandMark";
 
@@ -20,17 +19,17 @@ const BENEFITS = [
   {
     icon: ShoppingBasket,
     label: "Smart add",
-    detail: "“2 milk” picks quantity and aisle",
+    detail: "“2 milk” just works",
   },
   {
     icon: Link2,
     label: "Share live",
-    detail: "Code, link or QR — shop together",
+    detail: "Shop together, in sync",
   },
   {
     icon: Check,
     label: "Works offline",
-    detail: "Syncs when you’re back online",
+    detail: "Syncs when you're back",
   },
 ] as const;
 
@@ -61,7 +60,6 @@ const Login: React.FC = () => {
   const { canInstall, install } = useInstallPrompt();
   const [loginError, setLoginError] = React.useState("");
   const [isLoggingIn, setIsLoggingIn] = React.useState(false);
-  useDocumentTitle("Sign in");
 
   const handleLogin = async () => {
     setLoginError("");
@@ -92,19 +90,24 @@ const Login: React.FC = () => {
       </button>
 
       <div className="login-card">
-        <div className="login-logo" aria-hidden="true">
-          <BrandMark className="brand-mark login-brand-mark" />
+        <div className="login-hero">
+          <div className="login-logo" aria-hidden="true">
+            <BrandMark className="brand-mark login-brand-mark" />
+          </div>
+          <div className="login-hero-copy">
+            <p className="login-kicker">Welcome to</p>
+            <h1 className="login-title">
+              Cart<em>Link</em>
+            </h1>
+          </div>
         </div>
 
-        <p className="login-kicker">Shopping lists, simplified</p>
-        <h1 className="login-title">
-          Cart<em>Link</em>
-        </h1>
         <p className="login-subtitle">
-          One smart field. Sorted by aisle. Shared in real time.
+          Grocery runs, minus the chaos. One smart list, sorted by aisle and
+          shared with the people you shop with.
         </p>
 
-        <ul className="login-benefits" aria-label="Why use CartLink">
+        <ul className="login-benefits" aria-label="Why you'll like CartLink">
           {BENEFITS.map(({ icon: Icon, label, detail }) => (
             <li key={label}>
               <span className="login-benefit-icon" aria-hidden="true">
@@ -149,30 +152,32 @@ const Login: React.FC = () => {
             </button>
 
             <div className="login-divider" role="separator">
-              <span>or start without an account</span>
+              <span>or</span>
             </div>
 
             <Link className="guest-button" to="/guest">
-              Continue as guest
+              Try it as a guest
             </Link>
             <p className="login-trust">
-              Private on this device. Sign in later — your list comes with you.
+              No account needed to start — your list stays private on this
+              device and comes with you when you sign in.
             </p>
 
-            {canInstall && (
-              <button
-                className="install-button"
-                type="button"
-                onClick={() => void install()}
-              >
-                <Download size={16} strokeWidth={2.25} />
-                Install app
-              </button>
-            )}
-
-            <p className="login-code-link">
-              <Link to="/join">Have a share code?</Link>
-            </p>
+            <div className="login-footer-links">
+              {canInstall && (
+                <button
+                  className="install-button"
+                  type="button"
+                  onClick={() => void install()}
+                >
+                  <Download size={16} strokeWidth={2.25} />
+                  Install app
+                </button>
+              )}
+              <Link className="login-code-link" to="/join">
+                Have a share code?
+              </Link>
+            </div>
 
             <p className="login-legal">
               Protected by reCAPTCHA ·{" "}
