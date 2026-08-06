@@ -33,14 +33,24 @@
    =========================== */
 @media (min-width: 1024px) {
   html {
-    /* ~16px at 1024px viewport up to ~19.5px at 1920px, fluid in between.
-       Everything sized in rem (text, rows, buttons, spacing) scales with it. */
-    font-size: clamp(16px, 12.6px + 0.335vw, 19.5px);
+    /* Fluid ramp (~16px at 1024px viewport up to ~19.5px at 1920px),
+       multiplied by the user's display-scale preference (--ui-scale, set
+       from Settings → Interface; 0.95 default). Everything sized in rem
+       (text, rows, buttons, spacing) scales with it. */
+    font-size: clamp(
+      calc(16px * var(--ui-scale, 0.95)),
+      calc((12.6px + 0.335vw) * var(--ui-scale, 0.95)),
+      calc(19.5px * var(--ui-scale, 0.95))
+    );
   }
 
   :root {
-    /* ~690px at 1024px viewport up to 900px on very wide screens. */
-    --content-max: clamp(680px, 44vw + 240px, 900px);
+    /* Column width follows the same fluid ramp and user scale. */
+    --content-max: clamp(
+      calc(680px * var(--ui-scale, 0.95)),
+      calc((44vw + 240px) * var(--ui-scale, 0.95)),
+      calc(900px * var(--ui-scale, 0.95))
+    );
   }
 }
 
@@ -2487,6 +2497,10 @@ body.dark .modal-backdrop {
 }
 
 /* Compact 3-way control instead of stacked radio cards */
+.settings-segment.is-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .settings-segment {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

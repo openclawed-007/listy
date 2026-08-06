@@ -20,7 +20,32 @@ export interface InterfacePreferences {
   importantStars: boolean;
   /** Brand mark icon in the top-left (name stays, shifts flush left). */
   brandLogo: boolean;
+  /**
+   * Desktop display scale in percent (100 = the base fluid ramp).
+   * Applied via the `--ui-scale` CSS variable on screens ≥1024px only;
+   * phones and tablets keep the compact layout regardless.
+   */
+  displayScale: number;
 }
+
+/** Boolean-only preference keys (everything the toggle list can flip). */
+export type InterfaceToggleKey = Exclude<
+  keyof InterfacePreferences,
+  "displayScale"
+>;
+
+export const MIN_DISPLAY_SCALE = 80;
+export const MAX_DISPLAY_SCALE = 130;
+/** Slightly under the base ramp — roomy but not oversized out of the box. */
+export const DEFAULT_DISPLAY_SCALE = 95;
+
+/** Presets for the settings segmented control. */
+export const DISPLAY_SCALE_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 85, label: "Small" },
+  { value: DEFAULT_DISPLAY_SCALE, label: "Default" },
+  { value: 105, label: "Large" },
+  { value: 115, label: "XL" },
+];
 
 export interface UserPreferences {
   interface: InterfacePreferences;
@@ -35,6 +60,7 @@ export const DEFAULT_INTERFACE_PREFERENCES: InterfacePreferences = {
   progressBar: true,
   importantStars: true,
   brandLogo: true,
+  displayScale: DEFAULT_DISPLAY_SCALE,
 };
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
@@ -43,7 +69,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
 
 /** Stable list for the settings UI — order is presentation order. */
 export const INTERFACE_PREF_OPTIONS: Array<{
-  id: keyof InterfacePreferences;
+  id: InterfaceToggleKey;
   label: string;
   description: string;
 }> = [
@@ -95,6 +121,12 @@ function asBool(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function asScale(value: unknown, fallback: number): number {
+  const num =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.min(MAX_DISPLAY_SCALE, Math.max(MIN_DISPLAY_SCALE, Math.round(num)));
+}
+
 export function normalizeInterfacePreferences(
   value: unknown,
 ): InterfacePreferences {
@@ -112,6 +144,7 @@ export function normalizeInterfacePreferences(
     progressBar: asBool(raw.progressBar, base.progressBar),
     importantStars: asBool(raw.importantStars, base.importantStars),
     brandLogo: asBool(raw.brandLogo, base.brandLogo),
+    displayScale: asScale(raw.displayScale, base.displayScale),
   };
 }
 
@@ -158,6 +191,7 @@ export function allInterfaceOn(): InterfacePreferences {
     progressBar: true,
     importantStars: true,
     brandLogo: true,
+    displayScale: DEFAULT_DISPLAY_SCALE,
   };
 }
 
@@ -171,6 +205,7 @@ export function allInterfaceOff(): InterfacePreferences {
     progressBar: false,
     importantStars: false,
     brandLogo: false,
+    displayScale: DEFAULT_DISPLAY_SCALE,
   };
 }
 

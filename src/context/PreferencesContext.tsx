@@ -31,6 +31,15 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
   const [reminderSettings, setReminderState] =
     useState<ShoppingReminderSettings>(() => readLocalReminderSettings());
 
+  // Drive the desktop display-scale CSS variable from preferences. The CSS
+  // only reads it at ≥1024px, so phones/tablets are unaffected.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--ui-scale",
+      String(interfacePrefs.displayScale / 100),
+    );
+  }, [interfacePrefs.displayScale]);
+
   const persistUserSettings = useCallback(
     async (input: {
       interface: InterfacePreferences;

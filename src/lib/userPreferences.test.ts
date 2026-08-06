@@ -31,7 +31,16 @@ describe("userPreferences", () => {
       progressBar: true,
       importantStars: true,
       brandLogo: true,
+      displayScale: 95,
     });
+  });
+
+  it("clamps display scale to a sane range", () => {
+    expect(normalizeInterfacePreferences({ displayScale: 105 }).displayScale).toBe(105);
+    expect(normalizeInterfacePreferences({ displayScale: 500 }).displayScale).toBe(130);
+    expect(normalizeInterfacePreferences({ displayScale: 10 }).displayScale).toBe(80);
+    expect(normalizeInterfacePreferences({ displayScale: "big" }).displayScale).toBe(95);
+    expect(normalizeInterfacePreferences(null).displayScale).toBe(95);
   });
 
   it("normalizes nested user preferences", () => {

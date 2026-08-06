@@ -24,9 +24,11 @@ import {
   allInterfaceOff,
   allInterfaceOn,
   countEnabledInterfacePrefs,
+  DISPLAY_SCALE_OPTIONS,
   INTERFACE_PREF_OPTIONS,
   normalizeInterfacePreferences,
   type InterfacePreferences,
+  type InterfaceToggleKey,
 } from "../lib/userPreferences";
 
 interface SettingsDialogProps {
@@ -95,9 +97,30 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
     });
   };
 
-  const toggleIface = (id: keyof InterfacePreferences) => {
+  const toggleIface = (id: InterfaceToggleKey) => {
     setIface((current) => ({ ...current, [id]: !current[id] }));
   };
+
+  // Live preview: apply the picked scale immediately so the effect is visible
+  // behind the dialog. Reverts to the saved value if the dialog closes
+  // without saving.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--ui-scale",
+      String(iface.displayScale / 100),
+    );
+  }, [iface.displayScale]);
+
+  const savedScale = interfacePrefs.displayScale;
+  useEffect(
+    () => () => {
+      document.documentElement.style.setProperty(
+        "--ui-scale",
+        String(savedScale / 100),
+      );
+    },
+    [savedScale],
+  );
 
   const handleSave = async () => {
     setSaving(true);
@@ -502,6 +525,43 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
                   <section className="settings-card">
                     <div className="settings-toggle-row">
                       <span className="settings-toggle-copy">
+                        <strong>Display scale</strong>
+                        <span>
+                          How large the list appears on big screens. Phones
+                          and tablets keep the compact layout.
+                        </span>
+                      </span>
+                    </div>
+                    <div
+                      className="settings-segment is-four"
+                      role="group"
+                      aria-label="Display scale"
+                    >
+                      {DISPLAY_SCALE_OPTIONS.map((option) => {
+                        const active = iface.displayScale === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`settings-segment-btn ${active ? "active" : ""}`}
+                            aria-pressed={active}
+                            onClick={() =>
+                              setIface((current) => ({
+                                ...current,
+                                displayScale: option.value,
+                              }))
+                            }
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="settings-card">
+                    <div className="settings-toggle-row">
+                      <span className="settings-toggle-copy">
                         <strong>Coaching & chrome</strong>
                         <span>
                           Turn off tips and helper text once you know the app.
@@ -513,14 +573,24 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
                       <button
                         type="button"
                         className="settings-preset-btn"
-                        onClick={() => setIface(allInterfaceOn())}
+                        onClick={() =>
+                          setIface((current) => ({
+                            ...allInterfaceOn(),
+                            displayScale: current.displayScale,
+                          }))
+                        }
                       >
                         Show all
                       </button>
                       <button
                         type="button"
                         className="settings-preset-btn"
-                        onClick={() => setIface(allInterfaceOff())}
+                        onClick={() =>
+                          setIface((current) => ({
+                            ...allInterfaceOff(),
+                            displayScale: current.displayScale,
+                          }))
+                        }
                       >
                         Hide all
                       </button>
