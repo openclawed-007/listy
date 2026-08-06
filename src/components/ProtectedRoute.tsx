@@ -21,8 +21,15 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
     if (import.meta.env.DEV) {
       return <Navigate to="/guest" replace />;
     }
-    const redirect = encodeURIComponent(`${location.pathname}${location.search}`);
-    return <Navigate to={`/login?redirect=${redirect}`} />;
+    // Only attach ?redirect= when returning somewhere other than home —
+    // avoids ugly /login?redirect=%2F for the default case.
+    const next = `${location.pathname}${location.search}`;
+    if (!next || next === "/") {
+      return <Navigate to="/login" replace />;
+    }
+    return (
+      <Navigate to={`/login?redirect=${encodeURIComponent(next)}`} replace />
+    );
   }
 
   return <>{children}</>;

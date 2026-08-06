@@ -549,7 +549,7 @@ const GuestList: React.FC = () => {
               showSettings={DEV_GUEST_SETTINGS}
               settingsActive={reminderSettings.enabled}
               onOpenSettings={() => setSettingsOpen(true)}
-              signInTo="/login?redirect=/"
+              signInTo="/login"
             />
           </div>
         </div>
@@ -561,7 +561,7 @@ const GuestList: React.FC = () => {
           {interfacePrefs.onboardingCopy && (
             <p className="guest-note">
               Saved only on this device.{" "}
-              <Link to="/login?redirect=/">Sign in</Link> to share and sync —
+              <Link to="/login">Sign in</Link> to share and sync —
               your items come with you.{" "}
               <Link to="/join">Have a share code?</Link>
             </p>

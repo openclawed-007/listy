@@ -27,7 +27,7 @@ const NavOverflowMenu: React.FC<NavOverflowMenuProps> = ({
   showSettings = false,
   settingsActive = false,
   onOpenSettings,
-  signInTo = "/login?redirect=/",
+  signInTo = "/login",
 }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
