@@ -31,6 +31,7 @@ describe("userPreferences", () => {
       progressBar: true,
       importantStars: true,
       brandLogo: true,
+      shareChangeNotices: false,
       displayScale: 95,
     });
   });
@@ -52,7 +53,7 @@ describe("userPreferences", () => {
   });
 
   it("supports all-on / all-off presets", () => {
-    expect(countEnabledInterfacePrefs(allInterfaceOn())).toBe(8);
+    expect(countEnabledInterfacePrefs(allInterfaceOn())).toBe(9);
     expect(countEnabledInterfacePrefs(allInterfaceOff())).toBe(0);
   });
 });

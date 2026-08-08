@@ -14,6 +14,7 @@ import {
   DEFAULT_CATEGORY,
   MAX_CATEGORY_LENGTH,
   MAX_ITEM_TEXT_LENGTH,
+  MAX_NOTE_LENGTH,
   MAX_QUANTITY_LENGTH,
 } from "./itemInput";
 
@@ -28,6 +29,8 @@ export interface ShoppingItem {
   userId: string;
   quantity?: string;
   category?: string;
+  /** Optional brand/size hint, e.g. "oat, not almond". */
+  note?: string;
   listId?: string;
   listName?: string;
   sharedFromUserId?: string;
@@ -45,6 +48,7 @@ export interface SharedItemPayload {
   completed: boolean;
   quantity?: string;
   category?: string;
+  note?: string;
   important?: boolean;
 }
 
@@ -97,6 +101,7 @@ export function toSharedItemPayload(item: {
   completed: boolean;
   quantity?: string;
   category?: string;
+  note?: string;
   important?: boolean;
 }): SharedItemPayload {
   return {
@@ -105,6 +110,7 @@ export function toSharedItemPayload(item: {
     completed: item.completed,
     ...(item.quantity ? { quantity: item.quantity } : {}),
     ...(item.category ? { category: item.category } : {}),
+    ...(item.note ? { note: item.note } : {}),
     ...(item.important ? { important: true } : {}),
   };
 }
@@ -147,6 +153,7 @@ export function normalizeShoppingItem(
     userId,
     quantity: normalizeOptionalString(data.quantity, MAX_QUANTITY_LENGTH),
     category: normalizeOptionalString(data.category, MAX_CATEGORY_LENGTH),
+    note: normalizeOptionalString(data.note, MAX_NOTE_LENGTH),
     listId: normalizeOptionalString(data.listId, 200),
     listName: normalizeOptionalString(data.listName, 120),
     sharedFromUserId: normalizeOptionalString(data.sharedFromUserId, 128),
@@ -179,6 +186,7 @@ export function normalizeSharedItems(items: unknown): SharedItemPayload[] {
         completed: item.completed === true,
         quantity: normalizeOptionalString(item.quantity, MAX_QUANTITY_LENGTH),
         category: normalizeOptionalString(item.category, MAX_CATEGORY_LENGTH),
+        note: normalizeOptionalString(item.note, MAX_NOTE_LENGTH),
         ...(item.important === true ? { important: true } : {}),
       },
     ];

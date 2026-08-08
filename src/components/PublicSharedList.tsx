@@ -64,6 +64,7 @@ interface SharedItemData {
   completed: boolean;
   quantity?: string;
   category?: string;
+  note?: string;
   important?: boolean;
 }
 
@@ -82,6 +83,7 @@ interface PublicItem {
   completed: boolean;
   quantity?: string;
   category?: string;
+  note?: string;
   important?: boolean;
 }
 
@@ -119,6 +121,10 @@ function normalizeSharedItems(items: unknown): PublicItem[] {
         category:
           typeof item.category === "string" && item.category.trim()
             ? item.category.trim().slice(0, 80)
+            : undefined,
+        note:
+          typeof item.note === "string" && item.note.trim()
+            ? item.note.trim().slice(0, 120)
             : undefined,
         ...(item.important === true ? { important: true } : {}),
       },
@@ -159,6 +165,9 @@ function toPayloadItem(
     ...(typeof record.category === "string" && record.category
       ? { category: record.category }
       : {}),
+    ...(typeof record.note === "string" && record.note
+      ? { note: record.note }
+      : {}),
     ...(record.important === true ? { important: true } : {}),
   };
 
@@ -198,6 +207,8 @@ function payloadToPublicItems(payload: SharedItemData[]): PublicItem[] {
     completed: item.completed,
     quantity: item.quantity,
     category: item.category,
+    note: item.note,
+    important: item.important,
   }));
 }
 
@@ -262,6 +273,8 @@ const PublicSharedList: React.FC = () => {
   const [newItemText, setNewItemText] = useState("");
   const [addNotice, setAddNotice] = useState("");
   const rawItemsRef = React.useRef<unknown>([]);
+  const seenShareSnapshotRef = React.useRef(false);
+  const lastShareFingerprintRef = React.useRef("");
   const allowEdits = hasAnyPermission(permissions);
   const { dark, toggle: toggleDark } = useDarkMode();
   // Ticks this device made on a list it is not allowed to write to.
@@ -272,6 +285,8 @@ const PublicSharedList: React.FC = () => {
 
   useEffect(() => {
     if (!shareId || !db) return;
+    seenShareSnapshotRef.current = false;
+    lastShareFingerprintRef.current = "";
 
     const unsubscribe = onSnapshot(
       doc(db, "sharedLists", shareId),
@@ -300,6 +315,33 @@ const PublicSharedList: React.FC = () => {
           if (shareId) writeLocalTicks(shareId, next);
           return next;
         });
+
+        const fingerprint = JSON.stringify(
+          data.items.map((item) => [
+            item.id,
+            item.text,
+            item.completed,
+            item.quantity,
+            item.note,
+          ]),
+        );
+        if (seenShareSnapshotRef.current) {
+          if (fingerprint !== lastShareFingerprintRef.current) {
+            void import("../lib/shareChangeNotifications").then(
+              ({ notifyShareListChange }) =>
+                notifyShareListChange({
+                  enabled: interfacePrefs.shareChangeNotices,
+                  ownerId: data.ownerId,
+                  ownerName: data.ownerName,
+                  changeCount: 1,
+                }),
+            );
+          }
+        } else {
+          seenShareSnapshotRef.current = true;
+        }
+        lastShareFingerprintRef.current = fingerprint;
+
         setError("");
         setOwnerName(data.ownerName);
         setOwnerId(data.ownerId);
@@ -315,7 +357,7 @@ const PublicSharedList: React.FC = () => {
     );
 
     return unsubscribe;
-  }, [shareId]);
+  }, [interfacePrefs.shareChangeNotices, shareId]);
 
   useEffect(() => {
     if (!addNotice) return undefined;
@@ -702,22 +744,31 @@ const PublicSharedList: React.FC = () => {
                         type="button"
                         aria-pressed={item.completed}
                         aria-label={
-                          item.important ? `Important: ${item.text}` : item.text
+                          item.important
+                            ? `Important: ${item.text}${item.note ? ` — ${item.note}` : ""}`
+                            : `${item.text}${item.note ? ` — ${item.note}` : ""}`
                         }
                       >
-                        <span className="item-text">{item.text}</span>
-                        {item.quantity && (
-                          <span className="item-qty">
-                            {formatQuantity(item.quantity)}
-                          </span>
-                        )}
-                        {interfacePrefs.importantStars && item.important && (
-                          <span
-                            className="item-important-badge"
-                            aria-hidden="true"
-                            title="Important"
-                          >
-                            ★
+                        <span className="item-main-line">
+                          <span className="item-text">{item.text}</span>
+                          {item.quantity && (
+                            <span className="item-qty">
+                              {formatQuantity(item.quantity)}
+                            </span>
+                          )}
+                          {interfacePrefs.importantStars && item.important && (
+                            <span
+                              className="item-important-badge"
+                              aria-hidden="true"
+                              title="Important"
+                            >
+                              ★
+                            </span>
+                          )}
+                        </span>
+                        {item.note && (
+                          <span className="item-note" title={item.note}>
+                            {item.note}
                           </span>
                         )}
                       </button>

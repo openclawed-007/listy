@@ -1,6 +1,7 @@
 import {
   MAX_CATEGORY_LENGTH,
   MAX_ITEM_TEXT_LENGTH,
+  MAX_NOTE_LENGTH,
   MAX_QUANTITY_LENGTH,
 } from "./itemInput";
 
@@ -13,6 +14,7 @@ export interface GuestItem {
   completed: boolean;
   quantity?: string;
   category?: string;
+  note?: string;
   important?: boolean;
   /** Lower values appear higher when sorted by manual order. */
   sortOrder?: number;
@@ -38,6 +40,7 @@ export function readGuestItems(): GuestItem[] {
         completed: item.completed === true,
         quantity: typeof item.quantity === "string" ? item.quantity.trim().slice(0, MAX_QUANTITY_LENGTH) || undefined : undefined,
         category: typeof item.category === "string" ? item.category.trim().slice(0, MAX_CATEGORY_LENGTH) || undefined : undefined,
+        note: typeof item.note === "string" ? item.note.trim().slice(0, MAX_NOTE_LENGTH) || undefined : undefined,
         ...(item.important === true ? { important: true } : {}),
         ...(sortOrder !== undefined ? { sortOrder } : {}),
         createdAt: typeof item.createdAt === "number" ? item.createdAt : 0,

@@ -4,6 +4,7 @@ import {
   formatQuantity,
   MAX_CATEGORY_LENGTH,
   MAX_ITEM_TEXT_LENGTH,
+  MAX_NOTE_LENGTH,
   MAX_QUANTITY_LENGTH,
 } from "../lib/itemInput";
 import type { ShoppingItem } from "../lib/shoppingItem";
@@ -20,10 +21,12 @@ export interface ItemEditState {
   text: string;
   quantity: string;
   category: string;
+  note: string;
   onStart: (item: ShoppingItem) => void;
   onTextChange: (value: string) => void;
   onQuantityChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
   onCommit: () => void;
   onCancel: () => void;
 }
@@ -278,17 +281,33 @@ export const ItemRow: React.FC<ItemRowProps> = ({
             aria-label="Edit item category"
             list={CATEGORY_DATALIST_ID}
           />
+          <input
+            className="item-edit-input item-edit-note"
+            value={edit.note}
+            onChange={(event) => edit.onNoteChange(event.target.value)}
+            maxLength={MAX_NOTE_LENGTH}
+            onKeyDown={handleEditKeys}
+            placeholder="Note (optional)"
+            aria-label="Edit item note"
+          />
         </div>
       ) : (
         <button
           className="item-content"
           type="button"
           onClick={() => onToggle(item.id, item.completed, item)}
-          aria-label={`${item.completed ? "Mark as needed" : "Mark as completed"}: ${item.text}`}
+          aria-label={`${item.completed ? "Mark as needed" : "Mark as completed"}: ${item.text}${item.note ? ` — ${item.note}` : ""}`}
         >
-          <span className="item-text">{item.text}</span>
-          {item.quantity && (
-            <span className="item-qty">{formatQuantity(item.quantity)}</span>
+          <span className="item-main-line">
+            <span className="item-text">{item.text}</span>
+            {item.quantity && (
+              <span className="item-qty">{formatQuantity(item.quantity)}</span>
+            )}
+          </span>
+          {item.note && (
+            <span className="item-note" title={item.note}>
+              {item.note}
+            </span>
           )}
         </button>
       )}

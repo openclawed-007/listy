@@ -5,6 +5,7 @@ import { useDialogFocus } from "../hooks/useDialogFocus";
 export type ConfirmAction =
   | "clearCompleted"
   | "removeSharedList"
+  | "deleteCustomList"
   | "stopSharing";
 
 interface ConfirmDialogProps {
@@ -36,6 +37,18 @@ function getConfirmCopy(
       title: "Remove this list?",
       body: `${listName} and its saved items will be removed from your account.`,
       confirmLabel: "Remove list",
+    };
+  }
+
+  if (action === "deleteCustomList") {
+    return {
+      title: `Delete ${listName}?`,
+      body: `This permanently removes the list${
+        itemCount > 0
+          ? ` and its ${itemCount} item${itemCount === 1 ? "" : "s"}`
+          : ""
+      }.`,
+      confirmLabel: "Delete list",
     };
   }
 

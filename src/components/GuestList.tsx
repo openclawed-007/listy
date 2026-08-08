@@ -31,6 +31,7 @@ import {
   getDuplicateKey,
   MAX_CATEGORY_LENGTH,
   MAX_ITEM_TEXT_LENGTH,
+  MAX_NOTE_LENGTH,
   MAX_QUANTITY_LENGTH,
   mergeQuantities,
   parseItemInput,
@@ -62,6 +63,13 @@ import ItemRow, {
   type ItemEditState,
   type ItemReorderState,
 } from "./ItemRow";
+import ItemSuggestions from "./ItemSuggestions";
+import {
+  rankHistory,
+  readItemHistory,
+  touchItemHistory,
+  type HistoryEntry,
+} from "../lib/itemHistory";
 import type { ShoppingItem } from "../lib/shoppingItem";
 
 function asShoppingItem(item: GuestItem): ShoppingItem {
@@ -72,6 +80,7 @@ function asShoppingItem(item: GuestItem): ShoppingItem {
     userId: "guest",
     quantity: item.quantity,
     category: item.category,
+    note: item.note,
     important: item.important,
     sortOrder: item.sortOrder,
   };
@@ -85,11 +94,17 @@ const GuestList: React.FC = () => {
   const { dark, toggle } = useDarkMode();
   const [items, setItems] = useState<GuestItem[]>(readGuestItems);
   const [value, setValue] = useState("");
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>(() =>
+    readItemHistory(),
+  );
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestIndex, setSuggestIndex] = useState(-1);
   const [message, setMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editNote, setEditNote] = useState("");
   const [sortMode, setSortMode] = useState<ListSortMode>(readListSortMode);
   const [doneCollapsed, setDoneCollapsed] = useState(readDoneCollapsed);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -102,6 +117,11 @@ const GuestList: React.FC = () => {
   const flipFirstRef = useRef<Map<string, DOMRect> | null>(null);
   const activeItemsRef = useRef<GuestItem[]>([]);
   const preview = useMemo(() => parseItemInput(value), [value]);
+  const suggestions = useMemo(
+    () => rankHistory(value, historyEntries),
+    [historyEntries, value],
+  );
+  const showSuggestions = suggestOpen && suggestions.length > 0;
   useDocumentTitle("Guest list");
 
   useEffect(() => writeGuestItems(items), [items]);
@@ -122,10 +142,85 @@ const GuestList: React.FC = () => {
     return shoppingDayBanner(reminderSettings);
   }, [interfacePrefs.shoppingBanners, reminderSettings]);
 
+  const rememberItem = (item: {
+    text: string;
+    category?: string;
+    note?: string;
+  }) => {
+    setHistoryEntries(
+      touchItemHistory({
+        text: item.text,
+        category: item.category,
+        note: item.note,
+      }),
+    );
+  };
+
+  const pickSuggestion = (entry: HistoryEntry) => {
+    setSuggestOpen(false);
+    setSuggestIndex(-1);
+    const text = entry.text.trim();
+    if (!text) return;
+    const key = getDuplicateKey(text);
+    const duplicate = items.find((item) => getDuplicateKey(item.text) === key);
+
+    if (duplicate) {
+      setItems((current) =>
+        current.map((item) =>
+          item.id === duplicate.id
+            ? {
+                ...item,
+                completed: false,
+                category: item.category ?? entry.category,
+                note: item.note ?? entry.note,
+              }
+            : item,
+        ),
+      );
+      rememberItem({
+        text: duplicate.text,
+        category: duplicate.category ?? entry.category,
+        note: duplicate.note ?? entry.note,
+      });
+      setMessage(`${duplicate.text} is already on your list.`);
+    } else {
+      const sortOrder = nextTopSortOrder(
+        items.filter((item) => !item.completed),
+      );
+      setItems((current) => [
+        {
+          id: createGuestId(),
+          text,
+          completed: false,
+          category: entry.category,
+          note: entry.note,
+          sortOrder,
+          createdAt: Date.now(),
+        },
+        ...current,
+      ]);
+      rememberItem({
+        text,
+        category: entry.category,
+        note: entry.note,
+      });
+    }
+    setValue("");
+  };
+
   const addItem = (event: React.FormEvent) => {
     event.preventDefault();
+
+    if (showSuggestions && suggestIndex >= 0 && suggestions[suggestIndex]) {
+      pickSuggestion(suggestions[suggestIndex]);
+      return;
+    }
+
     const parsed = parseItemInput(value);
     if (!parsed.text) return;
+
+    setSuggestOpen(false);
+    setSuggestIndex(-1);
 
     const key = getDuplicateKey(parsed.text);
     const duplicate = items.find((item) => getDuplicateKey(item.text) === key);
@@ -139,6 +234,11 @@ const GuestList: React.FC = () => {
             : item,
         ),
       );
+      rememberItem({
+        text: duplicate.text,
+        category: duplicate.category ?? parsed.category,
+        note: duplicate.note,
+      });
       setMessage(
         `${duplicate.text} was already here${quantity ? ` — now ${formatQuantity(quantity)}` : ""}.`,
       );
@@ -158,6 +258,10 @@ const GuestList: React.FC = () => {
         },
         ...current,
       ]);
+      rememberItem({
+        text: parsed.text,
+        category: parsed.category,
+      });
     }
     setValue("");
   };
@@ -167,6 +271,7 @@ const GuestList: React.FC = () => {
     setEditText(item.text);
     setEditQuantity(item.quantity ?? "");
     setEditCategory(item.category ?? "");
+    setEditNote(item.note ?? "");
   };
 
   const commitEdit = () => {
@@ -179,6 +284,7 @@ const GuestList: React.FC = () => {
 
     const quantity = editQuantity.trim().slice(0, MAX_QUANTITY_LENGTH);
     const category = editCategory.trim().slice(0, MAX_CATEGORY_LENGTH);
+    const note = editNote.trim().slice(0, MAX_NOTE_LENGTH);
 
     setItems((current) =>
       current.map((item) =>
@@ -188,6 +294,7 @@ const GuestList: React.FC = () => {
               text,
               quantity: quantity || undefined,
               category: category || undefined,
+              note: note || undefined,
             }
           : item,
       ),
@@ -206,7 +313,7 @@ const GuestList: React.FC = () => {
   } = useMemo(() => {
     const visible = listQuery
       ? items.filter((item) =>
-          [item.text, item.quantity, item.category]
+          [item.text, item.quantity, item.category, item.note]
             .filter(Boolean)
             .join(" ")
             .toLowerCase()
@@ -476,21 +583,30 @@ const GuestList: React.FC = () => {
     text: editText,
     quantity: editQuantity,
     category: editCategory,
+    note: editNote,
     onStart: startEdit,
     onTextChange: setEditText,
     onQuantityChange: setEditQuantity,
     onCategoryChange: setEditCategory,
+    onNoteChange: setEditNote,
     onCommit: commitEdit,
     onCancel: () => setEditingId(null),
   };
 
   const toggleItem = (id: string) => {
     setItems((current) =>
-      current.map((entry) =>
-        entry.id === id
-          ? { ...entry, completed: !entry.completed }
-          : entry,
-      ),
+      current.map((entry) => {
+        if (entry.id !== id) return entry;
+        const nextCompleted = !entry.completed;
+        if (nextCompleted) {
+          rememberItem({
+            text: entry.text,
+            category: entry.category,
+            note: entry.note,
+          });
+        }
+        return { ...entry, completed: nextCompleted };
+      }),
     );
   };
 
@@ -596,9 +712,50 @@ const GuestList: React.FC = () => {
             <input
               className="add-input"
               value={value}
-              onChange={(event) => setValue(event.target.value)}
+              onChange={(event) => {
+                setValue(event.target.value);
+                setSuggestOpen(true);
+                setSuggestIndex(-1);
+              }}
+              onFocus={() => setSuggestOpen(true)}
+              onBlur={() => {
+                window.setTimeout(() => setSuggestOpen(false), 120);
+              }}
+              onKeyDown={(event) => {
+                if (!showSuggestions) {
+                  if (event.key === "Escape" && value) {
+                    event.preventDefault();
+                    setValue("");
+                  }
+                  return;
+                }
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setSuggestIndex((i) =>
+                    i < suggestions.length - 1 ? i + 1 : 0,
+                  );
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setSuggestIndex((i) =>
+                    i <= 0 ? suggestions.length - 1 : i - 1,
+                  );
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSuggestOpen(false);
+                  setSuggestIndex(-1);
+                }
+              }}
               placeholder="Add or search…"
               aria-label="Add or search items"
+              role="combobox"
+              aria-expanded={showSuggestions}
+              aria-controls="guest-item-suggestions"
+              aria-autocomplete="list"
+              aria-activedescendant={
+                showSuggestions && suggestIndex >= 0
+                  ? `guest-item-suggestions-option-${suggestIndex}`
+                  : undefined
+              }
               autoFocus
               maxLength={MAX_ITEM_TEXT_LENGTH}
               autoComplete="off"
@@ -607,7 +764,11 @@ const GuestList: React.FC = () => {
               <button
                 type="button"
                 className="add-clear-btn"
-                onClick={() => setValue("")}
+                onClick={() => {
+                  setValue("");
+                  setSuggestOpen(false);
+                  setSuggestIndex(-1);
+                }}
                 aria-label="Clear"
                 title="Clear"
               >
@@ -617,12 +778,22 @@ const GuestList: React.FC = () => {
             <button
               className="add-btn"
               type="submit"
-              disabled={!preview.text}
+              disabled={
+                !preview.text && !(showSuggestions && suggestIndex >= 0)
+              }
               aria-label="Add item"
             >
               <Plus size={20} />
             </button>
           </div>
+          <ItemSuggestions
+            id="guest-item-suggestions"
+            open={showSuggestions}
+            suggestions={suggestions}
+            activeIndex={suggestIndex}
+            onHover={setSuggestIndex}
+            onPick={pickSuggestion}
+          />
           <p
             className={`add-hint ${interfacePrefs.addHints || isSearching ? "" : "is-pref-hidden"}`}
             aria-live="polite"

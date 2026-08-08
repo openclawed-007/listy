@@ -12,6 +12,7 @@ service cloud.firestore {
         && data.completed is bool
         && (!('quantity' in data) || (data.quantity is string && data.quantity.size() <= 40))
         && (!('category' in data) || (data.category is string && data.category.size() <= 80))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 120))
         && (!('listId' in data) || (data.listId is string && data.listId.size() <= 200))
         && (!('listName' in data) || (data.listName is string && data.listName.size() <= 120))
         && (!('sharedFromUserId' in data) || (data.sharedFromUserId is string && data.sharedFromUserId.size() <= 128))
@@ -162,7 +163,17 @@ service cloud.firestore {
         && (!('shoppingBanners' in value) || value.shoppingBanners is bool)
         && (!('progressBar' in value) || value.progressBar is bool)
         && (!('importantStars' in value) || value.importantStars is bool)
-        && (!('brandLogo' in value) || value.brandLogo is bool);
+        && (!('brandLogo' in value) || value.brandLogo is bool)
+        && (!('shareChangeNotices' in value) || value.shareChangeNotices is bool)
+        && (!('displayScale' in value) || (value.displayScale is number
+          && value.displayScale >= 80
+          && value.displayScale <= 130));
+    }
+
+    function isUserListsValid(value) {
+      return value is list
+        && value.size() <= 8
+        && value.size() >= 0;
     }
 
     match /userSettings/{uid} {
@@ -172,7 +183,9 @@ service cloud.firestore {
         && (!('shoppingReminders' in request.resource.data)
           || isShoppingRemindersValid(request.resource.data.shoppingReminders))
         && (!('interface' in request.resource.data)
-          || isInterfacePrefsValid(request.resource.data.interface));
+          || isInterfacePrefsValid(request.resource.data.interface))
+        && (!('lists' in request.resource.data)
+          || isUserListsValid(request.resource.data.lists));
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
   }

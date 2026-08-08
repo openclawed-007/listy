@@ -45,6 +45,7 @@ import {
   getDuplicateKey,
   MAX_CATEGORY_LENGTH,
   MAX_ITEM_TEXT_LENGTH,
+  MAX_NOTE_LENGTH,
   MAX_QUANTITY_LENGTH,
   mergeQuantities,
   parseItemInput,
@@ -122,7 +123,26 @@ import {
   syncReminderSchedule,
 } from "../lib/reminderNotifications";
 import { shoppingDayBanner } from "../lib/shoppingReminders";
+import {
+  rankHistory,
+  readItemHistory,
+  touchItemHistory,
+  type HistoryEntry,
+} from "../lib/itemHistory";
+import { notifyShareListChange } from "../lib/shareChangeNotifications";
+import {
+  addCustomList,
+  isOwnedCustomListId,
+  isSharedImportListId,
+  normalizeUserLists,
+  readLocalUserLists,
+  removeCustomList,
+  renameCustomList,
+  writeLocalUserLists,
+  type UserList,
+} from "../lib/userLists";
 import { usePreferences } from "../context/usePreferences";
+import ItemSuggestions from "./ItemSuggestions";
 
 interface ListTab {
   id: string;
@@ -143,11 +163,22 @@ const ShoppingList: React.FC = () => {
   const online = useOnlineStatus();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [newItem, setNewItem] = useState("");
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>(() =>
+    readItemHistory(),
+  );
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestIndex, setSuggestIndex] = useState(-1);
+  const [customLists, setCustomLists] = useState<UserList[]>(readLocalUserLists);
+  const [creatingList, setCreatingList] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const [renamingList, setRenamingList] = useState(false);
+  const [renameListValue, setRenameListValue] = useState("");
   const [activeListId, setActiveListId] = useState(PERSONAL_LIST_ID);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editNote, setEditNote] = useState("");
   const [actionError, setActionError] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -287,20 +318,82 @@ const ShoppingList: React.FC = () => {
     void loadShareState();
   }, [user]);
 
+  const persistCustomLists = async (next: UserList[]) => {
+    const normalized = normalizeUserLists(next);
+    setCustomLists(normalized);
+    writeLocalUserLists(normalized);
+    if (user && db) {
+      try {
+        await setDoc(
+          doc(db, "userSettings", user.uid),
+          { lists: normalized, updatedAt: serverTimestamp() },
+          { merge: true },
+        );
+      } catch (error) {
+        console.error("Save custom lists error:", error);
+      }
+    }
+  };
+
+  // Cloud list registry when signed in (local already applied on first paint).
+  useEffect(() => {
+    if (!user || !db) {
+      setCustomLists(readLocalUserLists());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(db, "userSettings", user.uid));
+        if (cancelled || !snap.exists()) return;
+        const remote = normalizeUserLists(snap.data()?.lists);
+        // Prefer cloud when present; otherwise push local up.
+        if (remote.length > 0) {
+          setCustomLists(remote);
+          writeLocalUserLists(remote);
+        } else {
+          const local = readLocalUserLists();
+          if (local.length > 0) {
+            await setDoc(
+              doc(db, "userSettings", user.uid),
+              { lists: local, updatedAt: serverTimestamp() },
+              { merge: true },
+            );
+          }
+        }
+      } catch (error) {
+        console.error("Load custom lists error:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   const listTabs = useMemo<ListTab[]>(() => {
     const sharedTabs = new Map<string, string>();
 
     items.forEach((item) => {
       const listId = getItemListId(item);
-      if (listId !== PERSONAL_LIST_ID)
+      if (isSharedImportListId(listId)) {
         sharedTabs.set(listId, getItemListName(item));
+      }
     });
+
+    // Custom registry names win over stale listName on items.
+    const customTabs = customLists.map((list) => ({
+      id: list.id,
+      name: list.name,
+    }));
 
     return [
       { id: PERSONAL_LIST_ID, name: PERSONAL_LIST_NAME },
+      ...customTabs,
       ...Array.from(sharedTabs, ([id, name]) => ({ id, name })),
     ];
-  }, [items]);
+  }, [customLists, items]);
+
+  const showListTabs = customLists.length > 0 || listTabs.length > 1;
 
   useEffect(() => {
     if (!listTabs.some((tab) => tab.id === activeListId)) {
@@ -308,6 +401,7 @@ const ShoppingList: React.FC = () => {
     }
   }, [activeListId, listTabs]);
 
+  /** Owned list published to collaborators — always My List (keeps share simple). */
   const personalItems = useMemo(
     () => items.filter((item) => getItemListId(item) === PERSONAL_LIST_ID),
     [items],
@@ -352,6 +446,9 @@ const ShoppingList: React.FC = () => {
             if (!existing.category && guest.category) {
               updates.category = guest.category;
             }
+            if (!existing.note && guest.note) {
+              updates.note = guest.note;
+            }
 
             if (Object.keys(updates).length > 0) {
               await updateDoc(doc(db, "shoppingItems", existing.id), updates);
@@ -364,6 +461,7 @@ const ShoppingList: React.FC = () => {
               userId: user.uid,
               ...(guest.quantity ? { quantity: guest.quantity } : {}),
               ...(guest.category ? { category: guest.category } : {}),
+              ...(guest.note ? { note: guest.note } : {}),
               ...(guest.important ? { important: true } : {}),
               ...(typeof guest.sortOrder === "number"
                 ? { sortOrder: guest.sortOrder }
@@ -379,6 +477,7 @@ const ShoppingList: React.FC = () => {
               userId: user.uid,
               quantity: guest.quantity,
               category: guest.category,
+              note: guest.note,
               important: guest.important,
               sortOrder: guest.sortOrder,
             });
@@ -495,6 +594,15 @@ const ShoppingList: React.FC = () => {
         publishedRef.current = remoteState;
         writePublishedState(user.uid, remoteState);
 
+        const changeCount =
+          diff.toggled.length + diff.added.length + diff.removed.length;
+        void notifyShareListChange({
+          enabled: interfacePrefs.shareChangeNotices,
+          ownerId: user.uid,
+          ownerName: "Someone",
+          changeCount,
+        });
+
         if (permissions.toggle) {
           diff.toggled.forEach(({ key, completed }) => {
             const item = personalByKey.get(key);
@@ -519,6 +627,7 @@ const ShoppingList: React.FC = () => {
               userId: user.uid,
               ...(sharedItem.quantity ? { quantity: sharedItem.quantity } : {}),
               ...(sharedItem.category ? { category: sharedItem.category } : {}),
+              ...(sharedItem.note ? { note: sharedItem.note } : {}),
               listId: PERSONAL_LIST_ID,
               listName: PERSONAL_LIST_NAME,
               createdAt: serverTimestamp(),
@@ -545,7 +654,7 @@ const ShoppingList: React.FC = () => {
     );
 
     return unsubscribe;
-  }, [allowEdits, permissions, isSharing, user]);
+  }, [allowEdits, interfacePrefs.shareChangeNotices, permissions, isSharing, user]);
 
   useEffect(() => {
     if (
@@ -614,6 +723,7 @@ const ShoppingList: React.FC = () => {
               userId: user.uid,
               ...(item.quantity ? { quantity: item.quantity } : {}),
               ...(item.category ? { category: item.category } : {}),
+              ...(item.note ? { note: item.note } : {}),
               listId: importedListId,
               listName: sharedOwnerName,
               sharedFromUserId: data.ownerId,
@@ -740,6 +850,8 @@ const ShoppingList: React.FC = () => {
             typeof record.quantity === "string" ? record.quantity : undefined,
           category:
             typeof record.category === "string" ? record.category : undefined,
+          note: typeof record.note === "string" ? record.note : undefined,
+          important: record.important === true,
         });
       });
 
@@ -765,6 +877,109 @@ const ShoppingList: React.FC = () => {
     return currentListItems.find((item) => getDuplicateKey(item.text) === key);
   }, [currentListItems, preview.text]);
 
+  const suggestions = useMemo(
+    () => rankHistory(newItem, historyEntries),
+    [historyEntries, newItem],
+  );
+  const showSuggestions = suggestOpen && suggestions.length > 0;
+
+  const rememberItem = (item: {
+    text: string;
+    category?: string;
+    note?: string;
+  }) => {
+    setHistoryEntries(
+      touchItemHistory({
+        text: item.text,
+        category: item.category,
+        note: item.note,
+      }),
+    );
+  };
+
+  const pickSuggestion = async (entry: HistoryEntry) => {
+    // Add immediately with known aisle/note — fewer taps while shopping.
+    setSuggestOpen(false);
+    setSuggestIndex(-1);
+    setNewItem(entry.text);
+    // Defer to next tick so state settles, then submit via the same path.
+    // Build a synthetic add using the history text (no qty parse from chips).
+    if (!user || !db) return;
+
+    const text = entry.text.trim();
+    if (!text) return;
+    const category = entry.category;
+    const note = entry.note;
+    const key = getDuplicateKey(text);
+    const existing = currentListItems.find(
+      (item) => getDuplicateKey(item.text) === key,
+    );
+
+    try {
+      setActionError("");
+      if (existing) {
+        await updateDoc(doc(db, "shoppingItems", existing.id), {
+          completed: false,
+          ...(category && !existing.category ? { category } : {}),
+          ...(note && !existing.note ? { note } : {}),
+        });
+        if (existing.completed && existing.sharedFromUserId) {
+          void propagateToSharedOwner(existing, "toggle", false);
+        }
+        rememberItem({
+          text: existing.text,
+          category: existing.category ?? category,
+          note: existing.note ?? note,
+        });
+        setNotice(`${existing.text} is already on your list.`);
+        setNewItem("");
+        return;
+      }
+
+      const activeTab = listTabs.find((tab) => tab.id === activeListId);
+      const sharedFromUserId = activeListId.startsWith("shared:")
+        ? activeListId.slice("shared:".length)
+        : undefined;
+      const sortOrder = nextTopSortOrder(
+        currentListItems.filter((item) => !item.completed),
+      );
+
+      await addDoc(collection(db, "shoppingItems"), {
+        text,
+        completed: false,
+        userId: user.uid,
+        ...(category ? { category } : {}),
+        ...(note ? { note } : {}),
+        listId: activeListId,
+        listName: activeTab?.name ?? PERSONAL_LIST_NAME,
+        ...(sharedFromUserId ? { sharedFromUserId } : {}),
+        sortOrder,
+        createdAt: serverTimestamp(),
+      });
+
+      if (sharedFromUserId) {
+        void propagateToSharedOwner(
+          {
+            id: "",
+            text,
+            completed: false,
+            userId: user.uid,
+            category,
+            note,
+            sharedFromUserId,
+          },
+          "add",
+        );
+      }
+
+      rememberItem({ text, category, note });
+      setNewItem("");
+    } catch (error) {
+      console.error("Add suggestion error:", error);
+      setActionError("Unable to add that item right now. Please try again.");
+    }
+  };
+
   /**
    * Add what the customer typed. Adding something already on the list bumps
    * that row instead of creating a near-identical duplicate.
@@ -773,11 +988,19 @@ const ShoppingList: React.FC = () => {
     e.preventDefault();
     if (!user || !db) return;
 
+    // Enter with a highlighted suggestion accepts it instead of free-text add.
+    if (showSuggestions && suggestIndex >= 0 && suggestions[suggestIndex]) {
+      await pickSuggestion(suggestions[suggestIndex]);
+      return;
+    }
+
     const { text, quantity, category } = parseItemInput(newItem);
     if (!text) return;
 
     try {
       setActionError("");
+      setSuggestOpen(false);
+      setSuggestIndex(-1);
 
       if (duplicateItem) {
         const nextQuantity = mergeQuantities(duplicateItem.quantity, quantity);
@@ -790,6 +1013,12 @@ const ShoppingList: React.FC = () => {
         if (duplicateItem.completed && duplicateItem.sharedFromUserId) {
           void propagateToSharedOwner(duplicateItem, "toggle", false);
         }
+
+        rememberItem({
+          text: duplicateItem.text,
+          category: duplicateItem.category ?? category,
+          note: duplicateItem.note,
+        });
 
         setNotice(
           nextQuantity
@@ -841,6 +1070,7 @@ const ShoppingList: React.FC = () => {
         );
       }
 
+      rememberItem({ text, category });
       setNewItem("");
     } catch (error) {
       console.error("Add item error:", error);
@@ -858,6 +1088,14 @@ const ShoppingList: React.FC = () => {
     try {
       setActionError("");
       await updateDoc(doc(db, "shoppingItems", id), { completed: !completed });
+      // Checking off reinforces staples for typeahead.
+      if (!completed && item) {
+        rememberItem({
+          text: item.text,
+          category: item.category,
+          note: item.note,
+        });
+      }
       if (item?.sharedFromUserId) {
         void propagateToSharedOwner(item, "toggle", !completed);
       }
@@ -930,6 +1168,7 @@ const ShoppingList: React.FC = () => {
     };
     if (item.quantity) payload.quantity = item.quantity;
     if (item.category) payload.category = item.category;
+    if (item.note) payload.note = item.note;
     if (item.sharedFromUserId) payload.sharedFromUserId = item.sharedFromUserId;
     if (item.important === true) payload.important = true;
     if (typeof item.sortOrder === "number" && Number.isFinite(item.sortOrder)) {
@@ -978,10 +1217,12 @@ const ShoppingList: React.FC = () => {
     text: string,
     quantity: string,
     category: string,
+    note: string,
   ) => {
     const trimmed = text.trim();
     const normalizedQuantity = quantity.trim().slice(0, MAX_QUANTITY_LENGTH);
     const normalizedCategory = category.trim().slice(0, MAX_CATEGORY_LENGTH);
+    const normalizedNote = note.trim().slice(0, MAX_NOTE_LENGTH);
     if (!trimmed) {
       setActionError("Item text cannot be empty.");
       return false;
@@ -1001,6 +1242,7 @@ const ShoppingList: React.FC = () => {
         text: trimmed,
         quantity: normalizedQuantity || deleteField(),
         category: normalizedCategory || deleteField(),
+        note: normalizedNote || deleteField(),
       });
 
       if (original?.sharedFromUserId) {
@@ -1013,6 +1255,7 @@ const ShoppingList: React.FC = () => {
             text: trimmed,
             quantity: normalizedQuantity || undefined,
             category: normalizedCategory || undefined,
+            note: normalizedNote || undefined,
           },
         );
       }
@@ -1031,6 +1274,7 @@ const ShoppingList: React.FC = () => {
       editText,
       editQuantity,
       editCategory,
+      editNote,
     );
     if (saved) setEditingId(null);
   };
@@ -1040,17 +1284,94 @@ const ShoppingList: React.FC = () => {
     text: editText,
     quantity: editQuantity,
     category: editCategory,
+    note: editNote,
     onStart: (item) => {
       setEditingId(item.id);
       setEditText(item.text);
       setEditQuantity(item.quantity ?? "");
       setEditCategory(item.category ?? "");
+      setEditNote(item.note ?? "");
     },
     onTextChange: setEditText,
     onQuantityChange: setEditQuantity,
     onCategoryChange: setEditCategory,
+    onNoteChange: setEditNote,
     onCommit: commitEdit,
     onCancel: () => setEditingId(null),
+  };
+
+  const commitNewList = async () => {
+    const result = addCustomList(customLists, newListName);
+    if ("error" in result) {
+      setActionError(result.error);
+      return;
+    }
+    setCreatingList(false);
+    setNewListName("");
+    await persistCustomLists(result.lists);
+    setActiveListId(result.list.id);
+    setNotice(`Created “${result.list.name}”.`);
+  };
+
+  const commitRenameList = async () => {
+    if (!isOwnedCustomListId(activeListId)) {
+      setRenamingList(false);
+      return;
+    }
+    const result = renameCustomList(customLists, activeListId, renameListValue);
+    if ("error" in result) {
+      setActionError(result.error);
+      return;
+    }
+    const nextName = result.lists.find((l) => l.id === activeListId)?.name;
+    await persistCustomLists(result.lists);
+    setRenamingList(false);
+    setRenameListValue("");
+
+    // Keep item listName in sync for display/export paths.
+    if (db && nextName) {
+      const firestore = db;
+      const toRename = items.filter(
+        (item) => getItemListId(item) === activeListId,
+      );
+      try {
+        await commitBatchOperations(
+          firestore,
+          toRename.map(
+            (item) => (batch) =>
+              batch.update(doc(firestore, "shoppingItems", item.id), {
+                listName: nextName,
+              }),
+          ),
+        );
+      } catch (error) {
+        console.error("Rename list items error:", error);
+      }
+    }
+  };
+
+  const deleteActiveCustomList = async () => {
+    if (!db || !isOwnedCustomListId(activeListId)) return;
+    const firestore = db;
+    const listId = activeListId;
+    const toDelete = items.filter((item) => getItemListId(item) === listId);
+
+    try {
+      setActionError("");
+      await commitBatchOperations(
+        firestore,
+        toDelete.map(
+          (item) => (batch) =>
+            batch.delete(doc(firestore, "shoppingItems", item.id)),
+        ),
+      );
+      await persistCustomLists(removeCustomList(customLists, listId));
+      setActiveListId(PERSONAL_LIST_ID);
+      setNotice("List deleted.");
+    } catch (error) {
+      console.error("Delete custom list error:", error);
+      setActionError("Unable to delete that list right now. Please try again.");
+    }
   };
 
   const clearCompleted = async () => {
@@ -1207,6 +1528,7 @@ const ShoppingList: React.FC = () => {
 
     if (action === "clearCompleted") await clearCompleted();
     if (action === "removeSharedList") await removeActiveSharedList();
+    if (action === "deleteCustomList") await deleteActiveCustomList();
     if (action === "stopSharing") await stopSharing();
   };
 
@@ -1272,7 +1594,7 @@ const ShoppingList: React.FC = () => {
     if (!normalizedQuery) return currentListItems;
 
     return currentListItems.filter((item) =>
-      [item.text, item.quantity, item.category]
+      [item.text, item.quantity, item.category, item.note]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -1792,10 +2114,52 @@ const ShoppingList: React.FC = () => {
               type="text"
               className="add-input"
               value={newItem}
-              onChange={(e) => setNewItem(e.target.value)}
+              onChange={(e) => {
+                setNewItem(e.target.value);
+                setSuggestOpen(true);
+                setSuggestIndex(-1);
+              }}
+              onFocus={() => setSuggestOpen(true)}
+              onBlur={() => {
+                // Delay so suggestion mousedown/click can run first.
+                window.setTimeout(() => setSuggestOpen(false), 120);
+              }}
+              onKeyDown={(event) => {
+                if (!showSuggestions) {
+                  if (event.key === "Escape" && newItem) {
+                    event.preventDefault();
+                    setNewItem("");
+                  }
+                  return;
+                }
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setSuggestIndex((i) =>
+                    i < suggestions.length - 1 ? i + 1 : 0,
+                  );
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setSuggestIndex((i) =>
+                    i <= 0 ? suggestions.length - 1 : i - 1,
+                  );
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSuggestOpen(false);
+                  setSuggestIndex(-1);
+                }
+              }}
               placeholder="Add or search…"
               aria-label="Add or search items"
               aria-describedby="add-hint"
+              role="combobox"
+              aria-expanded={showSuggestions}
+              aria-controls="item-suggestions"
+              aria-autocomplete="list"
+              aria-activedescendant={
+                showSuggestions && suggestIndex >= 0
+                  ? `item-suggestions-option-${suggestIndex}`
+                  : undefined
+              }
               maxLength={MAX_ITEM_TEXT_LENGTH}
               autoComplete="off"
             />
@@ -1803,7 +2167,11 @@ const ShoppingList: React.FC = () => {
               <button
                 type="button"
                 className="add-clear-btn"
-                onClick={() => setNewItem("")}
+                onClick={() => {
+                  setNewItem("");
+                  setSuggestOpen(false);
+                  setSuggestIndex(-1);
+                }}
                 aria-label="Clear"
                 title="Clear"
               >
@@ -1815,11 +2183,22 @@ const ShoppingList: React.FC = () => {
               className="add-btn"
               title="Add item"
               aria-label="Add item"
-              disabled={!preview.text}
+              disabled={!preview.text && !(showSuggestions && suggestIndex >= 0)}
             >
               <Plus size={22} strokeWidth={2.5} />
             </button>
           </div>
+
+          <ItemSuggestions
+            id="item-suggestions"
+            open={showSuggestions}
+            suggestions={suggestions}
+            activeIndex={suggestIndex}
+            onHover={setSuggestIndex}
+            onPick={(entry) => {
+              void pickSuggestion(entry);
+            }}
+          />
 
           <p
             id="add-hint"
@@ -1862,7 +2241,7 @@ const ShoppingList: React.FC = () => {
           ))}
         </datalist>
 
-        {listTabs.length > 1 && (
+        {showListTabs && (
           <div className="list-tabs" aria-label="Shopping lists">
             {listTabs.map((tab) => (
               <button
@@ -1871,6 +2250,8 @@ const ShoppingList: React.FC = () => {
                 onClick={() => {
                   setActiveListId(tab.id);
                   setNewItem("");
+                  setCreatingList(false);
+                  setRenamingList(false);
                 }}
                 type="button"
                 aria-pressed={activeListId === tab.id}
@@ -1878,6 +2259,96 @@ const ShoppingList: React.FC = () => {
                 {tab.name}
               </button>
             ))}
+            {creatingList ? (
+              <form
+                className="list-tab-create"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void commitNewList();
+                }}
+              >
+                <input
+                  className="list-tab-create-input"
+                  value={newListName}
+                  onChange={(event) => setNewListName(event.target.value)}
+                  placeholder="List name"
+                  aria-label="New list name"
+                  maxLength={40}
+                  autoFocus
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setCreatingList(false);
+                      setNewListName("");
+                    }
+                  }}
+                />
+                <button type="submit" className="list-tab-create-save">
+                  Add
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                className="list-tab list-tab-add"
+                onClick={() => {
+                  setCreatingList(true);
+                  setNewListName("");
+                  setRenamingList(false);
+                }}
+                aria-label="New list"
+                title="New list"
+              >
+                <Plus size={16} strokeWidth={2.5} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {!showListTabs && (
+          <div className="list-tabs list-tabs-solo" aria-label="Shopping lists">
+            <button
+              type="button"
+              className="list-tab list-tab-add"
+              onClick={() => {
+                setCreatingList(true);
+                setNewListName("");
+              }}
+              aria-label="New list"
+              title="New list"
+            >
+              <Plus size={16} strokeWidth={2.5} />
+              <span>New list</span>
+            </button>
+            {creatingList && (
+              <form
+                className="list-tab-create"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void commitNewList();
+                }}
+              >
+                <input
+                  className="list-tab-create-input"
+                  value={newListName}
+                  onChange={(event) => setNewListName(event.target.value)}
+                  placeholder="List name"
+                  aria-label="New list name"
+                  maxLength={40}
+                  autoFocus
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setCreatingList(false);
+                      setNewListName("");
+                    }
+                  }}
+                />
+                <button type="submit" className="list-tab-create-save">
+                  Add
+                </button>
+              </form>
+            )}
           </div>
         )}
 
@@ -1938,7 +2409,7 @@ const ShoppingList: React.FC = () => {
                     Clear done
                   </button>
                 )}
-                {activeListId !== PERSONAL_LIST_ID && (
+                {isSharedImportListId(activeListId) && (
                   <button
                     className="clear-done-btn"
                     onClick={() => setConfirmAction("removeSharedList")}
@@ -1946,6 +2417,57 @@ const ShoppingList: React.FC = () => {
                   >
                     Remove list
                   </button>
+                )}
+                {isOwnedCustomListId(activeListId) && (
+                  <>
+                    {renamingList ? (
+                      <form
+                        className="list-rename-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void commitRenameList();
+                        }}
+                      >
+                        <input
+                          className="list-rename-input"
+                          value={renameListValue}
+                          onChange={(event) =>
+                            setRenameListValue(event.target.value)
+                          }
+                          maxLength={40}
+                          aria-label="Rename list"
+                          autoFocus
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              setRenamingList(false);
+                            }
+                          }}
+                        />
+                        <button type="submit" className="clear-done-btn">
+                          Save
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        className="clear-done-btn"
+                        type="button"
+                        onClick={() => {
+                          setRenameListValue(activeTabName);
+                          setRenamingList(true);
+                        }}
+                      >
+                        Rename
+                      </button>
+                    )}
+                    <button
+                      className="clear-done-btn"
+                      type="button"
+                      onClick={() => setConfirmAction("deleteCustomList")}
+                    >
+                      Delete list
+                    </button>
+                  </>
                 )}
               </div>
             </div>

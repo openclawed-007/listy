@@ -14,6 +14,8 @@
 export const MAX_ITEM_TEXT_LENGTH = 500;
 export const MAX_QUANTITY_LENGTH = 40;
 export const MAX_CATEGORY_LENGTH = 80;
+/** Short brand/size hint on a row — not a free-form memo pad. */
+export const MAX_NOTE_LENGTH = 120;
 export const DEFAULT_CATEGORY = "General";
 
 /** Aisles used for auto-grouping and as edit-field suggestions. */

@@ -166,13 +166,31 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
         } else {
           setStatus("Saved.");
         }
+        if (nextIface.shareChangeNotices) {
+          const { ensureShareNotifyPermission } = await import(
+            "../lib/shareChangeNotifications"
+          );
+          await ensureShareNotifyPermission();
+        }
       } else {
         await persistUserSettings({
           interface: nextIface,
           shoppingReminders: nextReminders,
         });
         await syncReminderSchedule(nextReminders);
-        setStatus("Saved.");
+        if (nextIface.shareChangeNotices) {
+          const { ensureShareNotifyPermission } = await import(
+            "../lib/shareChangeNotifications"
+          );
+          const ok = await ensureShareNotifyPermission();
+          setStatus(
+            ok
+              ? "Saved."
+              : "Saved. Allow notifications for this site to get shared-list alerts.",
+          );
+        } else {
+          setStatus("Saved.");
+        }
       }
     } catch (error) {
       console.error("Save settings error:", error);

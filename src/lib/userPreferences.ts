@@ -21,6 +21,11 @@ export interface InterfacePreferences {
   /** Brand mark icon in the top-left (name stays, shifts flush left). */
   brandLogo: boolean;
   /**
+   * Browser notification when a shared list changes in the background.
+   * Default off — opt-in after permission.
+   */
+  shareChangeNotices: boolean;
+  /**
    * Desktop display scale in percent (100 = the base fluid ramp).
    * Applied via the `--ui-scale` CSS variable on screens ≥1024px only;
    * phones and tablets keep the compact layout regardless.
@@ -60,6 +65,7 @@ export const DEFAULT_INTERFACE_PREFERENCES: InterfacePreferences = {
   progressBar: true,
   importantStars: true,
   brandLogo: true,
+  shareChangeNotices: false,
   displayScale: DEFAULT_DISPLAY_SCALE,
 };
 
@@ -113,6 +119,12 @@ export const INTERFACE_PREF_OPTIONS: Array<{
     label: "Header logo",
     description: "CartLink icon top-left. Name stays; it moves flush left.",
   },
+  {
+    id: "shareChangeNotices",
+    label: "Shared list alerts",
+    description:
+      "Notify when someone updates a list you’re sharing (while the app can run).",
+  },
 ];
 
 const LOCAL_KEY = "cartlink:user-preferences:v1";
@@ -144,6 +156,7 @@ export function normalizeInterfacePreferences(
     progressBar: asBool(raw.progressBar, base.progressBar),
     importantStars: asBool(raw.importantStars, base.importantStars),
     brandLogo: asBool(raw.brandLogo, base.brandLogo),
+    shareChangeNotices: asBool(raw.shareChangeNotices, base.shareChangeNotices),
     displayScale: asScale(raw.displayScale, base.displayScale),
   };
 }
@@ -191,6 +204,7 @@ export function allInterfaceOn(): InterfacePreferences {
     progressBar: true,
     importantStars: true,
     brandLogo: true,
+    shareChangeNotices: true,
     displayScale: DEFAULT_DISPLAY_SCALE,
   };
 }
@@ -205,6 +219,7 @@ export function allInterfaceOff(): InterfacePreferences {
     progressBar: false,
     importantStars: false,
     brandLogo: false,
+    shareChangeNotices: false,
     displayScale: DEFAULT_DISPLAY_SCALE,
   };
 }
