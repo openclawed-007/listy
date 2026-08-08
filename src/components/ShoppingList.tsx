@@ -2352,11 +2352,17 @@ const ShoppingList: React.FC = () => {
           </div>
         )}
 
-        {totalCount > 0 && (
+        {/* Stats + list admin. Admin (rename/delete) must show even on empty
+            custom lists — previously totalCount>0 hid Delete forever. */}
+        {(totalCount > 0 ||
+          isOwnedCustomListId(activeListId) ||
+          isSharedImportListId(activeListId)) && (
           <div className="list-summary">
             <div className="list-meta-row">
               <span className="stats-text">
-                {isSearching ? (
+                {totalCount === 0 ? (
+                  <>Empty list</>
+                ) : isSearching ? (
                   <>
                     <strong>{filtered.length}</strong> match
                     {filtered.length === 1 ? "" : "es"}
@@ -2370,34 +2376,36 @@ const ShoppingList: React.FC = () => {
                 )}
               </span>
 
-              <div
-                className="sort-toggle"
-                role="group"
-                aria-label="Sort list"
-              >
-                {LIST_SORT_MODES.map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    className={`sort-toggle-btn ${sortMode === mode.id ? "active" : ""}`}
-                    aria-pressed={sortMode === mode.id}
-                    title={
-                      reorderEnabled && interfacePrefs.sortHints
-                        ? `${mode.label}${
-                            mode.id === "manual"
-                              ? " — drag to reorder"
-                              : mode.id === "aisle"
-                                ? " — drag within aisle"
-                                : ""
-                          }`
-                        : mode.label
-                    }
-                    onClick={() => changeSortMode(mode.id)}
-                  >
-                    {mode.shortLabel}
-                  </button>
-                ))}
-              </div>
+              {totalCount > 0 && (
+                <div
+                  className="sort-toggle"
+                  role="group"
+                  aria-label="Sort list"
+                >
+                  {LIST_SORT_MODES.map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      className={`sort-toggle-btn ${sortMode === mode.id ? "active" : ""}`}
+                      aria-pressed={sortMode === mode.id}
+                      title={
+                        reorderEnabled && interfacePrefs.sortHints
+                          ? `${mode.label}${
+                              mode.id === "manual"
+                                ? " — drag to reorder"
+                                : mode.id === "aisle"
+                                  ? " — drag within aisle"
+                                  : ""
+                            }`
+                          : mode.label
+                      }
+                      onClick={() => changeSortMode(mode.id)}
+                    >
+                      {mode.shortLabel}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <div className="stats-actions">
                 {allDoneCount > 0 && !isSearching && (
@@ -2471,7 +2479,7 @@ const ShoppingList: React.FC = () => {
                 )}
               </div>
             </div>
-            {!isSearching && interfacePrefs.progressBar && (
+            {totalCount > 0 && !isSearching && interfacePrefs.progressBar && (
               <div
                 className="progress-track"
                 role="progressbar"
@@ -2509,10 +2517,25 @@ const ShoppingList: React.FC = () => {
               </p>
               {!isSearching &&
                 totalCount === 0 &&
-                interfacePrefs.emptyTips && (
+                interfacePrefs.emptyTips &&
+                !isOwnedCustomListId(activeListId) && (
                   <p className="empty-tip">
                     Try <code>2 milk</code> to add a quantity and aisle
                     automatically.
+                  </p>
+                )}
+              {!isSearching &&
+                totalCount === 0 &&
+                isOwnedCustomListId(activeListId) && (
+                  <p className="empty-tip">
+                    Don&apos;t need this list?{" "}
+                    <button
+                      type="button"
+                      className="empty-tip-link"
+                      onClick={() => setConfirmAction("deleteCustomList")}
+                    >
+                      Delete list
+                    </button>
                   </p>
                 )}
             </div>

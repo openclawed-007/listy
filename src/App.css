@@ -1576,6 +1576,23 @@ body.dark .item-row.is-important {
   color: var(--sage-dark);
 }
 
+.empty-tip-link {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--terra);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.empty-tip-link:hover {
+  color: var(--terra-light);
+}
+
 /* ===========================
    STATS + SORT (one compact row)
    =========================== */
@@ -1587,6 +1604,7 @@ body.dark .item-row.is-important {
 .list-meta-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.4rem;
   min-height: 1.7rem;
   padding: 0 0.05rem;
@@ -1595,8 +1613,10 @@ body.dark .item-row.is-important {
 .stats-actions {
   display: flex;
   align-items: center;
-  gap: 0.1rem;
+  flex-wrap: wrap;
+  gap: 0.15rem;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .stats-text {
