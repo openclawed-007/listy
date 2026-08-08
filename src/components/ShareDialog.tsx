@@ -37,6 +37,10 @@ interface ShareDialogProps {
   permissions: SharePermissions;
   /** Which pane to show when the dialog opens. */
   initialTab?: ShareDialogTab;
+  /** Name of the list that sharing publishes (currently always My List). */
+  sharedListName?: string;
+  /** When true, clarify that other personal lists are not shared. */
+  hasOtherLists?: boolean;
   onClose: () => void;
   onStartSharing: () => void;
   onCopyLink: () => void;
@@ -81,6 +85,8 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
   busy,
   permissions,
   initialTab = "share",
+  sharedListName = "My List",
+  hasOtherLists = false,
   onClose,
   onStartSharing,
   onCopyLink,
@@ -409,7 +415,11 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
               <div className="share-empty share-empty-compact">
                 <Share2 size={28} strokeWidth={1.5} />
                 <p className="share-empty-text">
-                  Create a code, link, and QR. Starts view-only.
+                  Create a code, link, and QR for{" "}
+                  <strong>{sharedListName}</strong>. Starts view-only.
+                  {hasOtherLists
+                    ? " Your other lists stay private."
+                    : null}
                 </p>
               </div>
               {shareStatus && (

@@ -1653,6 +1653,38 @@ body.dark .item-row.is-important {
   background: #fff0ed;
 }
 
+/* Non-destructive list actions (Rename) — muted, not terra. */
+.list-admin-btn {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.15rem 0.3rem;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: 'DM Sans', sans-serif;
+  white-space: nowrap;
+}
+
+.list-admin-btn:hover {
+  background: var(--cream-dark);
+  color: var(--ink);
+}
+
+.list-tab-add:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.list-tab-add:disabled:hover {
+  background: transparent;
+  border-color: var(--cream-deep);
+  color: var(--sage-dark);
+}
+
 .sort-toggle {
   display: inline-flex;
   align-items: center;

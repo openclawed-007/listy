@@ -132,8 +132,10 @@ import {
 import { notifyShareListChange } from "../lib/shareChangeNotifications";
 import {
   addCustomList,
+  canAddCustomList,
   isOwnedCustomListId,
   isSharedImportListId,
+  MAX_CUSTOM_LISTS,
   normalizeUserLists,
   readLocalUserLists,
   removeCustomList,
@@ -372,19 +374,27 @@ const ShoppingList: React.FC = () => {
 
   const listTabs = useMemo<ListTab[]>(() => {
     const sharedTabs = new Map<string, string>();
+    // Items whose listId fell out of the registry still need a tab, or they
+    // vanish forever with no way to delete them.
+    const orphanCustom = new Map<string, string>();
 
     items.forEach((item) => {
       const listId = getItemListId(item);
       if (isSharedImportListId(listId)) {
         sharedTabs.set(listId, getItemListName(item));
+      } else if (isOwnedCustomListId(listId)) {
+        orphanCustom.set(listId, getItemListName(item));
       }
     });
 
-    // Custom registry names win over stale listName on items.
-    const customTabs = customLists.map((list) => ({
-      id: list.id,
-      name: list.name,
-    }));
+    // Registry names win over stale listName on items.
+    const knownIds = new Set(customLists.map((list) => list.id));
+    const customTabs = [
+      ...customLists.map((list) => ({ id: list.id, name: list.name })),
+      ...Array.from(orphanCustom, ([id, name]) =>
+        knownIds.has(id) ? null : { id, name },
+      ).filter((tab): tab is ListTab => Boolean(tab)),
+    ];
 
     return [
       { id: PERSONAL_LIST_ID, name: PERSONAL_LIST_NAME },
@@ -394,6 +404,7 @@ const ShoppingList: React.FC = () => {
   }, [customLists, items]);
 
   const showListTabs = customLists.length > 0 || listTabs.length > 1;
+  const canCreateList = canAddCustomList(customLists);
 
   useEffect(() => {
     if (!listTabs.some((tab) => tab.id === activeListId)) {
@@ -1318,7 +1329,20 @@ const ShoppingList: React.FC = () => {
       setRenamingList(false);
       return;
     }
-    const result = renameCustomList(customLists, activeListId, renameListValue);
+    // Orphan tabs (items only, no registry entry) get healed into the registry.
+    const orphanName =
+      listTabs.find((tab) => tab.id === activeListId)?.name ?? "List";
+    const baseLists = customLists.some((list) => list.id === activeListId)
+      ? customLists
+      : [
+          ...customLists,
+          {
+            id: activeListId,
+            name: orphanName,
+            createdAt: Date.now(),
+          },
+        ];
+    const result = renameCustomList(baseLists, activeListId, renameListValue);
     if ("error" in result) {
       setActionError(result.error);
       return;
@@ -1351,21 +1375,27 @@ const ShoppingList: React.FC = () => {
   };
 
   const deleteActiveCustomList = async () => {
-    if (!db || !isOwnedCustomListId(activeListId)) return;
-    const firestore = db;
+    if (!isOwnedCustomListId(activeListId)) return;
     const listId = activeListId;
     const toDelete = items.filter((item) => getItemListId(item) === listId);
 
     try {
       setActionError("");
-      await commitBatchOperations(
-        firestore,
-        toDelete.map(
-          (item) => (batch) =>
-            batch.delete(doc(firestore, "shoppingItems", item.id)),
-        ),
-      );
-      await persistCustomLists(removeCustomList(customLists, listId));
+      if (db && toDelete.length > 0) {
+        const firestore = db;
+        await commitBatchOperations(
+          firestore,
+          toDelete.map(
+            (item) => (batch) =>
+              batch.delete(doc(firestore, "shoppingItems", item.id)),
+          ),
+        );
+      }
+      // Drop registry entry even if there were no items (or Firestore is offline
+      // after empties) so the tab disappears.
+      const nextLists = removeCustomList(customLists, listId);
+      // If this was an orphan tab (items only, no registry), nextLists is unchanged.
+      await persistCustomLists(nextLists);
       setActiveListId(PERSONAL_LIST_ID);
       setNotice("List deleted.");
     } catch (error) {
@@ -2292,12 +2322,27 @@ const ShoppingList: React.FC = () => {
                 type="button"
                 className="list-tab list-tab-add"
                 onClick={() => {
+                  if (!canCreateList) {
+                    setActionError(
+                      `You can have up to ${MAX_CUSTOM_LISTS} custom lists.`,
+                    );
+                    return;
+                  }
                   setCreatingList(true);
                   setNewListName("");
                   setRenamingList(false);
                 }}
-                aria-label="New list"
-                title="New list"
+                aria-label={
+                  canCreateList
+                    ? "New list"
+                    : `Limit of ${MAX_CUSTOM_LISTS} custom lists reached`
+                }
+                title={
+                  canCreateList
+                    ? "New list"
+                    : `Limit of ${MAX_CUSTOM_LISTS} custom lists`
+                }
+                disabled={!canCreateList}
               >
                 <Plus size={16} strokeWidth={2.5} />
               </button>
@@ -2452,13 +2497,13 @@ const ShoppingList: React.FC = () => {
                             }
                           }}
                         />
-                        <button type="submit" className="clear-done-btn">
+                        <button type="submit" className="list-admin-btn">
                           Save
                         </button>
                       </form>
                     ) : (
                       <button
-                        className="clear-done-btn"
+                        className="list-admin-btn"
                         type="button"
                         onClick={() => {
                           setRenameListValue(activeTabName);
@@ -2535,6 +2580,20 @@ const ShoppingList: React.FC = () => {
                       onClick={() => setConfirmAction("deleteCustomList")}
                     >
                       Delete list
+                    </button>
+                  </p>
+                )}
+              {!isSearching &&
+                totalCount === 0 &&
+                isSharedImportListId(activeListId) && (
+                  <p className="empty-tip">
+                    Done with this shared list?{" "}
+                    <button
+                      type="button"
+                      className="empty-tip-link"
+                      onClick={() => setConfirmAction("removeSharedList")}
+                    >
+                      Remove list
                     </button>
                   </p>
                 )}
@@ -2666,6 +2725,8 @@ const ShoppingList: React.FC = () => {
           busy={shareBusy}
           permissions={permissions}
           initialTab={shareTab}
+          sharedListName={PERSONAL_LIST_NAME}
+          hasOtherLists={showListTabs}
           onClose={() => setShareOpen(false)}
           onStartSharing={startSharing}
           onCopyLink={copyShareLink}
@@ -2687,7 +2748,11 @@ const ShoppingList: React.FC = () => {
       {confirmAction && (
         <ConfirmDialog
           action={confirmAction}
-          itemCount={allDoneCount}
+          itemCount={
+            confirmAction === "clearCompleted"
+              ? allDoneCount
+              : currentListItems.length
+          }
           listName={activeTabName}
           busy={shareBusy && confirmAction === "stopSharing"}
           onCancel={() => setConfirmAction(null)}
