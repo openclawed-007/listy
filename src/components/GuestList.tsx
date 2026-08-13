@@ -5,13 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  PackageOpen,
-  Plus,
-  X,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, PackageOpen } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import BrandMark from "./BrandMark";
 import NavOverflowMenu from "./NavOverflowMenu";
@@ -63,13 +57,8 @@ import ItemRow, {
   type ItemEditState,
   type ItemReorderState,
 } from "./ItemRow";
-import ItemSuggestions from "./ItemSuggestions";
-import {
-  rankHistory,
-  readItemHistory,
-  touchItemHistory,
-  type HistoryEntry,
-} from "../lib/itemHistory";
+import AddItemField from "./AddItemField";
+import { useItemSuggestions } from "../hooks/useItemSuggestions";
 import type { ShoppingItem } from "../lib/shoppingItem";
 
 function asShoppingItem(item: GuestItem): ShoppingItem {
@@ -94,11 +83,7 @@ const GuestList: React.FC = () => {
   const { dark, toggle } = useDarkMode();
   const [items, setItems] = useState<GuestItem[]>(readGuestItems);
   const [value, setValue] = useState("");
-  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>(() =>
-    readItemHistory(),
-  );
-  const [suggestOpen, setSuggestOpen] = useState(false);
-  const [suggestIndex, setSuggestIndex] = useState(-1);
+  const history = useItemSuggestions(value);
   const [message, setMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -117,11 +102,6 @@ const GuestList: React.FC = () => {
   const flipFirstRef = useRef<Map<string, DOMRect> | null>(null);
   const activeItemsRef = useRef<GuestItem[]>([]);
   const preview = useMemo(() => parseItemInput(value), [value]);
-  const suggestions = useMemo(
-    () => rankHistory(value, historyEntries),
-    [historyEntries, value],
-  );
-  const showSuggestions = suggestOpen && suggestions.length > 0;
   useDocumentTitle("Guest list");
 
   useEffect(() => writeGuestItems(items), [items]);
@@ -142,47 +122,42 @@ const GuestList: React.FC = () => {
     return shoppingDayBanner(reminderSettings);
   }, [interfacePrefs.shoppingBanners, reminderSettings]);
 
-  const rememberItem = (item: {
+  const commitAdd = (input: {
     text: string;
+    quantity?: string;
     category?: string;
     note?: string;
   }) => {
-    setHistoryEntries(
-      touchItemHistory({
-        text: item.text,
-        category: item.category,
-        note: item.note,
-      }),
-    );
-  };
-
-  const pickSuggestion = (entry: HistoryEntry) => {
-    setSuggestOpen(false);
-    setSuggestIndex(-1);
-    const text = entry.text.trim();
+    const text = input.text.trim();
     if (!text) return;
     const key = getDuplicateKey(text);
     const duplicate = items.find((item) => getDuplicateKey(item.text) === key);
 
     if (duplicate) {
+      const quantity = mergeQuantities(duplicate.quantity, input.quantity);
       setItems((current) =>
         current.map((item) =>
           item.id === duplicate.id
             ? {
                 ...item,
                 completed: false,
-                category: item.category ?? entry.category,
-                note: item.note ?? entry.note,
+                quantity,
+                category: item.category ?? input.category,
+                note: item.note ?? input.note,
               }
             : item,
         ),
       );
-      rememberItem({
+      history.remember({
         text: duplicate.text,
-        category: duplicate.category ?? entry.category,
-        note: duplicate.note ?? entry.note,
+        category: duplicate.category ?? input.category,
+        note: duplicate.note ?? input.note,
       });
-      setMessage(`${duplicate.text} is already on your list.`);
+      setMessage(
+        quantity
+          ? `${duplicate.text} was already here — now ${formatQuantity(quantity)}.`
+          : `${duplicate.text} is already on your list.`,
+      );
     } else {
       const sortOrder = nextTopSortOrder(
         items.filter((item) => !item.completed),
@@ -192,75 +167,18 @@ const GuestList: React.FC = () => {
           id: createGuestId(),
           text,
           completed: false,
-          category: entry.category,
-          note: entry.note,
+          quantity: input.quantity,
+          category: input.category,
+          note: input.note,
           sortOrder,
           createdAt: Date.now(),
         },
         ...current,
       ]);
-      rememberItem({
+      history.remember({
         text,
-        category: entry.category,
-        note: entry.note,
-      });
-    }
-    setValue("");
-  };
-
-  const addItem = (event: React.FormEvent) => {
-    event.preventDefault();
-
-    if (showSuggestions && suggestIndex >= 0 && suggestions[suggestIndex]) {
-      pickSuggestion(suggestions[suggestIndex]);
-      return;
-    }
-
-    const parsed = parseItemInput(value);
-    if (!parsed.text) return;
-
-    setSuggestOpen(false);
-    setSuggestIndex(-1);
-
-    const key = getDuplicateKey(parsed.text);
-    const duplicate = items.find((item) => getDuplicateKey(item.text) === key);
-
-    if (duplicate) {
-      const quantity = mergeQuantities(duplicate.quantity, parsed.quantity);
-      setItems((current) =>
-        current.map((item) =>
-          item.id === duplicate.id
-            ? { ...item, completed: false, quantity }
-            : item,
-        ),
-      );
-      rememberItem({
-        text: duplicate.text,
-        category: duplicate.category ?? parsed.category,
-        note: duplicate.note,
-      });
-      setMessage(
-        `${duplicate.text} was already here${quantity ? ` — now ${formatQuantity(quantity)}` : ""}.`,
-      );
-    } else {
-      const sortOrder = nextTopSortOrder(
-        items.filter((item) => !item.completed),
-      );
-      setItems((current) => [
-        {
-          id: createGuestId(),
-          text: parsed.text,
-          completed: false,
-          quantity: parsed.quantity,
-          category: parsed.category,
-          sortOrder,
-          createdAt: Date.now(),
-        },
-        ...current,
-      ]);
-      rememberItem({
-        text: parsed.text,
-        category: parsed.category,
+        category: input.category,
+        note: input.note,
       });
     }
     setValue("");
@@ -599,7 +517,7 @@ const GuestList: React.FC = () => {
         if (entry.id !== id) return entry;
         const nextCompleted = !entry.completed;
         if (nextCompleted) {
-          rememberItem({
+          history.remember({
             text: entry.text,
             category: entry.category,
             note: entry.note,
@@ -707,121 +625,37 @@ const GuestList: React.FC = () => {
           )}
         </div>
 
-        <form className="add-form" onSubmit={addItem}>
-          <div className="add-primary-row">
-            <input
-              className="add-input"
-              value={value}
-              onChange={(event) => {
-                setValue(event.target.value);
-                setSuggestOpen(true);
-                setSuggestIndex(-1);
-              }}
-              onFocus={() => setSuggestOpen(true)}
-              onBlur={() => {
-                window.setTimeout(() => setSuggestOpen(false), 120);
-              }}
-              onKeyDown={(event) => {
-                if (!showSuggestions) {
-                  if (event.key === "Escape" && value) {
-                    event.preventDefault();
-                    setValue("");
-                  }
-                  return;
-                }
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setSuggestIndex((i) =>
-                    i < suggestions.length - 1 ? i + 1 : 0,
-                  );
-                } else if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setSuggestIndex((i) =>
-                    i <= 0 ? suggestions.length - 1 : i - 1,
-                  );
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  setSuggestOpen(false);
-                  setSuggestIndex(-1);
-                }
-              }}
-              placeholder="Add or search…"
-              aria-label="Add or search items"
-              role="combobox"
-              aria-expanded={showSuggestions}
-              aria-controls="guest-item-suggestions"
-              aria-autocomplete="list"
-              aria-activedescendant={
-                showSuggestions && suggestIndex >= 0
-                  ? `guest-item-suggestions-option-${suggestIndex}`
-                  : undefined
-              }
-              autoFocus
-              maxLength={MAX_ITEM_TEXT_LENGTH}
-              autoComplete="off"
-            />
-            {value.trim() && (
-              <button
-                type="button"
-                className="add-clear-btn"
-                onClick={() => {
-                  setValue("");
-                  setSuggestOpen(false);
-                  setSuggestIndex(-1);
-                }}
-                aria-label="Clear"
-                title="Clear"
-              >
-                <X size={16} />
-              </button>
-            )}
-            <button
-              className="add-btn"
-              type="submit"
-              disabled={
-                !preview.text && !(showSuggestions && suggestIndex >= 0)
-              }
-              aria-label="Add item"
-            >
-              <Plus size={20} />
-            </button>
-          </div>
-          <ItemSuggestions
-            id="guest-item-suggestions"
-            open={showSuggestions}
-            suggestions={suggestions}
-            activeIndex={suggestIndex}
-            onHover={setSuggestIndex}
-            onPick={pickSuggestion}
-          />
-          <p
-            className={`add-hint ${interfacePrefs.addHints || isSearching ? "" : "is-pref-hidden"}`}
-            aria-live="polite"
-          >
-            {isSearching && items.length > 0 ? (
+        <AddItemField
+          listboxId="guest-item-suggestions"
+          value={value}
+          onValueChange={setValue}
+          onCommit={commitAdd}
+          suggestions={history}
+          autoFocus
+          hintHidden={!interfacePrefs.addHints && !isSearching}
+          hint={
+            isSearching && items.length > 0 ? (
               <span className="add-hint-search">
                 {filteredCount === 0
                   ? "No matches — press + to add it"
                   : `${filteredCount} match${filteredCount === 1 ? "" : "es"} · press + to add`}
               </span>
-            ) : (
-              interfacePrefs.addHints &&
-              (preview.quantity || preview.category) && (
-                <>
-                  <strong>{preview.text}</strong>
-                  {preview.quantity && (
-                    <span className="add-hint-chip">
-                      {formatQuantity(preview.quantity)}
-                    </span>
-                  )}
-                  {preview.category && (
-                    <span className="add-hint-chip">{preview.category}</span>
-                  )}
-                </>
-              )
-            )}
-          </p>
-        </form>
+            ) : interfacePrefs.addHints &&
+              (preview.quantity || preview.category) ? (
+              <>
+                <strong>{preview.text}</strong>
+                {preview.quantity && (
+                  <span className="add-hint-chip">
+                    {formatQuantity(preview.quantity)}
+                  </span>
+                )}
+                {preview.category && (
+                  <span className="add-hint-chip">{preview.category}</span>
+                )}
+              </>
+            ) : null
+          }
+        />
 
         <datalist id={CATEGORY_DATALIST_ID}>
           {/* Guest list has no cloud aisles; built-ins still help while editing. */}

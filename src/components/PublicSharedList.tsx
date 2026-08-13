@@ -29,7 +29,12 @@ import {
   MAX_ITEM_TEXT_LENGTH,
   parseItemInput,
 } from "../lib/itemInput";
-import { groupItemsByCategory, isRecord } from "../lib/shoppingItem";
+import {
+  groupItemsByCategory,
+  isRecord,
+  normalizeSharedItems as normalizeSharedPayloads,
+  toSharedItemPayload,
+} from "../lib/shoppingItem";
 import { useAuth } from "../context/useAuth";
 import { usePreferences } from "../context/usePreferences";
 import { useDarkMode } from "../hooks/useDarkMode";
@@ -94,42 +99,16 @@ function getSafeOwnerName(value: unknown) {
 }
 
 function normalizeSharedItems(items: unknown): PublicItem[] {
-  if (!Array.isArray(items)) return [];
-
-  return items.flatMap((item, index) => {
-    if (!isRecord(item) || typeof item.text !== "string") return [];
-
-    const trimmed = item.text.trim();
-    if (!trimmed) return [];
-
-    const stableId =
-      typeof item.id === "string" && item.id.trim()
-        ? item.id.trim().slice(0, 128)
-        : undefined;
-
-    return [
-      {
-        // Prefer published stable id so UI keys survive quantity edits.
-        id: stableId ?? `${index}-${trimmed}`,
-        index,
-        text: trimmed.slice(0, 500),
-        completed: item.completed === true,
-        quantity:
-          typeof item.quantity === "string" && item.quantity.trim()
-            ? item.quantity.trim().slice(0, 40)
-            : undefined,
-        category:
-          typeof item.category === "string" && item.category.trim()
-            ? item.category.trim().slice(0, 80)
-            : undefined,
-        note:
-          typeof item.note === "string" && item.note.trim()
-            ? item.note.trim().slice(0, 120)
-            : undefined,
-        ...(item.important === true ? { important: true } : {}),
-      },
-    ];
-  });
+  return normalizeSharedPayloads(items).map((item, index) => ({
+    id: item.id ?? `${index}-${item.text}`,
+    index,
+    text: item.text,
+    completed: item.completed,
+    quantity: item.quantity,
+    category: item.category,
+    note: item.note,
+    important: item.important,
+  }));
 }
 
 function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
@@ -153,25 +132,18 @@ function toPayloadItem(
   override?: Partial<SharedItemData>,
 ): SharedItemData {
   const record = isRecord(item) ? item : {};
-  const base: SharedItemData = {
-    ...(typeof record.id === "string" && record.id.trim()
-      ? { id: record.id.trim().slice(0, 128) }
-      : {}),
-    text: typeof record.text === "string" ? record.text : "",
-    completed: record.completed === true,
-    ...(typeof record.quantity === "string" && record.quantity
-      ? { quantity: record.quantity }
-      : {}),
-    ...(typeof record.category === "string" && record.category
-      ? { category: record.category }
-      : {}),
-    ...(typeof record.note === "string" && record.note
-      ? { note: record.note }
-      : {}),
-    ...(record.important === true ? { important: true } : {}),
+  return {
+    ...toSharedItemPayload({
+      id: typeof record.id === "string" ? record.id : undefined,
+      text: typeof record.text === "string" ? record.text : "",
+      completed: record.completed === true,
+      quantity: typeof record.quantity === "string" ? record.quantity : undefined,
+      category: typeof record.category === "string" ? record.category : undefined,
+      note: typeof record.note === "string" ? record.note : undefined,
+      important: record.important === true,
+    }),
+    ...override,
   };
-
-  return { ...base, ...override };
 }
 
 function findRawItemIndex(

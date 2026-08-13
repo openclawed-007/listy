@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  allInterfaceOff,
-  allInterfaceOn,
-  countEnabledInterfacePrefs,
+  countEnabledPrefGroup,
+  DEFAULT_INTERFACE_PREFERENCES,
+  LOOK_PREF_OPTIONS,
   normalizeInterfacePreferences,
   normalizeUserPreferences,
+  setPrefGroup,
+  TIPS_PREF_OPTIONS,
 } from "./userPreferences";
 
 describe("userPreferences", () => {
@@ -52,8 +54,17 @@ describe("userPreferences", () => {
     expect(prefs.interface.emptyTips).toBe(true);
   });
 
-  it("supports all-on / all-off presets", () => {
-    expect(countEnabledInterfacePrefs(allInterfaceOn())).toBe(9);
-    expect(countEnabledInterfacePrefs(allInterfaceOff())).toBe(0);
+  it("toggles a preference group without touching the others", () => {
+    const hiddenTips = setPrefGroup(
+      DEFAULT_INTERFACE_PREFERENCES,
+      TIPS_PREF_OPTIONS,
+      false,
+    );
+    expect(countEnabledPrefGroup(hiddenTips, TIPS_PREF_OPTIONS)).toBe(0);
+    expect(countEnabledPrefGroup(hiddenTips, LOOK_PREF_OPTIONS)).toBe(
+      LOOK_PREF_OPTIONS.length,
+    );
+    expect(hiddenTips.shareChangeNotices).toBe(false);
+    expect(hiddenTips.progressBar).toBe(true);
   });
 });

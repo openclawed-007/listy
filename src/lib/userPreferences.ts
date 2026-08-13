@@ -33,11 +33,17 @@ export interface InterfacePreferences {
   displayScale: number;
 }
 
-/** Boolean-only preference keys (everything the toggle list can flip). */
+/** Boolean-only preference keys (everything a settings switch can flip). */
 export type InterfaceToggleKey = Exclude<
   keyof InterfacePreferences,
   "displayScale"
 >;
+
+export interface PrefOption {
+  id: InterfaceToggleKey;
+  label: string;
+  description: string;
+}
 
 export const MIN_DISPLAY_SCALE = 80;
 export const MAX_DISPLAY_SCALE = 130;
@@ -73,12 +79,8 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   interface: { ...DEFAULT_INTERFACE_PREFERENCES },
 };
 
-/** Stable list for the settings UI — order is presentation order. */
-export const INTERFACE_PREF_OPTIONS: Array<{
-  id: InterfaceToggleKey;
-  label: string;
-  description: string;
-}> = [
+/** Coaching copy — Show all / Hide all only touches this group. */
+export const TIPS_PREF_OPTIONS: PrefOption[] = [
   {
     id: "emptyTips",
     label: "Empty-list tips",
@@ -99,11 +101,10 @@ export const INTERFACE_PREF_OPTIONS: Array<{
     label: "Sort helper text",
     description: "“Drag to reorder” and similar toolbar hints.",
   },
-  {
-    id: "shoppingBanners",
-    label: "Shopping-day banner",
-    description: "In-app “you usually shop today” reminder strip.",
-  },
+];
+
+/** Visible list chrome on the Look tab. */
+export const LOOK_PREF_OPTIONS: PrefOption[] = [
   {
     id: "progressBar",
     label: "Progress bar",
@@ -118,12 +119,6 @@ export const INTERFACE_PREF_OPTIONS: Array<{
     id: "brandLogo",
     label: "Header logo",
     description: "CartLink icon top-left. Name stays; it moves flush left.",
-  },
-  {
-    id: "shareChangeNotices",
-    label: "Shared list alerts",
-    description:
-      "Notify when someone updates a list you’re sharing (while the app can run).",
   },
 ];
 
@@ -224,8 +219,19 @@ export function allInterfaceOff(): InterfacePreferences {
   };
 }
 
-export function countEnabledInterfacePrefs(
+export function setPrefGroup(
   prefs: InterfacePreferences,
+  options: PrefOption[],
+  on: boolean,
+): InterfacePreferences {
+  const next = { ...prefs };
+  for (const option of options) next[option.id] = on;
+  return next;
+}
+
+export function countEnabledPrefGroup(
+  prefs: InterfacePreferences,
+  options: PrefOption[],
 ): number {
-  return INTERFACE_PREF_OPTIONS.filter((option) => prefs[option.id]).length;
+  return options.filter((option) => prefs[option.id]).length;
 }

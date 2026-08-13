@@ -2940,6 +2940,10 @@ body.dark .modal-backdrop {
   text-align: center;
 }
 
+.settings-footnote.is-error {
+  color: var(--danger, #b42318);
+}
+
 @media (min-width: 560px) {
   .settings-actions {
     justify-content: flex-end;
@@ -2953,6 +2957,10 @@ body.dark .modal-backdrop {
 
   .settings-footnote {
     text-align: left;
+  }
+
+  .settings-sheet-footer .settings-primary-btn {
+    min-width: 8rem;
   }
 }
 

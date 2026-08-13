@@ -25,10 +25,8 @@ import {
   ChevronDown,
   ChevronRight,
   PackageOpen,
-  Plus,
   Share2,
   WifiOff,
-  X,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
@@ -123,33 +121,19 @@ import {
   syncReminderSchedule,
 } from "../lib/reminderNotifications";
 import { shoppingDayBanner } from "../lib/shoppingReminders";
-import {
-  rankHistory,
-  readItemHistory,
-  touchItemHistory,
-  type HistoryEntry,
-} from "../lib/itemHistory";
 import { notifyShareListChange } from "../lib/shareChangeNotifications";
 import {
-  addCustomList,
-  canAddCustomList,
   isOwnedCustomListId,
   isSharedImportListId,
   MAX_CUSTOM_LISTS,
-  normalizeUserLists,
-  readLocalUserLists,
-  removeCustomList,
-  renameCustomList,
-  writeLocalUserLists,
-  type UserList,
+  sharedOwnerIdFromListId,
 } from "../lib/userLists";
 import { usePreferences } from "../context/usePreferences";
-import ItemSuggestions from "./ItemSuggestions";
-
-interface ListTab {
-  id: string;
-  name: string;
-}
+import { useItemSuggestions } from "../hooks/useItemSuggestions";
+import { useOwnedLists } from "../hooks/useOwnedLists";
+import AddItemField from "./AddItemField";
+import ListAdminControls from "./ListAdminControls";
+import ListTabs from "./ListTabs";
 
 interface PendingDelete {
   item: ShoppingItem;
@@ -165,17 +149,10 @@ const ShoppingList: React.FC = () => {
   const online = useOnlineStatus();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [newItem, setNewItem] = useState("");
-  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>(() =>
-    readItemHistory(),
-  );
-  const [suggestOpen, setSuggestOpen] = useState(false);
-  const [suggestIndex, setSuggestIndex] = useState(-1);
-  const [customLists, setCustomLists] = useState<UserList[]>(readLocalUserLists);
-  const [creatingList, setCreatingList] = useState(false);
-  const [newListName, setNewListName] = useState("");
-  const [renamingList, setRenamingList] = useState(false);
-  const [renameListValue, setRenameListValue] = useState("");
-  const [activeListId, setActiveListId] = useState(PERSONAL_LIST_ID);
+  const history = useItemSuggestions(newItem);
+  const lists = useOwnedLists(user?.uid, items);
+  const { activeListId, setActiveListId, activeTabName, tabs: listTabs } =
+    lists;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
@@ -320,97 +297,7 @@ const ShoppingList: React.FC = () => {
     void loadShareState();
   }, [user]);
 
-  const persistCustomLists = async (next: UserList[]) => {
-    const normalized = normalizeUserLists(next);
-    setCustomLists(normalized);
-    writeLocalUserLists(normalized);
-    if (user && db) {
-      try {
-        await setDoc(
-          doc(db, "userSettings", user.uid),
-          { lists: normalized, updatedAt: serverTimestamp() },
-          { merge: true },
-        );
-      } catch (error) {
-        console.error("Save custom lists error:", error);
-      }
-    }
-  };
-
-  // Cloud list registry when signed in (local already applied on first paint).
-  useEffect(() => {
-    if (!user || !db) {
-      setCustomLists(readLocalUserLists());
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const snap = await getDoc(doc(db, "userSettings", user.uid));
-        if (cancelled || !snap.exists()) return;
-        const remote = normalizeUserLists(snap.data()?.lists);
-        // Prefer cloud when present; otherwise push local up.
-        if (remote.length > 0) {
-          setCustomLists(remote);
-          writeLocalUserLists(remote);
-        } else {
-          const local = readLocalUserLists();
-          if (local.length > 0) {
-            await setDoc(
-              doc(db, "userSettings", user.uid),
-              { lists: local, updatedAt: serverTimestamp() },
-              { merge: true },
-            );
-          }
-        }
-      } catch (error) {
-        console.error("Load custom lists error:", error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
-  const listTabs = useMemo<ListTab[]>(() => {
-    const sharedTabs = new Map<string, string>();
-    // Items whose listId fell out of the registry still need a tab, or they
-    // vanish forever with no way to delete them.
-    const orphanCustom = new Map<string, string>();
-
-    items.forEach((item) => {
-      const listId = getItemListId(item);
-      if (isSharedImportListId(listId)) {
-        sharedTabs.set(listId, getItemListName(item));
-      } else if (isOwnedCustomListId(listId)) {
-        orphanCustom.set(listId, getItemListName(item));
-      }
-    });
-
-    // Registry names win over stale listName on items.
-    const knownIds = new Set(customLists.map((list) => list.id));
-    const customTabs = [
-      ...customLists.map((list) => ({ id: list.id, name: list.name })),
-      ...Array.from(orphanCustom, ([id, name]) =>
-        knownIds.has(id) ? null : { id, name },
-      ).filter((tab): tab is ListTab => Boolean(tab)),
-    ];
-
-    return [
-      { id: PERSONAL_LIST_ID, name: PERSONAL_LIST_NAME },
-      ...customTabs,
-      ...Array.from(sharedTabs, ([id, name]) => ({ id, name })),
-    ];
-  }, [customLists, items]);
-
-  const showListTabs = customLists.length > 0 || listTabs.length > 1;
-  const canCreateList = canAddCustomList(customLists);
-
-  useEffect(() => {
-    if (!listTabs.some((tab) => tab.id === activeListId)) {
-      setActiveListId(PERSONAL_LIST_ID);
-    }
-  }, [activeListId, listTabs]);
+  const showListTabs = listTabs.length > 1;
 
   /** Owned list published to collaborators — always My List (keeps share simple). */
   const personalItems = useMemo(
@@ -759,7 +646,7 @@ const ShoppingList: React.FC = () => {
     };
 
     void importSharedList();
-  }, [importing, navigate, shareId, user]);
+  }, [importing, navigate, setActiveListId, shareId, user]);
 
   // Propagate a change made on an imported (shared) item back to the owner's
   // shared list document, so collaboration works the same whether you're
@@ -888,39 +775,20 @@ const ShoppingList: React.FC = () => {
     return currentListItems.find((item) => getDuplicateKey(item.text) === key);
   }, [currentListItems, preview.text]);
 
-  const suggestions = useMemo(
-    () => rankHistory(newItem, historyEntries),
-    [historyEntries, newItem],
-  );
-  const showSuggestions = suggestOpen && suggestions.length > 0;
-
-  const rememberItem = (item: {
+  /**
+   * Add what the customer typed or picked. Adding something already on the
+   * list bumps that row instead of creating a near-identical duplicate.
+   */
+  const commitAdd = async (input: {
     text: string;
+    quantity?: string;
     category?: string;
     note?: string;
   }) => {
-    setHistoryEntries(
-      touchItemHistory({
-        text: item.text,
-        category: item.category,
-        note: item.note,
-      }),
-    );
-  };
-
-  const pickSuggestion = async (entry: HistoryEntry) => {
-    // Add immediately with known aisle/note — fewer taps while shopping.
-    setSuggestOpen(false);
-    setSuggestIndex(-1);
-    setNewItem(entry.text);
-    // Defer to next tick so state settles, then submit via the same path.
-    // Build a synthetic add using the history text (no qty parse from chips).
     if (!user || !db) return;
-
-    const text = entry.text.trim();
+    const text = input.text.trim();
     if (!text) return;
-    const category = entry.category;
-    const note = entry.note;
+
     const key = getDuplicateKey(text);
     const existing = currentListItems.find(
       (item) => getDuplicateKey(item.text) === key,
@@ -928,127 +796,38 @@ const ShoppingList: React.FC = () => {
 
     try {
       setActionError("");
+
       if (existing) {
+        const nextQuantity = mergeQuantities(existing.quantity, input.quantity);
         await updateDoc(doc(db, "shoppingItems", existing.id), {
           completed: false,
-          ...(category && !existing.category ? { category } : {}),
-          ...(note && !existing.note ? { note } : {}),
+          quantity: nextQuantity ?? deleteField(),
+          ...(input.category && !existing.category
+            ? { category: input.category }
+            : {}),
+          ...(input.note && !existing.note ? { note: input.note } : {}),
         });
+
         if (existing.completed && existing.sharedFromUserId) {
           void propagateToSharedOwner(existing, "toggle", false);
         }
-        rememberItem({
+
+        history.remember({
           text: existing.text,
-          category: existing.category ?? category,
-          note: existing.note ?? note,
-        });
-        setNotice(`${existing.text} is already on your list.`);
-        setNewItem("");
-        return;
-      }
-
-      const activeTab = listTabs.find((tab) => tab.id === activeListId);
-      const sharedFromUserId = activeListId.startsWith("shared:")
-        ? activeListId.slice("shared:".length)
-        : undefined;
-      const sortOrder = nextTopSortOrder(
-        currentListItems.filter((item) => !item.completed),
-      );
-
-      await addDoc(collection(db, "shoppingItems"), {
-        text,
-        completed: false,
-        userId: user.uid,
-        ...(category ? { category } : {}),
-        ...(note ? { note } : {}),
-        listId: activeListId,
-        listName: activeTab?.name ?? PERSONAL_LIST_NAME,
-        ...(sharedFromUserId ? { sharedFromUserId } : {}),
-        sortOrder,
-        createdAt: serverTimestamp(),
-      });
-
-      if (sharedFromUserId) {
-        void propagateToSharedOwner(
-          {
-            id: "",
-            text,
-            completed: false,
-            userId: user.uid,
-            category,
-            note,
-            sharedFromUserId,
-          },
-          "add",
-        );
-      }
-
-      rememberItem({ text, category, note });
-      setNewItem("");
-    } catch (error) {
-      console.error("Add suggestion error:", error);
-      setActionError("Unable to add that item right now. Please try again.");
-    }
-  };
-
-  /**
-   * Add what the customer typed. Adding something already on the list bumps
-   * that row instead of creating a near-identical duplicate.
-   */
-  const addItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !db) return;
-
-    // Enter with a highlighted suggestion accepts it instead of free-text add.
-    if (showSuggestions && suggestIndex >= 0 && suggestions[suggestIndex]) {
-      await pickSuggestion(suggestions[suggestIndex]);
-      return;
-    }
-
-    const { text, quantity, category } = parseItemInput(newItem);
-    if (!text) return;
-
-    try {
-      setActionError("");
-      setSuggestOpen(false);
-      setSuggestIndex(-1);
-
-      if (duplicateItem) {
-        const nextQuantity = mergeQuantities(duplicateItem.quantity, quantity);
-        await updateDoc(doc(db, "shoppingItems", duplicateItem.id), {
-          completed: false,
-          quantity: nextQuantity ?? deleteField(),
-        });
-
-        // Un-checking counts as a toggle for the list owner.
-        if (duplicateItem.completed && duplicateItem.sharedFromUserId) {
-          void propagateToSharedOwner(duplicateItem, "toggle", false);
-        }
-
-        rememberItem({
-          text: duplicateItem.text,
-          category: duplicateItem.category ?? category,
-          note: duplicateItem.note,
+          category: existing.category ?? input.category,
+          note: existing.note ?? input.note,
         });
 
         setNotice(
           nextQuantity
-            ? `${duplicateItem.text} was already on your list — now ${formatQuantity(nextQuantity)}.`
-            : `${duplicateItem.text} is already on your list.`,
+            ? `${existing.text} was already on your list — now ${formatQuantity(nextQuantity)}.`
+            : `${existing.text} is already on your list.`,
         );
         setNewItem("");
         return;
       }
 
-      const activeTab = listTabs.find((tab) => tab.id === activeListId);
-
-      // When adding into an imported (shared) tab, carry the owner id so the new
-      // item behaves like other shared items (toggle/remove propagate too) and so
-      // we can push the addition back to the owner's shared list below.
-      const sharedFromUserId = activeListId.startsWith("shared:")
-        ? activeListId.slice("shared:".length)
-        : undefined;
-
+      const sharedFromUserId = sharedOwnerIdFromListId(activeListId);
       const sortOrder = nextTopSortOrder(
         currentListItems.filter((item) => !item.completed),
       );
@@ -1057,10 +836,11 @@ const ShoppingList: React.FC = () => {
         text,
         completed: false,
         userId: user.uid,
-        ...(quantity ? { quantity } : {}),
-        ...(category ? { category } : {}),
+        ...(input.quantity ? { quantity: input.quantity } : {}),
+        ...(input.category ? { category: input.category } : {}),
+        ...(input.note ? { note: input.note } : {}),
         listId: activeListId,
-        listName: activeTab?.name ?? PERSONAL_LIST_NAME,
+        listName: activeTabName,
         ...(sharedFromUserId ? { sharedFromUserId } : {}),
         sortOrder,
         createdAt: serverTimestamp(),
@@ -1073,15 +853,20 @@ const ShoppingList: React.FC = () => {
             text,
             completed: false,
             userId: user.uid,
-            quantity,
-            category,
+            quantity: input.quantity,
+            category: input.category,
+            note: input.note,
             sharedFromUserId,
           },
           "add",
         );
       }
 
-      rememberItem({ text, category });
+      history.remember({
+        text,
+        category: input.category,
+        note: input.note,
+      });
       setNewItem("");
     } catch (error) {
       console.error("Add item error:", error);
@@ -1101,7 +886,7 @@ const ShoppingList: React.FC = () => {
       await updateDoc(doc(db, "shoppingItems", id), { completed: !completed });
       // Checking off reinforces staples for typeahead.
       if (!completed && item) {
-        rememberItem({
+        history.remember({
           text: item.text,
           category: item.category,
           note: item.note,
@@ -1311,60 +1096,32 @@ const ShoppingList: React.FC = () => {
     onCancel: () => setEditingId(null),
   };
 
-  const commitNewList = async () => {
-    const result = addCustomList(customLists, newListName);
+  const commitNewList = async (name: string) => {
+    const result = await lists.createList(name);
     if ("error" in result) {
       setActionError(result.error);
       return;
     }
-    setCreatingList(false);
-    setNewListName("");
-    await persistCustomLists(result.lists);
-    setActiveListId(result.list.id);
     setNotice(`Created “${result.list.name}”.`);
   };
 
-  const commitRenameList = async () => {
-    if (!isOwnedCustomListId(activeListId)) {
-      setRenamingList(false);
-      return;
-    }
-    // Orphan tabs (items only, no registry entry) get healed into the registry.
-    const orphanName =
-      listTabs.find((tab) => tab.id === activeListId)?.name ?? "List";
-    const baseLists = customLists.some((list) => list.id === activeListId)
-      ? customLists
-      : [
-          ...customLists,
-          {
-            id: activeListId,
-            name: orphanName,
-            createdAt: Date.now(),
-          },
-        ];
-    const result = renameCustomList(baseLists, activeListId, renameListValue);
+  const commitRenameList = async (name: string) => {
+    const result = await lists.renameActive(name);
     if ("error" in result) {
       setActionError(result.error);
       return;
     }
-    const nextName = result.lists.find((l) => l.id === activeListId)?.name;
-    await persistCustomLists(result.lists);
-    setRenamingList(false);
-    setRenameListValue("");
-
-    // Keep item listName in sync for display/export paths.
-    if (db && nextName) {
+    if (db && result.name) {
       const firestore = db;
-      const toRename = items.filter(
-        (item) => getItemListId(item) === activeListId,
-      );
+      const listId = result.listId;
+      const toRename = items.filter((item) => getItemListId(item) === listId);
       try {
         await commitBatchOperations(
           firestore,
           toRename.map(
             (item) => (batch) =>
               batch.update(doc(firestore, "shoppingItems", item.id), {
-                listName: nextName,
+                listName: result.name,
               }),
           ),
         );
@@ -1375,8 +1132,8 @@ const ShoppingList: React.FC = () => {
   };
 
   const deleteActiveCustomList = async () => {
-    if (!isOwnedCustomListId(activeListId)) return;
     const listId = activeListId;
+    if (!isOwnedCustomListId(listId)) return;
     const toDelete = items.filter((item) => getItemListId(item) === listId);
 
     try {
@@ -1391,12 +1148,7 @@ const ShoppingList: React.FC = () => {
           ),
         );
       }
-      // Drop registry entry even if there were no items (or Firestore is offline
-      // after empties) so the tab disappears.
-      const nextLists = removeCustomList(customLists, listId);
-      // If this was an orphan tab (items only, no registry), nextLists is unchanged.
-      await persistCustomLists(nextLists);
-      setActiveListId(PERSONAL_LIST_ID);
+      await lists.removeActive();
       setNotice("List deleted.");
     } catch (error) {
       console.error("Delete custom list error:", error);
@@ -1991,8 +1743,6 @@ const ShoppingList: React.FC = () => {
     : 0;
   const statsLeft = isSearching ? activeCount : allActiveCount;
   const statsDone = isSearching ? doneCount : allDoneCount;
-  const activeTabName =
-    listTabs.find((tab) => tab.id === activeListId)?.name ?? PERSONAL_LIST_NAME;
   const modalOpen =
     shareOpen || settingsOpen || confirmAction !== null;
 
@@ -2136,118 +1886,27 @@ const ShoppingList: React.FC = () => {
           )}
         </div>
 
-        {/* One field: type to filter the list, Enter / + to add. */}
-        <form onSubmit={addItem} className="add-form">
-          <div className="add-primary-row">
-            <input
-              ref={addInputRef}
-              type="text"
-              className="add-input"
-              value={newItem}
-              onChange={(e) => {
-                setNewItem(e.target.value);
-                setSuggestOpen(true);
-                setSuggestIndex(-1);
-              }}
-              onFocus={() => setSuggestOpen(true)}
-              onBlur={() => {
-                // Delay so suggestion mousedown/click can run first.
-                window.setTimeout(() => setSuggestOpen(false), 120);
-              }}
-              onKeyDown={(event) => {
-                if (!showSuggestions) {
-                  if (event.key === "Escape" && newItem) {
-                    event.preventDefault();
-                    setNewItem("");
-                  }
-                  return;
-                }
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setSuggestIndex((i) =>
-                    i < suggestions.length - 1 ? i + 1 : 0,
-                  );
-                } else if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setSuggestIndex((i) =>
-                    i <= 0 ? suggestions.length - 1 : i - 1,
-                  );
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  setSuggestOpen(false);
-                  setSuggestIndex(-1);
-                }
-              }}
-              placeholder="Add or search…"
-              aria-label="Add or search items"
-              aria-describedby="add-hint"
-              role="combobox"
-              aria-expanded={showSuggestions}
-              aria-controls="item-suggestions"
-              aria-autocomplete="list"
-              aria-activedescendant={
-                showSuggestions && suggestIndex >= 0
-                  ? `item-suggestions-option-${suggestIndex}`
-                  : undefined
-              }
-              maxLength={MAX_ITEM_TEXT_LENGTH}
-              autoComplete="off"
-            />
-            {newItem.trim() && (
-              <button
-                type="button"
-                className="add-clear-btn"
-                onClick={() => {
-                  setNewItem("");
-                  setSuggestOpen(false);
-                  setSuggestIndex(-1);
-                }}
-                aria-label="Clear"
-                title="Clear"
-              >
-                <X size={16} />
-              </button>
-            )}
-            <button
-              type="submit"
-              className="add-btn"
-              title="Add item"
-              aria-label="Add item"
-              disabled={!preview.text && !(showSuggestions && suggestIndex >= 0)}
-            >
-              <Plus size={22} strokeWidth={2.5} />
-            </button>
-          </div>
-
-          <ItemSuggestions
-            id="item-suggestions"
-            open={showSuggestions}
-            suggestions={suggestions}
-            activeIndex={suggestIndex}
-            onHover={setSuggestIndex}
-            onPick={(entry) => {
-              void pickSuggestion(entry);
-            }}
-          />
-
-          <p
-            id="add-hint"
-            className={`add-hint ${interfacePrefs.addHints || isSearching ? "" : "is-pref-hidden"}`}
-            aria-live="polite"
-          >
-            {duplicateItem ? (
+        <AddItemField
+          listboxId="item-suggestions"
+          value={newItem}
+          onValueChange={setNewItem}
+          onCommit={commitAdd}
+          suggestions={history}
+          inputRef={addInputRef}
+          describedBy="add-hint"
+          hintHidden={!interfacePrefs.addHints && !isSearching}
+          hint={
+            duplicateItem ? (
               <>
                 <strong>{duplicateItem.text}</strong> is already here — adding
                 bumps the quantity.
               </>
             ) : isSearching && totalCount > 0 ? (
-              <>
-                <span className="add-hint-search">
-                  {filtered.length === 0
-                    ? "No matches — press + to add it"
-                    : `${filtered.length} match${filtered.length === 1 ? "" : "es"} · press + to add`}
-                </span>
-              </>
+              <span className="add-hint-search">
+                {filtered.length === 0
+                  ? "No matches — press + to add it"
+                  : `${filtered.length} match${filtered.length === 1 ? "" : "es"} · press + to add`}
+              </span>
             ) : interfacePrefs.addHints &&
               (preview.quantity || preview.category) ? (
               <>
@@ -2261,9 +1920,9 @@ const ShoppingList: React.FC = () => {
                   <span className="add-hint-chip">{preview.category}</span>
                 )}
               </>
-            ) : null}
-          </p>
-        </form>
+            ) : null
+          }
+        />
 
         <datalist id={CATEGORY_DATALIST_ID}>
           {categorySuggestions.map((category) => (
@@ -2271,131 +1930,23 @@ const ShoppingList: React.FC = () => {
           ))}
         </datalist>
 
-        {showListTabs && (
-          <div className="list-tabs" aria-label="Shopping lists">
-            {listTabs.map((tab) => (
-              <button
-                key={tab.id}
-                className={`list-tab ${activeListId === tab.id ? "active" : ""}`}
-                onClick={() => {
-                  setActiveListId(tab.id);
-                  setNewItem("");
-                  setCreatingList(false);
-                  setRenamingList(false);
-                }}
-                type="button"
-                aria-pressed={activeListId === tab.id}
-              >
-                {tab.name}
-              </button>
-            ))}
-            {creatingList ? (
-              <form
-                className="list-tab-create"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void commitNewList();
-                }}
-              >
-                <input
-                  className="list-tab-create-input"
-                  value={newListName}
-                  onChange={(event) => setNewListName(event.target.value)}
-                  placeholder="List name"
-                  aria-label="New list name"
-                  maxLength={40}
-                  autoFocus
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      setCreatingList(false);
-                      setNewListName("");
-                    }
-                  }}
-                />
-                <button type="submit" className="list-tab-create-save">
-                  Add
-                </button>
-              </form>
-            ) : (
-              <button
-                type="button"
-                className="list-tab list-tab-add"
-                onClick={() => {
-                  if (!canCreateList) {
-                    setActionError(
-                      `You can have up to ${MAX_CUSTOM_LISTS} custom lists.`,
-                    );
-                    return;
-                  }
-                  setCreatingList(true);
-                  setNewListName("");
-                  setRenamingList(false);
-                }}
-                aria-label={
-                  canCreateList
-                    ? "New list"
-                    : `Limit of ${MAX_CUSTOM_LISTS} custom lists reached`
-                }
-                title={
-                  canCreateList
-                    ? "New list"
-                    : `Limit of ${MAX_CUSTOM_LISTS} custom lists`
-                }
-                disabled={!canCreateList}
-              >
-                <Plus size={16} strokeWidth={2.5} />
-              </button>
-            )}
-          </div>
-        )}
-
-        {!showListTabs && (
-          <div className="list-tabs list-tabs-solo" aria-label="Shopping lists">
-            <button
-              type="button"
-              className="list-tab list-tab-add"
-              onClick={() => {
-                setCreatingList(true);
-                setNewListName("");
-              }}
-              aria-label="New list"
-              title="New list"
-            >
-              <Plus size={16} strokeWidth={2.5} />
-              <span>New list</span>
-            </button>
-            {creatingList && (
-              <form
-                className="list-tab-create"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void commitNewList();
-                }}
-              >
-                <input
-                  className="list-tab-create-input"
-                  value={newListName}
-                  onChange={(event) => setNewListName(event.target.value)}
-                  placeholder="List name"
-                  aria-label="New list name"
-                  maxLength={40}
-                  autoFocus
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      setCreatingList(false);
-                      setNewListName("");
-                    }
-                  }}
-                />
-                <button type="submit" className="list-tab-create-save">
-                  Add
-                </button>
-              </form>
-            )}
-          </div>
-        )}
+        <ListTabs
+          tabs={listTabs}
+          activeId={activeListId}
+          onSelect={(id) => {
+            setActiveListId(id);
+            setNewItem("");
+          }}
+          canCreate={lists.canCreate}
+          onCreate={(name) => {
+            void commitNewList(name);
+          }}
+          onCreateBlocked={() =>
+            setActionError(
+              `You can have up to ${MAX_CUSTOM_LISTS} custom lists.`,
+            )
+          }
+        />
 
         {/* Stats + list admin. Admin (rename/delete) must show even on empty
             custom lists — previously totalCount>0 hid Delete forever. */}
@@ -2452,77 +2003,22 @@ const ShoppingList: React.FC = () => {
                 </div>
               )}
 
-              <div className="stats-actions">
-                {allDoneCount > 0 && !isSearching && (
-                  <button
-                    className="clear-done-btn"
-                    onClick={() => setConfirmAction("clearCompleted")}
-                    type="button"
-                  >
-                    Clear done
-                  </button>
-                )}
-                {isSharedImportListId(activeListId) && (
-                  <button
-                    className="clear-done-btn"
-                    onClick={() => setConfirmAction("removeSharedList")}
-                    type="button"
-                  >
-                    Remove list
-                  </button>
-                )}
-                {isOwnedCustomListId(activeListId) && (
-                  <>
-                    {renamingList ? (
-                      <form
-                        className="list-rename-form"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          void commitRenameList();
-                        }}
-                      >
-                        <input
-                          className="list-rename-input"
-                          value={renameListValue}
-                          onChange={(event) =>
-                            setRenameListValue(event.target.value)
-                          }
-                          maxLength={40}
-                          aria-label="Rename list"
-                          autoFocus
-                          onKeyDown={(event) => {
-                            if (event.key === "Escape") {
-                              event.preventDefault();
-                              setRenamingList(false);
-                            }
-                          }}
-                        />
-                        <button type="submit" className="list-admin-btn">
-                          Save
-                        </button>
-                      </form>
-                    ) : (
-                      <button
-                        className="list-admin-btn"
-                        type="button"
-                        onClick={() => {
-                          setRenameListValue(activeTabName);
-                          setRenamingList(true);
-                        }}
-                      >
-                        Rename
-                      </button>
-                    )}
-                    <button
-                      className="clear-done-btn"
-                      type="button"
-                      onClick={() => setConfirmAction("deleteCustomList")}
-                    >
-                      Delete list
-                    </button>
-                  </>
-                )}
-              </div>
+              <ListAdminControls
+                key={activeListId}
+                listId={activeListId}
+                listName={activeTabName}
+                isOwnedCustom={isOwnedCustomListId(activeListId)}
+                isSharedImport={isSharedImportListId(activeListId)}
+                showClearDone={allDoneCount > 0 && !isSearching}
+                onClearDone={() => setConfirmAction("clearCompleted")}
+                onRename={(name) => {
+                  void commitRenameList(name);
+                }}
+                onRequestDelete={() => setConfirmAction("deleteCustomList")}
+                onRequestRemoveShared={() =>
+                  setConfirmAction("removeSharedList")
+                }
+              />
             </div>
             {totalCount > 0 && !isSearching && interfacePrefs.progressBar && (
               <div

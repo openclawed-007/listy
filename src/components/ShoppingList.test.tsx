@@ -15,6 +15,7 @@ let autoDocId = 0;
 let snapshotDocs: MockDoc[] = [];
 let queryDocs: MockDoc[] = [];
 let sharedSnapshots = new Map<string, Record<string, unknown>>();
+let userSettingsSnap: Record<string, unknown> | undefined;
 
 const {
   mockDb,
@@ -136,6 +137,7 @@ beforeEach(() => {
   snapshotDocs = [];
   queryDocs = [];
   sharedSnapshots = new Map();
+  userSettingsSnap = undefined;
   vi.clearAllMocks();
   localStorage.clear();
 
@@ -146,6 +148,14 @@ beforeEach(() => {
       next({
         exists: () => Boolean(data),
         data: () => data,
+      });
+      return vi.fn();
+    }
+
+    if (target?.path?.startsWith("userSettings/")) {
+      next({
+        exists: () => userSettingsSnap !== undefined,
+        data: () => userSettingsSnap,
       });
       return vi.fn();
     }
@@ -727,5 +737,87 @@ describe("ShoppingList smart add field", () => {
       name: "1 of 2 items picked up",
     });
     expect(progress).toHaveAttribute("aria-valuenow", "50");
+  });
+});
+
+describe("ShoppingList lists and typeahead", () => {
+  it("creates a custom list and persists the registry", async () => {
+    renderShoppingList();
+
+    await userEvent.click(screen.getByRole("button", { name: "New list" }));
+    await userEvent.type(screen.getByLabelText("New list name"), "Costco");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockSetDoc).toHaveBeenCalledWith(
+        { path: "userSettings/owner-uid" },
+        expect.objectContaining({
+          lists: [
+            expect.objectContaining({
+              id: expect.stringMatching(/^list_/),
+              name: "Costco",
+            }),
+          ],
+        }),
+        { merge: true },
+      );
+    });
+    expect(screen.getByRole("heading", { name: "Costco" })).toBeInTheDocument();
+  });
+
+  it("still shows a leftover custom list that is only on items", async () => {
+    snapshotDocs = [
+      makeDoc("custom-1", {
+        text: "Rotisserie chicken",
+        completed: false,
+        userId: user.uid,
+        listId: "list_orphan",
+        listName: "Costco",
+      }),
+    ];
+
+    renderShoppingList();
+
+    expect(
+      await screen.findByRole("button", { name: "Costco" }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Costco" }));
+    expect(screen.getByText("Rotisserie chicken")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete list" }),
+    ).toBeInTheDocument();
+  });
+
+  it("adds a typeahead pick through the same write path as typed adds", async () => {
+    localStorage.setItem(
+      "cartlink:item-history:v1",
+      JSON.stringify([
+        {
+          text: "Almond milk",
+          category: "Dairy & Eggs",
+          count: 4,
+          lastUsedAt: Date.now(),
+        },
+      ]),
+    );
+
+    renderShoppingList();
+    const input = await screen.findByLabelText("Add or search items");
+    await userEvent.type(input, "alm");
+
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Almond milk/i }),
+    );
+
+    await waitFor(() => {
+      expect(mockAddDoc).toHaveBeenCalledWith(
+        { path: "shoppingItems", type: "collection" },
+        expect.objectContaining({
+          text: "Almond milk",
+          category: "Dairy & Eggs",
+          listId: "personal",
+        }),
+      );
+    });
   });
 });

@@ -170,10 +170,30 @@ service cloud.firestore {
           && value.displayScale <= 130));
     }
 
+    function isUserListEntryValid(entry) {
+      return entry is map
+        && entry.id is string
+        && entry.id.size() > 5
+        && entry.id.size() <= 80
+        && entry.id.matches('^list_.+')
+        && entry.name is string
+        && entry.name.size() > 0
+        && entry.name.size() <= 40
+        && (!('createdAt' in entry) || entry.createdAt is number);
+    }
+
+    function userListsValidFrom(value, index) {
+      return index >= value.size()
+        || (
+          isUserListEntryValid(value[index])
+          && userListsValidFrom(value, index + 1)
+        );
+    }
+
     function isUserListsValid(value) {
       return value is list
-        && value.size() <= 8
-        && value.size() >= 0;
+        && value.size() <= 16
+        && userListsValidFrom(value, 0);
     }
 
     match /userSettings/{uid} {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Bell, BellOff, X } from "lucide-react";
 import { useDialogFocus } from "../hooks/useDialogFocus";
 import { usePreferences } from "../context/usePreferences";
@@ -9,7 +9,6 @@ import {
   syncReminderSchedule,
 } from "../lib/reminderNotifications";
 import {
-  DEFAULT_REMINDER_SETTINGS,
   formatDaysLabel,
   formatTimeLabel,
   nextReminderPreview,
@@ -21,14 +20,15 @@ import {
   type ShoppingReminderSettings,
 } from "../lib/shoppingReminders";
 import {
-  allInterfaceOff,
-  allInterfaceOn,
-  countEnabledInterfacePrefs,
+  countEnabledPrefGroup,
   DISPLAY_SCALE_OPTIONS,
-  INTERFACE_PREF_OPTIONS,
+  LOOK_PREF_OPTIONS,
   normalizeInterfacePreferences,
+  setPrefGroup,
+  TIPS_PREF_OPTIONS,
   type InterfacePreferences,
   type InterfaceToggleKey,
+  type PrefOption,
 } from "../lib/userPreferences";
 
 interface SettingsDialogProps {
@@ -36,13 +36,67 @@ interface SettingsDialogProps {
   onClose: () => void;
 }
 
-type SettingsTab = "reminders" | "interface";
+type SettingsTab = "look" | "reminders";
 
 const WHEN_OPTIONS: Array<{ id: RemindWhen; label: string }> = [
-  { id: "day_of", label: "Day of" },
+  { id: "day_of", label: "Same day" },
   { id: "day_before", label: "Day before" },
   { id: "both", label: "Both" },
 ];
+
+const SAVE_DEBOUNCE_MS = 400;
+
+function PrefSwitch({
+  label,
+  description,
+  on,
+  onToggle,
+}: {
+  label: string;
+  description: string;
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label className="settings-pref-row">
+      <span className="settings-toggle-copy">
+        <strong>{label}</strong>
+        <span>{description}</span>
+      </span>
+      <button
+        type="button"
+        className={`settings-switch ${on ? "is-on" : ""}`}
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        onClick={onToggle}
+      >
+        <span className="settings-switch-knob" />
+      </button>
+    </label>
+  );
+}
+
+function PrefGroup({ options, prefs, onToggle }: {
+  options: PrefOption[];
+  prefs: InterfacePreferences;
+  onToggle: (id: InterfaceToggleKey) => void;
+}) {
+  return (
+    <ul className="settings-pref-list">
+      {options.map((option) => (
+        <li key={option.id}>
+          <PrefSwitch
+            label={option.label}
+            description={option.description}
+            on={prefs[option.id]}
+            onToggle={() => onToggle(option.id)}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
   const dialogRef = useDialogFocus<HTMLDivElement>();
@@ -53,57 +107,40 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
     refreshFromCloud,
   } = usePreferences();
 
-  const [tab, setTab] = useState<SettingsTab>("reminders");
+  const [tab, setTab] = useState<SettingsTab>("look");
   const [reminders, setReminders] =
     useState<ShoppingReminderSettings>(storedReminders);
   const [iface, setIface] = useState<InterfacePreferences>(interfacePrefs);
   const [permission, setPermission] = useState(notificationPermission);
-  const [status, setStatus] = useState("");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle",
+  );
   const [notifStatus, setNotifStatus] = useState("");
   const [notifBusy, setNotifBusy] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+
+  const dirtyRef = useRef(false);
+  const saveTimerRef = useRef<number | undefined>(undefined);
+  const persistSeq = useRef(0);
+  const pendingRef = useRef({ iface, reminders });
+  pendingRef.current = { iface, reminders };
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       await refreshFromCloud();
-      if (cancelled) return;
-      setLoaded(true);
+      if (cancelled || dirtyRef.current) return;
     })();
     return () => {
       cancelled = true;
     };
   }, [refreshFromCloud]);
 
-  // Keep form in sync after cloud refresh settles.
   useEffect(() => {
-    if (!loaded) return;
+    if (dirtyRef.current) return;
     setReminders(storedReminders);
     setIface(interfacePrefs);
-  }, [loaded, storedReminders, interfacePrefs]);
+  }, [interfacePrefs, storedReminders]);
 
-  const preview = useMemo(() => nextReminderPreview(reminders), [reminders]);
-  const block = notificationBlockReason();
-  const enabledCount = countEnabledInterfacePrefs(iface);
-
-  const toggleDay = (day: number) => {
-    setReminders((current) => {
-      const has = current.days.includes(day);
-      const days = has
-        ? current.days.filter((entry) => entry !== day)
-        : [...current.days, day].sort((a, b) => a - b);
-      return { ...current, days };
-    });
-  };
-
-  const toggleIface = (id: InterfaceToggleKey) => {
-    setIface((current) => ({ ...current, [id]: !current[id] }));
-  };
-
-  // Live preview: apply the picked scale immediately so the effect is visible
-  // behind the dialog. Reverts to the saved value if the dialog closes
-  // without saving.
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--ui-scale",
@@ -111,100 +148,161 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
     );
   }, [iface.displayScale]);
 
-  const savedScale = interfacePrefs.displayScale;
-  useEffect(
-    () => () => {
-      document.documentElement.style.setProperty(
-        "--ui-scale",
-        String(savedScale / 100),
-      );
-    },
-    [savedScale],
-  );
+  const preview = useMemo(() => nextReminderPreview(reminders), [reminders]);
+  const block = notificationBlockReason();
+  const tipsOn = countEnabledPrefGroup(iface, TIPS_PREF_OPTIONS);
 
-  const handleSave = async () => {
-    setSaving(true);
-    setStatus("");
+  const commit = async (
+    nextIface: InterfacePreferences,
+    nextReminders: ShoppingReminderSettings,
+    options: { requestReminderPermission?: boolean; requestSharePermission?: boolean } = {},
+  ) => {
+    const seq = ++persistSeq.current;
+    setSaveState("saving");
     try {
-      let nextReminders = normalizeReminderSettings(reminders);
-      const nextIface = normalizeInterfacePreferences(iface);
+      let remindersToSave = normalizeReminderSettings(nextReminders);
+      const ifaceToSave = normalizeInterfacePreferences(nextIface);
 
-      if (nextReminders.enabled) {
-        if (nextReminders.days.length === 0) {
-          setTab("reminders");
-          setStatus("Pick at least one shopping day.");
-          setSaving(false);
-          return;
-        }
-
-        const result = await enableRemindersWithPermission(nextReminders);
-        nextReminders = result.settings;
-        setPermission(result.permission);
-        setReminders(nextReminders);
-
-        await persistUserSettings({
-          interface: nextIface,
-          shoppingReminders: nextReminders,
-        });
-        await syncReminderSchedule(nextReminders);
-
-        const reason = notificationBlockReason();
-        if (reason === "insecure_context") {
-          setStatus(
-            "Saved. OS alerts need HTTPS or localhost — the in-app banner still works if enabled.",
-          );
-        } else if (result.permission === "denied") {
-          setStatus(
-            "Saved. Notifications are blocked for this site — the in-app banner still works if enabled.",
-          );
-        } else if (result.permission === "unsupported") {
-          setStatus("Saved. System alerts unavailable; preferences kept.");
-        } else if (result.mode === "triggers") {
-          setStatus(
-            `Saved. ${result.scheduled} reminder${result.scheduled === 1 ? "" : "s"} scheduled.`,
-          );
-        } else {
-          setStatus("Saved.");
-        }
-        if (nextIface.shareChangeNotices) {
-          const { ensureShareNotifyPermission } = await import(
-            "../lib/shareChangeNotifications"
-          );
-          await ensureShareNotifyPermission();
-        }
-      } else {
-        await persistUserSettings({
-          interface: nextIface,
-          shoppingReminders: nextReminders,
-        });
-        await syncReminderSchedule(nextReminders);
-        if (nextIface.shareChangeNotices) {
-          const { ensureShareNotifyPermission } = await import(
-            "../lib/shareChangeNotifications"
-          );
-          const ok = await ensureShareNotifyPermission();
-          setStatus(
-            ok
-              ? "Saved."
-              : "Saved. Allow notifications for this site to get shared-list alerts.",
-          );
-        } else {
-          setStatus("Saved.");
-        }
+      if (remindersToSave.enabled && remindersToSave.days.length === 0) {
+        remindersToSave = {
+          ...remindersToSave,
+          days: [new Date().getDay()],
+        };
+        setReminders(remindersToSave);
       }
+
+      if (options.requestReminderPermission && remindersToSave.enabled) {
+        const result = await enableRemindersWithPermission(remindersToSave);
+        if (seq !== persistSeq.current) return;
+        remindersToSave = result.settings;
+        setPermission(result.permission);
+        setReminders(remindersToSave);
+      }
+
+      await persistUserSettings({
+        interface: ifaceToSave,
+        shoppingReminders: remindersToSave,
+      });
+      await syncReminderSchedule(remindersToSave);
+
+      if (options.requestSharePermission && ifaceToSave.shareChangeNotices) {
+        const { ensureShareNotifyPermission } = await import(
+          "../lib/shareChangeNotifications"
+        );
+        await ensureShareNotifyPermission();
+        setPermission(notificationPermission());
+      }
+
+      if (seq !== persistSeq.current) return;
+      setSaveState("saved");
     } catch (error) {
       console.error("Save settings error:", error);
-      setStatus("Couldn't save settings. Try again.");
-    } finally {
-      setSaving(false);
+      if (seq !== persistSeq.current) return;
+      setSaveState("error");
     }
   };
 
-  const ready = !reminders.enabled || reminders.days.length > 0;
-
-  const refreshPermission = () => {
-    setPermission(notificationPermission());
+  const queueSave = (
+    nextIface: InterfacePreferences,
+    nextReminders: ShoppingReminderSettings,
+    mode: "now" | "debounce" = "now",
+    options?: Parameters<typeof commit>[2],
+  ) => {
+    dirtyRef.current = true;
+    pendingRef.current = { iface: nextIface, reminders: nextReminders };
+    window.clearTimeout(saveTimerRef.current);
+    if (mode === "now") {
+      void commit(nextIface, nextReminders, options);
+      return;
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      const pending = pendingRef.current;
+      void commit(pending.iface, pending.reminders, options);
+    }, SAVE_DEBOUNCE_MS);
   };
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(saveTimerRef.current);
+      if (!dirtyRef.current) return;
+      const pending = pendingRef.current;
+      void persistUserSettings({
+        interface: normalizeInterfacePreferences(pending.iface),
+        shoppingReminders: normalizeReminderSettings(pending.reminders),
+      });
+    },
+    [persistUserSettings],
+  );
+
+  const updateReminders = (
+    next: ShoppingReminderSettings,
+    mode: "now" | "debounce" = "now",
+    options?: Parameters<typeof commit>[2],
+  ) => {
+    setReminders(next);
+    queueSave(iface, next, mode, options);
+  };
+
+  const updateIface = (
+    next: InterfacePreferences,
+    options?: Parameters<typeof commit>[2],
+  ) => {
+    setIface(next);
+    queueSave(next, reminders, "now", options);
+  };
+
+  const toggleDay = (day: number) => {
+    const has = reminders.days.includes(day);
+    if (has && reminders.days.length === 1) return;
+    const days = has
+      ? reminders.days.filter((entry) => entry !== day)
+      : [...reminders.days, day].sort((a, b) => a - b);
+    updateReminders({ ...reminders, days });
+  };
+
+  const toggleReminders = () => {
+    const enabled = !reminders.enabled;
+    const days =
+      enabled && reminders.days.length === 0
+        ? [new Date().getDay()]
+        : reminders.days;
+    updateReminders(
+      { ...reminders, enabled, days },
+      "now",
+      enabled ? { requestReminderPermission: true } : undefined,
+    );
+  };
+
+  const permissionCopy = (() => {
+    if (block === "granted" || permission === "granted") {
+      return {
+        ok: true,
+        text: "Browser notifications allowed on this device.",
+      };
+    }
+    if (block === "insecure_context") {
+      return {
+        ok: false,
+        text: "This page is HTTP on a network address. System alerts need HTTPS or localhost.",
+      };
+    }
+    if (block === "denied" || permission === "denied") {
+      return {
+        ok: false,
+        text: "Notifications blocked for this site. Allow them in browser settings.",
+      };
+    }
+    if (block === "unsupported" || permission === "unsupported") {
+      return {
+        ok: false,
+        text: "This browser doesn’t support system notifications.",
+      };
+    }
+    return {
+      ok: false,
+      text: "Allow notifications if you want shopping nudges or shared-list alerts.",
+    };
+  })();
 
   const handleAllowNotifications = async () => {
     setNotifBusy(true);
@@ -238,7 +336,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
     setNotifStatus("");
     try {
       const result = await sendTestNotification();
-      refreshPermission();
+      setPermission(notificationPermission());
       if (result.ok) {
         setNotifStatus("Test notification sent — check your device.");
         return;
@@ -263,36 +361,14 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
     }
   };
 
-  const permissionCopy = (() => {
-    if (block === "granted" || permission === "granted") {
-      return {
-        ok: true,
-        text: "Browser notifications allowed on this device.",
-      };
-    }
-    if (block === "insecure_context") {
-      return {
-        ok: false,
-        text: "This page is HTTP on a network address. System alerts need HTTPS or localhost.",
-      };
-    }
-    if (block === "denied" || permission === "denied") {
-      return {
-        ok: false,
-        text: "Notifications blocked for this site. Allow them in browser settings.",
-      };
-    }
-    if (block === "unsupported" || permission === "unsupported") {
-      return {
-        ok: false,
-        text: "This browser doesn’t support system notifications.",
-      };
-    }
-    return {
-      ok: false,
-      text: "We’ll ask for notification permission when you save with reminders on.",
-    };
-  })();
+  const saveLabel =
+    saveState === "saving"
+      ? "Saving…"
+      : saveState === "error"
+        ? "Couldn’t save. Try again."
+        : saveState === "saved"
+          ? "Saved on this device. Syncs when signed in."
+          : "Changes save as you go, and sync when signed in.";
 
   return (
     <div
@@ -312,7 +388,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
         <header className="settings-sheet-header">
           <div className="settings-sheet-heading">
             <h2 id="settings-title">Settings</h2>
-            <p>Reminders & how the app looks</p>
+            <p>How the list looks, and when to nudge you</p>
           </div>
           <button
             type="button"
@@ -328,370 +404,353 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
           <button
             type="button"
             role="tab"
+            aria-selected={tab === "look"}
+            className={`settings-tab ${tab === "look" ? "active" : ""}`}
+            onClick={() => setTab("look")}
+          >
+            Look
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={tab === "reminders"}
             className={`settings-tab ${tab === "reminders" ? "active" : ""}`}
             onClick={() => setTab("reminders")}
           >
             Reminders
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "interface"}
-            className={`settings-tab ${tab === "interface" ? "active" : ""}`}
-            onClick={() => setTab("interface")}
-          >
-            Interface
-          </button>
         </div>
 
-        {!loaded ? (
-          <div className="settings-loading" aria-busy="true">
-            <div className="loading-spinner" />
-          </div>
-        ) : (
-          <>
-            <div className="settings-sheet-body">
-              {tab === "reminders" ? (
-                <>
-                  <section className="settings-card">
-                    <div className="settings-toggle-row">
-                      <span className="settings-toggle-copy">
-                        <strong>Shopping reminders</strong>
-                        <span>
-                          Nudge you before or on the days you usually shop.
-                        </span>
-                      </span>
+        <div className="settings-sheet-body">
+          {tab === "look" ? (
+            <>
+              <section className="settings-card">
+                <div className="settings-toggle-row">
+                  <span className="settings-toggle-copy">
+                    <strong>Size on big screens</strong>
+                    <span>
+                      Phones and tablets stay compact. This only changes
+                      desktop.
+                    </span>
+                  </span>
+                </div>
+                <div
+                  className="settings-segment is-four"
+                  role="group"
+                  aria-label="Display scale"
+                >
+                  {DISPLAY_SCALE_OPTIONS.map((option) => {
+                    const active = iface.displayScale === option.value;
+                    return (
                       <button
+                        key={option.value}
                         type="button"
-                        className={`settings-switch ${reminders.enabled ? "is-on" : ""}`}
-                        role="switch"
-                        aria-checked={reminders.enabled}
+                        className={`settings-segment-btn ${active ? "active" : ""}`}
+                        aria-pressed={active}
                         onClick={() =>
-                          setReminders((current) => ({
-                            ...current,
-                            enabled: !current.enabled,
-                          }))
+                          updateIface({
+                            ...iface,
+                            displayScale: option.value,
+                          })
                         }
                       >
-                        <span className="settings-switch-knob" />
+                        {option.label}
                       </button>
-                    </div>
-                  </section>
+                    );
+                  })}
+                </div>
+              </section>
 
-                  <section
-                    className={`settings-card ${reminders.enabled ? "" : "is-disabled"}`}
-                    aria-disabled={!reminders.enabled}
+              <section className="settings-card settings-card-list">
+                <h3 className="settings-card-title">On the list</h3>
+                <PrefGroup
+                  options={LOOK_PREF_OPTIONS}
+                  prefs={iface}
+                  onToggle={(id) =>
+                    updateIface({ ...iface, [id]: !iface[id] })
+                  }
+                />
+              </section>
+
+              <section className="settings-card settings-card-list">
+                <div className="settings-toggle-row">
+                  <span className="settings-toggle-copy">
+                    <strong>Tips</strong>
+                    <span>Turn these off once you know the app.</span>
+                  </span>
+                </div>
+                <div className="settings-preset-row">
+                  <button
+                    type="button"
+                    className="settings-preset-btn"
+                    onClick={() =>
+                      updateIface(setPrefGroup(iface, TIPS_PREF_OPTIONS, true))
+                    }
                   >
-                    <h3 className="settings-card-title">Schedule</h3>
-
-                    <div className="settings-block">
-                      <p className="settings-label">Days you shop</p>
-                      <div
-                        className="settings-day-grid"
-                        role="group"
-                        aria-label="Shopping days"
-                      >
-                        {WEEKDAY_LABELS.map((entry) => {
-                          const active = reminders.days.includes(entry.day);
-                          return (
-                            <button
-                              key={entry.day}
-                              type="button"
-                              className={`settings-day-chip ${active ? "active" : ""}`}
-                              aria-pressed={active}
-                              disabled={!reminders.enabled}
-                              onClick={() => toggleDay(entry.day)}
-                            >
-                              {entry.short}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="settings-field-row">
-                      <label className="settings-field">
-                        <span>Usual shop time</span>
-                        <input
-                          type="time"
-                          value={reminders.shopTime}
-                          disabled={!reminders.enabled}
-                          onChange={(event) =>
-                            setReminders((current) => ({
-                              ...current,
-                              shopTime: event.target.value || current.shopTime,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="settings-field">
-                        <span>Remind me at</span>
-                        <input
-                          type="time"
-                          value={reminders.notifyTime}
-                          disabled={!reminders.enabled}
-                          onChange={(event) =>
-                            setReminders((current) => ({
-                              ...current,
-                              notifyTime:
-                                event.target.value || current.notifyTime,
-                            }))
-                          }
-                        />
-                      </label>
-                    </div>
-                  </section>
-
-                  <section
-                    className={`settings-card ${reminders.enabled ? "" : "is-disabled"}`}
-                    aria-disabled={!reminders.enabled}
+                    Show all
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-preset-btn"
+                    onClick={() =>
+                      updateIface(setPrefGroup(iface, TIPS_PREF_OPTIONS, false))
+                    }
                   >
-                    <h3 className="settings-card-title">Notify</h3>
-                    <p className="settings-label">
-                      When relative to shopping day
-                    </p>
-                    <div
-                      className="settings-segment"
-                      role="group"
-                      aria-label="When to notify"
-                    >
-                      {WHEN_OPTIONS.map((option) => {
-                        const active = reminders.when === option.id;
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            className={`settings-segment-btn ${active ? "active" : ""}`}
-                            aria-pressed={active}
-                            disabled={!reminders.enabled}
-                            onClick={() =>
-                              setReminders((current) => ({
-                                ...current,
-                                when: option.id,
-                              }))
-                            }
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    Hide all
+                  </button>
+                  <span className="settings-preset-count">
+                    {tipsOn} of {TIPS_PREF_OPTIONS.length} on
+                  </span>
+                </div>
+                <PrefGroup
+                  options={TIPS_PREF_OPTIONS}
+                  prefs={iface}
+                  onToggle={(id) =>
+                    updateIface({ ...iface, [id]: !iface[id] })
+                  }
+                />
+              </section>
 
-                    <div
-                      className={`settings-permission ${permissionCopy.ok ? "is-ok" : ""}`}
-                      role="status"
-                    >
-                      {permissionCopy.ok ? (
-                        <Bell size={15} />
-                      ) : (
-                        <BellOff size={15} />
-                      )}
-                      <span>{permissionCopy.text}</span>
-                    </div>
-
-                    <div className="settings-notif-actions">
-                      <button
-                        type="button"
-                        className="settings-notif-btn"
-                        disabled={notifBusy}
-                        onClick={() => void handleAllowNotifications()}
-                      >
-                        <Bell size={14} strokeWidth={2.25} />
-                        Allow notifications
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-notif-btn is-secondary"
-                        disabled={notifBusy}
-                        onClick={() => void handleTestNotification()}
-                      >
-                        Send test
-                      </button>
-                    </div>
-                    {notifStatus && (
-                      <p className="settings-notif-status" role="status">
-                        {notifStatus}
-                      </p>
-                    )}
-
-                    {reminders.enabled &&
-                      reminders.days.length > 0 &&
-                      preview && (
-                        <p className="settings-preview">
-                          <strong>Next</strong>
-                          <span>
-                            {preview.title} ·{" "}
-                            {new Date(preview.at).toLocaleString(undefined, {
-                              weekday: "short",
-                              month: "short",
-                              day: "numeric",
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                          <span className="settings-preview-sub">
-                            {formatDaysLabel(reminders.days)} · shop around{" "}
-                            {formatTimeLabel(reminders.shopTime)}
-                          </span>
-                        </p>
-                      )}
-                  </section>
-                </>
-              ) : (
-                <>
-                  <section className="settings-card">
-                    <div className="settings-toggle-row">
-                      <span className="settings-toggle-copy">
-                        <strong>Display scale</strong>
-                        <span>
-                          How large the list appears on big screens. Phones
-                          and tablets keep the compact layout.
-                        </span>
-                      </span>
-                    </div>
-                    <div
-                      className="settings-segment is-four"
-                      role="group"
-                      aria-label="Display scale"
-                    >
-                      {DISPLAY_SCALE_OPTIONS.map((option) => {
-                        const active = iface.displayScale === option.value;
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            className={`settings-segment-btn ${active ? "active" : ""}`}
-                            aria-pressed={active}
-                            onClick={() =>
-                              setIface((current) => ({
-                                ...current,
-                                displayScale: option.value,
-                              }))
-                            }
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-
-                  <section className="settings-card">
-                    <div className="settings-toggle-row">
-                      <span className="settings-toggle-copy">
-                        <strong>Coaching & chrome</strong>
-                        <span>
-                          Turn off tips and helper text once you know the app.
-                          Core actions stay available.
-                        </span>
-                      </span>
-                    </div>
-                    <div className="settings-preset-row">
-                      <button
-                        type="button"
-                        className="settings-preset-btn"
-                        onClick={() =>
-                          setIface((current) => ({
-                            ...allInterfaceOn(),
-                            displayScale: current.displayScale,
-                          }))
-                        }
-                      >
-                        Show all
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-preset-btn"
-                        onClick={() =>
-                          setIface((current) => ({
-                            ...allInterfaceOff(),
-                            displayScale: current.displayScale,
-                          }))
-                        }
-                      >
-                        Hide all
-                      </button>
-                      <span className="settings-preset-count">
-                        {enabledCount} of {INTERFACE_PREF_OPTIONS.length} on
-                      </span>
-                    </div>
-                  </section>
-
-                  <section className="settings-card settings-card-list">
-                    <h3 className="settings-card-title">Options</h3>
-                    <ul className="settings-pref-list">
-                      {INTERFACE_PREF_OPTIONS.map((option) => {
-                        const on = iface[option.id];
-                        return (
-                          <li key={option.id}>
-                            <label className="settings-pref-row">
-                              <span className="settings-toggle-copy">
-                                <strong>{option.label}</strong>
-                                <span>{option.description}</span>
-                              </span>
-                              <button
-                                type="button"
-                                className={`settings-switch ${on ? "is-on" : ""}`}
-                                role="switch"
-                                aria-checked={on}
-                                aria-label={option.label}
-                                onClick={() => toggleIface(option.id)}
-                              >
-                                <span className="settings-switch-knob" />
-                              </button>
-                            </label>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </section>
-
-                  <p className="settings-inline-note">
-                    Errors, confirmations, and essential labels are never hidden.
-                  </p>
-                </>
-              )}
-
-              {status && (
-                <p className="settings-status" role="status">
-                  {status}
-                </p>
-              )}
-            </div>
-
-            <footer className="settings-sheet-footer">
-              <p className="settings-footnote">
-                Preferences save on this device
-                {tab === "reminders"
-                  ? " and sync when signed in. Install the app for the most reliable reminders."
-                  : " and sync when signed in."}
+              <p className="settings-inline-note">
+                Errors, confirmations, and essential labels stay visible.
               </p>
-              <div className="settings-actions">
-                <button
-                  type="button"
-                  className="settings-secondary-btn"
-                  onClick={onClose}
+            </>
+          ) : (
+            <>
+              <section className="settings-card">
+                <div className="settings-toggle-row">
+                  <span className="settings-toggle-copy">
+                    <strong>Shopping reminders</strong>
+                    <span>
+                      A nudge before or on the days you usually shop.
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className={`settings-switch ${reminders.enabled ? "is-on" : ""}`}
+                    role="switch"
+                    aria-checked={reminders.enabled}
+                    onClick={toggleReminders}
+                  >
+                    <span className="settings-switch-knob" />
+                  </button>
+                </div>
+              </section>
+
+              <section
+                className={`settings-card ${reminders.enabled ? "" : "is-disabled"}`}
+                aria-disabled={!reminders.enabled}
+              >
+                <h3 className="settings-card-title">When</h3>
+
+                <div className="settings-block">
+                  <p className="settings-label">Shopping days</p>
+                  <div
+                    className="settings-day-grid"
+                    role="group"
+                    aria-label="Shopping days"
+                  >
+                    {WEEKDAY_LABELS.map((entry) => {
+                      const active = reminders.days.includes(entry.day);
+                      return (
+                        <button
+                          key={entry.day}
+                          type="button"
+                          className={`settings-day-chip ${active ? "active" : ""}`}
+                          aria-pressed={active}
+                          disabled={!reminders.enabled}
+                          onClick={() => toggleDay(entry.day)}
+                        >
+                          {entry.short}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="settings-field-row">
+                  <label className="settings-field">
+                    <span>You shop around</span>
+                    <input
+                      type="time"
+                      value={reminders.shopTime}
+                      disabled={!reminders.enabled}
+                      onChange={(event) =>
+                        updateReminders(
+                          {
+                            ...reminders,
+                            shopTime: event.target.value || reminders.shopTime,
+                          },
+                          "debounce",
+                        )
+                      }
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Nudge at</span>
+                    <input
+                      type="time"
+                      value={reminders.notifyTime}
+                      disabled={!reminders.enabled}
+                      onChange={(event) =>
+                        updateReminders(
+                          {
+                            ...reminders,
+                            notifyTime:
+                              event.target.value || reminders.notifyTime,
+                          },
+                          "debounce",
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+
+                <p className="settings-label">Relative to shopping day</p>
+                <div
+                  className="settings-segment"
+                  role="group"
+                  aria-label="When to notify"
                 >
-                  Close
-                </button>
-                <button
-                  type="button"
-                  className="settings-primary-btn"
-                  disabled={saving || (tab === "reminders" && !ready)}
-                  onClick={() => void handleSave()}
+                  {WHEN_OPTIONS.map((option) => {
+                    const active = reminders.when === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`settings-segment-btn ${active ? "active" : ""}`}
+                        aria-pressed={active}
+                        disabled={!reminders.enabled}
+                        onClick={() =>
+                          updateReminders({ ...reminders, when: option.id })
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {reminders.enabled && reminders.days.length > 0 && preview && (
+                  <p className="settings-preview">
+                    <strong>Next</strong>
+                    <span>
+                      {preview.title} ·{" "}
+                      {new Date(preview.at).toLocaleString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    <span className="settings-preview-sub">
+                      {formatDaysLabel(reminders.days)} · shop around{" "}
+                      {formatTimeLabel(reminders.shopTime)}
+                    </span>
+                  </p>
+                )}
+              </section>
+
+              <section className="settings-card settings-card-list">
+                <h3 className="settings-card-title">Also notify</h3>
+                <ul className="settings-pref-list">
+                  <li>
+                    <PrefSwitch
+                      label="Shopping-day banner"
+                      description="In-app strip on days you usually shop."
+                      on={iface.shoppingBanners}
+                      onToggle={() =>
+                        updateIface({
+                          ...iface,
+                          shoppingBanners: !iface.shoppingBanners,
+                        })
+                      }
+                    />
+                  </li>
+                  <li>
+                    <PrefSwitch
+                      label="Shared list alerts"
+                      description="Notify when someone updates a list you share."
+                      on={iface.shareChangeNotices}
+                      onToggle={() =>
+                        updateIface(
+                          {
+                            ...iface,
+                            shareChangeNotices: !iface.shareChangeNotices,
+                          },
+                          !iface.shareChangeNotices
+                            ? { requestSharePermission: true }
+                            : undefined,
+                        )
+                      }
+                    />
+                  </li>
+                </ul>
+              </section>
+
+              <section className="settings-card">
+                <h3 className="settings-card-title">Notifications</h3>
+                <div
+                  className={`settings-permission ${permissionCopy.ok ? "is-ok" : ""}`}
+                  role="status"
                 >
-                  {saving ? "Saving…" : "Save"}
-                </button>
-              </div>
-            </footer>
-          </>
-        )}
+                  {permissionCopy.ok ? (
+                    <Bell size={15} />
+                  ) : (
+                    <BellOff size={15} />
+                  )}
+                  <span>{permissionCopy.text}</span>
+                </div>
+                <div className="settings-notif-actions">
+                  <button
+                    type="button"
+                    className="settings-notif-btn"
+                    disabled={notifBusy}
+                    onClick={() => void handleAllowNotifications()}
+                  >
+                    <Bell size={14} strokeWidth={2.25} />
+                    Allow notifications
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-notif-btn is-secondary"
+                    disabled={notifBusy}
+                    onClick={() => void handleTestNotification()}
+                  >
+                    Send test
+                  </button>
+                </div>
+                {notifStatus && (
+                  <p className="settings-notif-status" role="status">
+                    {notifStatus}
+                  </p>
+                )}
+              </section>
+            </>
+          )}
+        </div>
+
+        <footer className="settings-sheet-footer">
+          <p
+            className={`settings-footnote ${saveState === "error" ? "is-error" : ""}`}
+            role="status"
+          >
+            {saveLabel}
+          </p>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="settings-primary-btn"
+              onClick={onClose}
+            >
+              Done
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );
 };
 
 export default SettingsDialog;
-
-export { DEFAULT_REMINDER_SETTINGS };

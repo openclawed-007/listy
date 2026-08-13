@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  notifyShareListChange,
   resetShareNotifyDebounce,
   shouldNotifyShareChange,
 } from "./shareChangeNotifications";
@@ -43,48 +44,38 @@ describe("shareChangeNotifications", () => {
     ).toBe(false);
   });
 
-  it("debounces repeated notices for the same owner", () => {
+  it("debounces repeated notices for the same owner", async () => {
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => "hidden",
     });
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
 
-    // Force permission granted by stubbing Notification if present.
+    const shown: string[] = [];
     const original = globalThis.Notification;
+    class FakeNotification {
+      static permission = "granted";
+      constructor(title: string) {
+        shown.push(title);
+      }
+    }
     // @ts-expect-error test stub
-    globalThis.Notification = { permission: "granted" };
+    globalThis.Notification = FakeNotification;
 
     try {
-      const first = shouldNotifyShareChange({
+      const first = await notifyShareListChange({
         enabled: true,
         ownerId: "u1",
         changeCount: 1,
-        now: 10_000,
       });
-      // Without granted path through shoppingReminders, may still be false —
-      // assert debounce only when first would pass. Mark manually:
-      resetShareNotifyDebounce();
-
-      // Simulate first show by calling with granted notification API path.
-      // shoppingReminders.notificationPermission reads Notification.permission.
-      const a = shouldNotifyShareChange({
+      const second = await notifyShareListChange({
         enabled: true,
         ownerId: "u1",
         changeCount: 1,
-        now: 10_000,
       });
-      if (a) {
-        // Manually mark as shown the same way notify would.
-        // shouldNotifyShareChange does not mark — notify does. So debounce is
-        // tested via sequential should+manual map isn't available.
-        // Instead verify second immediate call still true until marked —
-        // debounce is inside notify. Keep unit test to preconditions.
-        expect(a).toBe(true);
-      } else {
-        // Environment may not expose Notification — preconditions still work.
-        expect(a).toBe(false);
-      }
+      expect(first).toBe(true);
+      expect(second).toBe(false);
+      expect(shown).toHaveLength(1);
     } finally {
       globalThis.Notification = original;
     }
