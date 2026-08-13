@@ -182,18 +182,25 @@ service cloud.firestore {
         && (!('createdAt' in entry) || entry.createdAt is number);
     }
 
-    function userListsValidFrom(value, index) {
-      return index >= value.size()
-        || (
-          isUserListEntryValid(value[index])
-          && userListsValidFrom(value, index + 1)
-        );
-    }
-
     function isUserListsValid(value) {
       return value is list
         && value.size() <= 16
-        && userListsValidFrom(value, 0);
+        && (value.size() < 1 || isUserListEntryValid(value[0]))
+        && (value.size() < 2 || isUserListEntryValid(value[1]))
+        && (value.size() < 3 || isUserListEntryValid(value[2]))
+        && (value.size() < 4 || isUserListEntryValid(value[3]))
+        && (value.size() < 5 || isUserListEntryValid(value[4]))
+        && (value.size() < 6 || isUserListEntryValid(value[5]))
+        && (value.size() < 7 || isUserListEntryValid(value[6]))
+        && (value.size() < 8 || isUserListEntryValid(value[7]))
+        && (value.size() < 9 || isUserListEntryValid(value[8]))
+        && (value.size() < 10 || isUserListEntryValid(value[9]))
+        && (value.size() < 11 || isUserListEntryValid(value[10]))
+        && (value.size() < 12 || isUserListEntryValid(value[11]))
+        && (value.size() < 13 || isUserListEntryValid(value[12]))
+        && (value.size() < 14 || isUserListEntryValid(value[13]))
+        && (value.size() < 15 || isUserListEntryValid(value[14]))
+        && (value.size() < 16 || isUserListEntryValid(value[15]));
     }
 
     match /userSettings/{uid} {
