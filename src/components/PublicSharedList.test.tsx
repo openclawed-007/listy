@@ -6,11 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthContext } from "../context/AuthContext.shared";
 import PublicSharedList from "./PublicSharedList";
 
-const { mockDb, mockOnSnapshot, mockUpdateDoc } = vi.hoisted(() => ({
-  mockDb: { app: "test" },
-  mockOnSnapshot: vi.fn(),
-  mockUpdateDoc: vi.fn(),
-}));
+const { mockDb, mockOnSnapshot, mockUpdateDoc, mockRunTransaction } = vi.hoisted(
+  () => ({
+    mockDb: { app: "test" },
+    mockOnSnapshot: vi.fn(),
+    mockUpdateDoc: vi.fn(),
+    mockRunTransaction: vi.fn(),
+  }),
+);
 
 vi.mock("../firebase", () => ({
   db: mockDb,
@@ -27,8 +30,12 @@ vi.mock("firebase/firestore", () => ({
   })),
   onSnapshot: mockOnSnapshot,
   updateDoc: mockUpdateDoc,
+  runTransaction: mockRunTransaction,
   serverTimestamp: vi.fn(() => "server-time"),
 }));
+
+let liveSharedDoc: Record<string, unknown> | null = null;
+let transactionQueue = Promise.resolve();
 
 const visitor = {
   uid: "visitor-uid",
@@ -38,10 +45,11 @@ const visitor = {
 } as User;
 
 function emitSharedSnapshot(data: Record<string, unknown> | null) {
+  liveSharedDoc = data;
   mockOnSnapshot.mockImplementation((_doc, next) => {
     next({
-      exists: () => Boolean(data),
-      data: () => data,
+      exists: () => Boolean(liveSharedDoc),
+      data: () => liveSharedDoc ?? undefined,
     });
     return vi.fn();
   });
@@ -73,7 +81,35 @@ function renderPublicSharedList(
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  liveSharedDoc = null;
+  transactionQueue = Promise.resolve();
   mockUpdateDoc.mockResolvedValue(undefined);
+  mockRunTransaction.mockImplementation((_db, updateFn) => {
+    const run = async () => {
+      const tx = {
+        get: async () => ({
+          exists: () => liveSharedDoc != null,
+          data: () => liveSharedDoc ?? undefined,
+        }),
+        update: (
+          ref: { path: string },
+          payload: Record<string, unknown>,
+        ) => {
+          if (liveSharedDoc) {
+            liveSharedDoc = { ...liveSharedDoc, ...payload };
+          }
+          return mockUpdateDoc(ref, payload);
+        },
+      };
+      return updateFn(tx);
+    };
+    const queued = transactionQueue.then(run, run);
+    transactionQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
+  });
 });
 
 describe("PublicSharedList", () => {

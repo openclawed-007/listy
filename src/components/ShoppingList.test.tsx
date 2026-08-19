@@ -86,6 +86,17 @@ vi.mock("firebase/firestore", () => ({
   serverTimestamp: vi.fn(() => "server-time"),
   setDoc: mockSetDoc,
   updateDoc: mockUpdateDoc,
+  runTransaction: vi.fn(async (_db: unknown, updateFn: (tx: {
+    get: typeof mockGetDoc;
+    set: typeof mockSetDoc;
+    update: typeof mockUpdateDoc;
+  }) => unknown) =>
+    updateFn({
+      get: mockGetDoc,
+      set: mockSetDoc,
+      update: mockUpdateDoc,
+    }),
+  ),
   where: vi.fn((field: string, operator: string, value: unknown) => ({
     field,
     operator,

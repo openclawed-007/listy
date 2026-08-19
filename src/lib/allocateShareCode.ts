@@ -29,9 +29,14 @@ export async function allocateShareCode(
       });
       return code;
     } catch (error) {
-      // Another owner claimed it, or a network blip — try a new code.
       const existing = await getDoc(ref);
-      if (existing.exists()) continue;
+      if (existing.exists()) {
+        // Network blip after a successful create: reuse our mapping instead
+        // of minting a second code that stop-sharing would never revoke.
+        const mappedOwner = existing.data()?.ownerId;
+        if (mappedOwner === ownerId) return code;
+        continue;
+      }
       throw error;
     }
   }

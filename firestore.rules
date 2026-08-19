@@ -3,7 +3,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function isShoppingItemValid(data) {
-      return data.userId is string
+      return data.keys().hasOnly([
+          'userId', 'text', 'completed', 'quantity', 'category', 'note',
+          'listId', 'listName', 'sharedFromUserId', 'sharedSourceItemId',
+          'important', 'sortOrder', 'createdAt'
+        ])
+        && data.userId is string
         && data.userId.size() > 0
         && data.userId.size() <= 128
         && data.text is string
@@ -33,7 +38,11 @@ service cloud.firestore {
       allow update: if request.auth != null
         && request.auth.uid == resource.data.userId
         && request.resource.data.userId == resource.data.userId
-        && isShoppingItemValid(request.resource.data);
+        && isShoppingItemValid(request.resource.data)
+        && (
+          !('createdAt' in resource.data)
+          || request.resource.data.createdAt == resource.data.createdAt
+        );
     }
 
     function arePermissionsValid(perms) {
@@ -44,13 +53,18 @@ service cloud.firestore {
     }
 
     function isSharedListValid(data, ownerId) {
-      return data.ownerId == ownerId
+      return data.keys().hasOnly([
+          'ownerId', 'ownerName', 'items', 'allowEdits', 'permissions',
+          'shareCode', 'updatedAt'
+        ])
+        && data.ownerId == ownerId
         && data.ownerName is string
         && data.ownerName.size() <= 120
         && data.items is list
         && data.items.size() <= 500
         && (!('allowEdits' in data) || data.allowEdits is bool)
         && (!('permissions' in data) || arePermissionsValid(data.permissions))
+        && (!('updatedAt' in data) || data.updatedAt is timestamp)
         // Short join code (8 chars, no 0/O/1/I/L). Optional for older docs.
         && (!('shareCode' in data) || (
           data.shareCode is string
@@ -66,7 +80,8 @@ service cloud.firestore {
       allow create: if request.auth != null
         && code.matches('^[2-9A-HJ-NP-Z]{8}$')
         && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.keys().hasOnly(['ownerId', 'createdAt']);
+        && request.resource.data.keys().hasOnly(['ownerId', 'createdAt'])
+        && request.resource.data.createdAt is timestamp;
       allow update: if false;
       allow delete: if request.auth != null
         && resource.data.ownerId == request.auth.uid;
@@ -126,6 +141,12 @@ service cloud.firestore {
             request.auth.uid == ownerId
             && request.resource.data.ownerId == ownerId
             && isSharedListValid(request.resource.data, ownerId)
+            // Once a join code is attached it stays put; rotating would leave
+            // the old shareCodes mapping live as a backdoor.
+            && (
+              !('shareCode' in resource.data)
+              || request.resource.data.shareCode == resource.data.shareCode
+            )
           )
           || (
             request.auth.uid != ownerId
@@ -145,11 +166,27 @@ service cloud.firestore {
     }
 
     // Per-user preferences (shopping reminders, interface). Owner-only.
+    function isWeekday(value) {
+      return value is int && value >= 0 && value <= 6;
+    }
+
+    function isDaysList(days) {
+      return days is list
+        && days.size() <= 7
+        && (days.size() < 1 || isWeekday(days[0]))
+        && (days.size() < 2 || isWeekday(days[1]))
+        && (days.size() < 3 || isWeekday(days[2]))
+        && (days.size() < 4 || isWeekday(days[3]))
+        && (days.size() < 5 || isWeekday(days[4]))
+        && (days.size() < 6 || isWeekday(days[5]))
+        && (days.size() < 7 || isWeekday(days[6]));
+    }
+
     function isShoppingRemindersValid(value) {
       return value is map
+        && value.keys().hasOnly(['enabled', 'days', 'shopTime', 'notifyTime', 'when'])
         && value.enabled is bool
-        && value.days is list
-        && value.days.size() <= 7
+        && isDaysList(value.days)
         && isTimeString(value.shopTime)
         && isTimeString(value.notifyTime)
         && isRemindWhen(value.when);
@@ -157,6 +194,11 @@ service cloud.firestore {
 
     function isInterfacePrefsValid(value) {
       return value is map
+        && value.keys().hasOnly([
+          'emptyTips', 'addHints', 'onboardingCopy', 'sortHints',
+          'shoppingBanners', 'progressBar', 'importantStars', 'brandLogo',
+          'shareChangeNotices', 'displayScale'
+        ])
         && (!('emptyTips' in value) || value.emptyTips is bool)
         && (!('addHints' in value) || value.addHints is bool)
         && (!('onboardingCopy' in value) || value.onboardingCopy is bool)
@@ -208,6 +250,11 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow create, update: if request.auth != null
         && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'shoppingReminders', 'interface', 'lists', 'updatedAt'
+        ])
+        && (!('updatedAt' in request.resource.data)
+          || request.resource.data.updatedAt is timestamp)
         && (!('shoppingReminders' in request.resource.data)
           || isShoppingRemindersValid(request.resource.data.shoppingReminders))
         && (!('interface' in request.resource.data)

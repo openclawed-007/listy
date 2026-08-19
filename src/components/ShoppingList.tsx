@@ -15,6 +15,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -54,10 +55,12 @@ import {
   diffSharedState,
   hasSharedChanges,
   indexSharedItems,
+  mergeOwnerPublish,
   readPublishedState,
   writePublishedState,
   type PublishedState,
 } from "../lib/sharedSync";
+import { commitSharedListMutation } from "../lib/sharedListMutations";
 import {
   commitBatchOperations,
   getItemListId,
@@ -65,7 +68,6 @@ import {
   getSharedItemContentKey,
   getSharedItemKey,
   groupItemsByCategory,
-  isRecord,
   normalizeShoppingItem,
   normalizeSharedListSnapshot,
   PERSONAL_LIST_ID,
@@ -265,7 +267,9 @@ const ShoppingList: React.FC = () => {
     const loadShareState = async () => {
       try {
         const snapshot = await getDoc(doc(firestore, "sharedLists", user.uid));
-        if (!snapshot.exists()) return;
+        if (!snapshot || typeof snapshot.exists !== "function" || !snapshot.exists()) {
+          return;
+        }
 
         const data = snapshot.data();
         setIsSharing(true);
@@ -279,6 +283,7 @@ const ShoppingList: React.FC = () => {
             : "";
         if (!code) {
           code = await allocateShareCode(firestore, user.uid);
+          setShareCode(code);
           await updateDoc(doc(firestore, "sharedLists", user.uid), {
             shareCode: code,
           });
@@ -406,24 +411,33 @@ const ShoppingList: React.FC = () => {
 
     const timeout = window.setTimeout(() => {
       const published = personalItems.map(toSharedItemPayload);
+      const listRef = doc(firestore, "sharedLists", user.uid);
+      const lastPublished = publishedRef.current;
 
-      // Record before the write, not after: the local echo of our own write
-      // arrives on the listener first, and it must not look like a change
-      // somebody else made.
-      publishedRef.current = buildPublishedState(published);
-      writePublishedState(user.uid, publishedRef.current);
+      void runTransaction(firestore, async (transaction) => {
+        const snapshot = await transaction.get(listRef);
+        const remoteItems = snapshot.exists()
+          ? normalizeSharedListSnapshot(snapshot.data())?.items ?? []
+          : [];
+        const itemsToWrite =
+          snapshot.exists() && lastPublished
+            ? mergeOwnerPublish(published, lastPublished, remoteItems)
+            : published;
 
-      Promise.resolve(
-        setDoc(doc(firestore, "sharedLists", user.uid), {
+        // Record before commit: the listener echo must match what we wrote.
+        publishedRef.current = buildPublishedState(itemsToWrite);
+        writePublishedState(user.uid, publishedRef.current);
+
+        transaction.set(listRef, {
           ownerId: user.uid,
           ownerName,
           allowEdits,
           permissions,
-          items: published,
+          items: itemsToWrite,
           ...(shareCode ? { shareCode } : {}),
           updatedAt: serverTimestamp(),
-        }),
-      ).catch((error) => {
+        });
+      }).catch((error) => {
         console.error("Auto share sync error:", error);
       });
     }, 350);
@@ -662,110 +676,34 @@ const ShoppingList: React.FC = () => {
   ) => {
     if (!db || !item.sharedFromUserId) return;
 
+    const target = {
+      id: item.id,
+      sharedSourceItemId: item.sharedSourceItemId,
+      text: item.text,
+      quantity: item.quantity,
+      category: item.category,
+    };
+
     try {
-      const ownerRef = doc(db, "sharedLists", item.sharedFromUserId);
-      const snapshot = await getDoc(ownerRef);
-      if (!snapshot.exists()) return;
-
-      const raw = snapshot.data();
-
-      // Permissions live on the raw doc; the local snapshot normalizer drops
-      // them, so read them directly here to honor the owner's current settings.
-      const ownerPermissions = normalizeSharePermissions(
-        isRecord(raw) ? raw.permissions : undefined,
+      await commitSharedListMutation(
+        db,
+        item.sharedFromUserId,
+        change === "add"
+          ? { type: "add", item: toSharedItemPayload(item) }
+          : change === "remove"
+            ? { type: "remove", target }
+            : change === "edit" && editedItem
+              ? {
+                  type: "replace",
+                  target,
+                  item: toSharedItemPayload(editedItem),
+                }
+              : {
+                  type: "setCompleted",
+                  target,
+                  completed: nextCompleted ?? !item.completed,
+                },
       );
-      const ownerAllowsEdits =
-        raw?.allowEdits === true && hasAnyPermission(ownerPermissions);
-      const permitted =
-        change === "toggle"
-          ? ownerPermissions.toggle
-          : change === "add"
-            ? ownerPermissions.add
-            : change === "edit"
-              ? ownerPermissions.add && ownerPermissions.remove
-              : ownerPermissions.remove;
-      if (!ownerAllowsEdits || !permitted) return;
-
-      const rawItems = Array.isArray(raw?.items) ? raw.items : [];
-      const contentKey = getSharedItemContentKey(item);
-      const matchIndex = rawItems.findIndex((rawItem) => {
-        const record = isRecord(rawItem) ? rawItem : {};
-        // Prefer stable published id so quantity edits still match.
-        if (
-          item.sharedSourceItemId &&
-          typeof record.id === "string" &&
-          record.id === item.sharedSourceItemId
-        ) {
-          return true;
-        }
-        if (
-          item.id &&
-          typeof record.id === "string" &&
-          record.id === item.id
-        ) {
-          return true;
-        }
-        // Fall back to content for older shared docs that never published ids.
-        return (
-          getSharedItemContentKey({
-            text: typeof record.text === "string" ? record.text : "",
-            quantity:
-              typeof record.quantity === "string" ? record.quantity : undefined,
-            category:
-              typeof record.category === "string" ? record.category : undefined,
-          }) === contentKey
-        );
-      });
-
-      // Toggle/remove need an existing match; add appends a brand new entry and
-      // bails out if the item somehow already exists to avoid duplicates.
-      if (change === "add") {
-        if (matchIndex !== -1) return;
-      } else if (matchIndex === -1) {
-        return;
-      }
-
-      let workingItems: unknown[];
-      if (change === "edit" && editedItem) {
-        workingItems = rawItems.map((rawItem, index) =>
-          index === matchIndex ? toSharedItemPayload(editedItem) : rawItem,
-        );
-      } else if (change === "remove") {
-        workingItems = rawItems.filter((_raw, index) => index !== matchIndex);
-      } else if (change === "add") {
-        workingItems = [...rawItems, toSharedItemPayload(item)];
-      } else {
-        // Use the state we are moving *to* rather than inverting whatever the
-        // caller happened to hold, so a toggle can never land the wrong way up.
-        const completed = nextCompleted ?? !item.completed;
-        workingItems = rawItems.map((rawItem, index) =>
-          index === matchIndex
-            ? { ...(rawItem as object), completed }
-            : rawItem,
-        );
-      }
-
-      const nextItems = workingItems.map((rawItem) => {
-        const record = (
-          rawItem && typeof rawItem === "object" ? rawItem : {}
-        ) as Record<string, unknown>;
-        return toSharedItemPayload({
-          id: typeof record.id === "string" ? record.id : undefined,
-          text: typeof record.text === "string" ? record.text : "",
-          completed: record.completed === true,
-          quantity:
-            typeof record.quantity === "string" ? record.quantity : undefined,
-          category:
-            typeof record.category === "string" ? record.category : undefined,
-          note: typeof record.note === "string" ? record.note : undefined,
-          important: record.important === true,
-        });
-      });
-
-      await updateDoc(ownerRef, {
-        items: nextItems,
-        updatedAt: serverTimestamp(),
-      });
     } catch (error) {
       console.error("Propagate to shared owner error:", error);
     }

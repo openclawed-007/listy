@@ -4,6 +4,7 @@ import {
   diffSharedState,
   hasSharedChanges,
   indexSharedItems,
+  mergeOwnerPublish,
   readPublishedState,
   writePublishedState,
   clearPublishedState,
@@ -74,6 +75,53 @@ describe("diffSharedState", () => {
     expect(diff.added).toEqual([]);
     expect(diff.removed).toEqual([]);
     expect(diff.toggled).toEqual([]);
+  });
+});
+
+describe("mergeOwnerPublish", () => {
+  const milkId = {
+    id: "m1",
+    text: "Milk",
+    completed: false,
+    quantity: "2",
+  };
+  const breadId = { id: "b1", text: "Bread", completed: false };
+
+  it("keeps a collaborator tick the owner did not touch", () => {
+    const last = buildPublishedState([milkId, breadId]);
+    const merged = mergeOwnerPublish(
+      [milkId, breadId],
+      last,
+      [{ ...milkId, completed: true }, breadId],
+    );
+
+    expect(merged.find((item) => item.id === "m1")?.completed).toBe(true);
+  });
+
+  it("does not overwrite a tick the owner is currently publishing", () => {
+    const last = buildPublishedState([milkId, breadId]);
+    const merged = mergeOwnerPublish(
+      [{ ...milkId, completed: true }, breadId],
+      last,
+      [milkId, breadId],
+    );
+
+    expect(merged.find((item) => item.id === "m1")?.completed).toBe(true);
+  });
+
+  it("drops a row the collaborator removed and appends a row they added", () => {
+    const last = buildPublishedState([milkId, breadId]);
+    const tea = { id: "t1", text: "Tea", completed: false };
+    const merged = mergeOwnerPublish([milkId, breadId], last, [milkId, tea]);
+
+    expect(merged.map((item) => item.id)).toEqual(["m1", "t1"]);
+  });
+
+  it("does not resurrect an item the owner already deleted", () => {
+    const last = buildPublishedState([milkId, breadId]);
+    const merged = mergeOwnerPublish([milkId], last, [milkId, breadId]);
+
+    expect(merged.map((item) => item.id)).toEqual(["m1"]);
   });
 });
 

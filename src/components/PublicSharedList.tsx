@@ -2,8 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   doc,
   onSnapshot,
-  serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import {
   Check,
@@ -38,8 +36,12 @@ import {
   groupItemsByCategory,
   isRecord,
   normalizeSharedItems as normalizeSharedPayloads,
-  toSharedItemPayload,
 } from "../lib/shoppingItem";
+import {
+  applySharedListMutation,
+  commitSharedListMutation,
+  type SharedListMutation,
+} from "../lib/sharedListMutations";
 import { useAuth } from "../context/useAuth";
 import { usePreferences } from "../context/usePreferences";
 import { useDarkMode } from "../hooks/useDarkMode";
@@ -130,52 +132,6 @@ function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
   };
 }
 
-// Map a single raw stored item into the clean payload shape, dropping empty
-// optional fields so writes stay consistent with what the owner stores.
-function toPayloadItem(
-  item: unknown,
-  override?: Partial<SharedItemData>,
-): SharedItemData {
-  const record = isRecord(item) ? item : {};
-  return {
-    ...toSharedItemPayload({
-      id: typeof record.id === "string" ? record.id : undefined,
-      text: typeof record.text === "string" ? record.text : "",
-      completed: record.completed === true,
-      quantity: typeof record.quantity === "string" ? record.quantity : undefined,
-      category: typeof record.category === "string" ? record.category : undefined,
-      note: typeof record.note === "string" ? record.note : undefined,
-      important: record.important === true,
-    }),
-    ...override,
-  };
-}
-
-function findRawItemIndex(
-  rawItems: unknown[],
-  target: Pick<PublicItem, "id" | "index" | "text">,
-) {
-  // Prefer stable id match so optimistic reorders/removes don't desync indices.
-  const byId = rawItems.findIndex((item) => {
-    if (!isRecord(item) || typeof item.id !== "string") return false;
-    return item.id === target.id;
-  });
-  if (byId !== -1) return byId;
-
-  if (
-    Number.isInteger(target.index) &&
-    target.index >= 0 &&
-    target.index < rawItems.length
-  ) {
-    return target.index;
-  }
-
-  return rawItems.findIndex((item) => {
-    if (!isRecord(item) || typeof item.text !== "string") return false;
-    return item.text.trim() === target.text;
-  });
-}
-
 function payloadToPublicItems(payload: SharedItemData[]): PublicItem[] {
   return payload.map((item, index) => ({
     id: item.id ?? `${index}-${item.text}`,
@@ -187,52 +143,6 @@ function payloadToPublicItems(payload: SharedItemData[]): PublicItem[] {
     note: item.note,
     important: item.important,
   }));
-}
-
-// Rebuild the items array from the owner's raw data, toggling one item.
-function buildToggledPayload(
-  rawItems: unknown,
-  target: Pick<PublicItem, "id" | "index" | "text">,
-): SharedItemData[] {
-  if (!Array.isArray(rawItems)) return [];
-
-  const toggledIndex = findRawItemIndex(rawItems, target);
-  if (toggledIndex === -1) return rawItems.map((item) => toPayloadItem(item));
-
-  return rawItems.map((item, index) =>
-    index === toggledIndex
-      ? toPayloadItem(item, {
-          completed: !(isRecord(item) && item.completed === true),
-        })
-      : toPayloadItem(item),
-  );
-}
-
-// Rebuild the items array, removing one item.
-function buildRemovedPayload(
-  rawItems: unknown,
-  target: Pick<PublicItem, "id" | "index" | "text">,
-): SharedItemData[] {
-  if (!Array.isArray(rawItems)) return [];
-
-  const removedIndex = findRawItemIndex(rawItems, target);
-  if (removedIndex === -1) return rawItems.map((item) => toPayloadItem(item));
-
-  return rawItems
-    .filter((_item, index) => index !== removedIndex)
-    .map((item) => toPayloadItem(item));
-}
-
-// Rebuild the items array, appending a new item.
-function buildAddedPayload(
-  rawItems: unknown,
-  newItem: SharedItemData,
-): SharedItemData[] {
-  const existing = Array.isArray(rawItems)
-    ? rawItems.map((item) => toPayloadItem(item))
-    : [];
-
-  return [...existing, newItem];
 }
 
 const PublicSharedList: React.FC = () => {
@@ -444,21 +354,24 @@ const PublicSharedList: React.FC = () => {
     : 0;
   const preview = useMemo(() => parseItemInput(newItemText), [newItemText]);
 
-  const persistItems = (payload: SharedItemData[], onError: () => void) => {
+  const persistMutation = (
+    mutation: SharedListMutation,
+    onError: () => void,
+  ) => {
     if (!db || !shareId) return;
 
-    // Chain subsequent rapid edits onto this optimistic payload so a second
-    // toggle/remove before the snapshot returns does not clobber the first.
+    const payload = applySharedListMutation(rawItemsRef.current, mutation);
     rawItemsRef.current = payload;
 
-    updateDoc(doc(db, "sharedLists", shareId), {
-      items: payload,
-      updatedAt: serverTimestamp(),
-    }).catch((updateError) => {
-      console.error("Collaborator update error:", updateError);
-      onError();
-      setSaveError("Couldn't save that change. Please try again.");
-    });
+    void commitSharedListMutation(db, shareId, mutation).catch(
+      (updateError) => {
+        console.error("Collaborator update error:", updateError);
+        onError();
+        setSaveError("Couldn't save that change. Please try again.");
+      },
+    );
+
+    return payload;
   };
 
   const toggleItem = (item: PublicItem) => {
@@ -472,16 +385,20 @@ const PublicSharedList: React.FC = () => {
     }
 
     const previousRaw = rawItemsRef.current;
-    const payload = buildToggledPayload(previousRaw, item);
     const previousItems = items;
-
-    // Optimistic local feedback (reindexed) so chained edits stay consistent.
-    setItems(payloadToPublicItems(payload));
-    setSaveError("");
-    persistItems(payload, () => {
+    const mutation: SharedListMutation = {
+      type: "setCompleted",
+      target: item,
+      completed: !item.completed,
+    };
+    const payload = persistMutation(mutation, () => {
       rawItemsRef.current = previousRaw;
       setItems(previousItems);
     });
+    if (payload) {
+      setItems(payloadToPublicItems(payload));
+      setSaveError("");
+    }
   };
 
   const resetLocalTicks = () => {
@@ -495,14 +412,14 @@ const PublicSharedList: React.FC = () => {
 
     const previousRaw = rawItemsRef.current;
     const previousItems = items;
-    const payload = buildRemovedPayload(previousRaw, item);
-
-    setItems(payloadToPublicItems(payload));
-    setSaveError("");
-    persistItems(payload, () => {
+    const payload = persistMutation({ type: "remove", target: item }, () => {
       rawItemsRef.current = previousRaw;
       setItems(previousItems);
     });
+    if (payload) {
+      setItems(payloadToPublicItems(payload));
+      setSaveError("");
+    }
   };
 
   // Visitors get the same smart field as the list owner: "2 milk" sets the
@@ -528,9 +445,8 @@ const PublicSharedList: React.FC = () => {
       return;
     }
 
-    const newId = createCollaboratorItemId();
     const newItem: SharedItemData = {
-      id: newId,
+      id: createCollaboratorItemId(),
       text,
       completed: false,
       ...(quantity ? { quantity } : {}),
@@ -538,16 +454,16 @@ const PublicSharedList: React.FC = () => {
     };
     const previousRaw = rawItemsRef.current;
     const previousItems = items;
-    const payload = buildAddedPayload(previousRaw, newItem);
-
-    setItems(payloadToPublicItems(payload));
-    setNewItemText("");
-    setSaveError("");
-    setAddNotice("");
-    persistItems(payload, () => {
+    const payload = persistMutation({ type: "add", item: newItem }, () => {
       rawItemsRef.current = previousRaw;
       setItems(previousItems);
     });
+    if (payload) {
+      setItems(payloadToPublicItems(payload));
+      setNewItemText("");
+      setSaveError("");
+      setAddNotice("");
+    }
   };
 
   if (loading && !unavailableError) {

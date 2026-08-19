@@ -118,3 +118,43 @@ export function clearPublishedState(ownerId: string) {
     // Nothing to clean up if storage is unavailable.
   }
 }
+
+/**
+ * Fold collaborator edits that landed since we last published into the
+ * snapshot we are about to write. Without this, the owner's debounce
+ * `setDoc` of their local list wipes a tick/add/remove that happened in
+ * the same 350ms window.
+ */
+export function mergeOwnerPublish(
+  ownerItems: SharedItemPayload[],
+  lastPublished: PublishedState,
+  remoteItems: SharedItemPayload[],
+): SharedItemPayload[] {
+  const remoteState = buildPublishedState(remoteItems);
+  const diff = diffSharedState(lastPublished, remoteState);
+  if (!hasSharedChanges(diff)) return ownerItems.map((item) => ({ ...item }));
+
+  const remoteByKey = indexSharedItems(remoteItems);
+  const removed = new Set(diff.removed);
+
+  const next = ownerItems
+    .filter((item) => !removed.has(getSharedItemKey(item)))
+    .map((item) => ({ ...item }));
+
+  diff.toggled.forEach(({ key, completed }) => {
+    const item = next.find((entry) => getSharedItemKey(entry) === key);
+    if (!item) return;
+    // Owner already changed this flag locally — their publish wins the field.
+    if (item.completed !== lastPublished[key]) return;
+    item.completed = completed;
+  });
+
+  diff.added.forEach((key) => {
+    const remote = remoteByKey.get(key);
+    if (!remote) return;
+    if (next.some((item) => getSharedItemKey(item) === key)) return;
+    next.push({ ...remote });
+  });
+
+  return next;
+}
