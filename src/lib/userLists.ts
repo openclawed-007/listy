@@ -23,7 +23,13 @@ export interface UserList {
   createdAt: number;
 }
 
-const LOCAL_KEY = "cartlink:user-lists:v1";
+const LEGACY_LOCAL_KEY = "cartlink:user-lists:v1";
+
+function listsStorageKey(userId?: string | null) {
+  return userId
+    ? `${LEGACY_LOCAL_KEY}:${userId}`
+    : `${LEGACY_LOCAL_KEY}:guest`;
+}
 
 export function createListId() {
   const rand =
@@ -108,16 +114,19 @@ export interface RemoteListsSnapshot {
  * Cloud wins when the `lists` field exists (including []). Missing field
  * means this account has never stored lists — keep local and upload it.
  */
-export function resolveRemoteLists(snapshot: RemoteListsSnapshot): {
+export function resolveRemoteLists(
+  snapshot: RemoteListsSnapshot,
+  userId?: string | null,
+): {
   lists: UserList[];
   uploadLocal: boolean;
 } {
   if (!snapshot.exists || !snapshot.data) {
-    const local = readLocalUserLists();
+    const local = readLocalUserLists(userId);
     return { lists: local, uploadLocal: local.length > 0 };
   }
   if (!Object.prototype.hasOwnProperty.call(snapshot.data, "lists")) {
-    const local = readLocalUserLists();
+    const local = readLocalUserLists(userId);
     return { lists: local, uploadLocal: local.length > 0 };
   }
   return {
@@ -155,19 +164,37 @@ export function buildListTabs(
   ];
 }
 
-export function readLocalUserLists(): UserList[] {
+export function readLocalUserLists(userId?: string | null): UserList[] {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(LOCAL_KEY) ?? "[]");
-    return normalizeUserLists(parsed);
+    const scopedRaw = localStorage.getItem(listsStorageKey(userId));
+    if (scopedRaw != null) {
+      return normalizeUserLists(JSON.parse(scopedRaw) as unknown);
+    }
+    // Adopt the unscoped key only for a signed-in user, once. That stops a
+    // shared phone from copying the previous person's custom lists into the
+    // next account via the guest bucket.
+    if (userId) {
+      const legacyRaw = localStorage.getItem(LEGACY_LOCAL_KEY);
+      if (legacyRaw) {
+        const lists = normalizeUserLists(JSON.parse(legacyRaw) as unknown);
+        writeLocalUserLists(lists, userId);
+        localStorage.removeItem(LEGACY_LOCAL_KEY);
+        return lists;
+      }
+    }
+    return [];
   } catch {
     return [];
   }
 }
 
-export function writeLocalUserLists(lists: UserList[]) {
+export function writeLocalUserLists(
+  lists: UserList[],
+  userId?: string | null,
+) {
   try {
     localStorage.setItem(
-      LOCAL_KEY,
+      listsStorageKey(userId),
       JSON.stringify(normalizeUserLists(lists)),
     );
   } catch {

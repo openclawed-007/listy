@@ -55,11 +55,15 @@ const GoogleLogo: React.FC = () => (
 );
 
 const Login: React.FC = () => {
-  const { login } = useAuth();
+  const { login, authError } = useAuth();
   const { dark, toggle } = useDarkMode();
   const { canInstall, install } = useInstallPrompt();
-  const [loginError, setLoginError] = React.useState("");
+  const [loginError, setLoginError] = React.useState(authError ?? "");
   const [isLoggingIn, setIsLoggingIn] = React.useState(false);
+
+  React.useEffect(() => {
+    if (authError) setLoginError(authError);
+  }, [authError]);
 
   const handleLogin = async () => {
     setLoginError("");

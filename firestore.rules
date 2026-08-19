@@ -16,6 +16,7 @@ service cloud.firestore {
         && (!('listId' in data) || (data.listId is string && data.listId.size() <= 200))
         && (!('listName' in data) || (data.listName is string && data.listName.size() <= 120))
         && (!('sharedFromUserId' in data) || (data.sharedFromUserId is string && data.sharedFromUserId.size() <= 128))
+        && (!('sharedSourceItemId' in data) || (data.sharedSourceItemId is string && data.sharedSourceItemId.size() <= 128))
         // Important flag + manual sort order (undo restore writes these too).
         && (!('important' in data) || data.important is bool)
         && (!('sortOrder' in data) || data.sortOrder is number)

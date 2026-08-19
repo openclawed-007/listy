@@ -22,7 +22,9 @@ export function useOwnedLists(
   userId: string | undefined,
   items: Array<{ listId?: string; listName?: string }>,
 ) {
-  const [customLists, setCustomLists] = useState<UserList[]>(readLocalUserLists);
+  const [customLists, setCustomLists] = useState<UserList[]>(() =>
+    readLocalUserLists(userId),
+  );
   const [activeListId, setActiveListId] = useState(PERSONAL_TAB_ID);
   const writeInFlight = useRef(false);
 
@@ -41,7 +43,7 @@ export function useOwnedLists(
     async (next: UserList[]) => {
       const normalized = normalizeUserLists(next);
       setCustomLists(normalized);
-      writeLocalUserLists(normalized);
+      writeLocalUserLists(normalized, userId);
       if (!userId || !db) return;
       writeInFlight.current = true;
       try {
@@ -61,7 +63,7 @@ export function useOwnedLists(
 
   useEffect(() => {
     if (!userId || !db) {
-      setCustomLists(readLocalUserLists());
+      setCustomLists(readLocalUserLists(userId));
       return undefined;
     }
 
@@ -70,12 +72,15 @@ export function useOwnedLists(
       doc(firestore, "userSettings", userId),
       (snap) => {
         if (writeInFlight.current) return;
-        const resolved = resolveRemoteLists({
-          exists: snap.exists(),
-          data: snap.exists() ? snap.data() : undefined,
-        });
+        const resolved = resolveRemoteLists(
+          {
+            exists: snap.exists(),
+            data: snap.exists() ? snap.data() : undefined,
+          },
+          userId,
+        );
         setCustomLists(resolved.lists);
-        writeLocalUserLists(resolved.lists);
+        writeLocalUserLists(resolved.lists, userId);
         if (resolved.uploadLocal) {
           writeInFlight.current = true;
           void setDoc(

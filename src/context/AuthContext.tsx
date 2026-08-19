@@ -20,9 +20,16 @@ function getLoginErrorMessage(error: unknown): string {
   return "Unable to sign in right now. Please try again.";
 }
 
+const POPUP_FALLBACK_CODES = new Set([
+  "auth/popup-blocked",
+  "auth/popup-closed-by-user",
+  "auth/operation-not-supported-in-this-environment",
+]);
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(() => Boolean(auth));
+  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     if (!auth) return undefined;
@@ -40,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // that onAuthStateChanged does not report.
     void getRedirectResult(auth).catch((error) => {
       console.error("Redirect Login Error:", error);
+      setAuthError(getLoginErrorMessage(error));
     });
   }, []);
 
@@ -48,11 +56,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error("Firebase credentials are not configured yet.");
     }
 
+    setAuthError("");
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
       const code = (error as Partial<AuthError> | undefined)?.code ?? "";
-      if (code === "auth/popup-blocked") {
+      if (POPUP_FALLBACK_CODES.has(code)) {
         // Popups are unreliable in installed PWAs and some mobile browsers;
         // fall back to a full-page redirect sign-in.
         try {
@@ -79,7 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, authError }}>
       {children}
     </AuthContext.Provider>
   );

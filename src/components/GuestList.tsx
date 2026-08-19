@@ -28,6 +28,7 @@ import {
   MAX_NOTE_LENGTH,
   MAX_QUANTITY_LENGTH,
   mergeQuantities,
+  AISLES,
   parseItemInput,
 } from "../lib/itemInput";
 import {
@@ -631,7 +632,10 @@ const GuestList: React.FC = () => {
           onValueChange={setValue}
           onCommit={commitAdd}
           suggestions={history}
-          autoFocus
+          autoFocus={
+            typeof window !== "undefined" &&
+            !window.matchMedia("(pointer: coarse)").matches
+          }
           hintHidden={!interfacePrefs.addHints && !isSearching}
           hint={
             isSearching && items.length > 0 ? (
@@ -658,7 +662,9 @@ const GuestList: React.FC = () => {
         />
 
         <datalist id={CATEGORY_DATALIST_ID}>
-          {/* Guest list has no cloud aisles; built-ins still help while editing. */}
+          {AISLES.map((aisle) => (
+            <option key={aisle} value={aisle} />
+          ))}
         </datalist>
 
         {items.length > 0 && (

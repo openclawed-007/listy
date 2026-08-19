@@ -562,7 +562,8 @@ const PublicSharedList: React.FC = () => {
     <div className="app-wrapper">
       <header className="navbar">
         <div className="navbar-content">
-          <div
+          <Link
+            to={user ? "/" : "/login"}
             className={`nav-brand ${interfacePrefs.brandLogo ? "" : "is-text-only"}`}
           >
             {interfacePrefs.brandLogo && (
@@ -573,7 +574,7 @@ const PublicSharedList: React.FC = () => {
             <span className="nav-brand-name">
               Cart<em>Link</em>
             </span>
-          </div>
+          </Link>
 
           <div className="user-actions">
             <button
@@ -585,6 +586,9 @@ const PublicSharedList: React.FC = () => {
             >
               {dark ? <Sun size={16} /> : <Moon size={16} />}
             </button>
+            <Link className="login-code-link" to={user ? "/" : "/login"}>
+              {user ? "My list" : "Sign in"}
+            </Link>
           </div>
         </div>
       </header>
@@ -686,6 +690,23 @@ const PublicSharedList: React.FC = () => {
               ) : null}
             </p>
           </form>
+        )}
+
+        {shareId && !isOwnerViewing && (
+          <Link
+            className="import-link-btn"
+            to={
+              user
+                ? `/import/${shareId}`
+                : `/login?redirect=${encodeURIComponent(`/import/${shareId}`)}`
+            }
+          >
+            {user
+              ? "Add this list to my tabs"
+              : allowEdits
+                ? "Sign in to edit this list"
+                : "Sign in to save this list"}
+          </Link>
         )}
 
         {items.length === 0 ? (
@@ -816,22 +837,6 @@ const PublicSharedList: React.FC = () => {
               ))}
             </div>
 
-            {shareId && !isOwnerViewing && (
-              <Link
-                className="import-link-btn"
-                to={
-                  user
-                    ? `/import/${shareId}`
-                    : `/login?redirect=${encodeURIComponent(`/import/${shareId}`)}`
-                }
-              >
-                {user
-                  ? "Add this list to my tabs"
-                  : allowEdits
-                    ? "Sign in to edit this list"
-                    : "Sign in to save this list"}
-              </Link>
-            )}
           </>
         )}
       </main>

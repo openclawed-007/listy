@@ -303,6 +303,11 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
                 <p className="share-section-hint">
                   Friends enter this under Join
                 </p>
+                {shareUrl ? (
+                  <p className="share-url-line">
+                    <a href={shareUrl}>{shareUrl.replace(/^https?:\/\//, "")}</a>
+                  </p>
+                ) : null}
               </section>
 
               <section className="share-section" aria-label="Send options">

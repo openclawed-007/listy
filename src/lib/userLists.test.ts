@@ -109,13 +109,17 @@ describe("userLists", () => {
     expect(
       resolveRemoteLists({ exists: true, data: { lists: [] } }),
     ).toEqual({ lists: [], uploadLocal: false });
-    expect(resolveRemoteLists({ exists: false })).toEqual({
+    expect(resolveRemoteLists({ exists: false }, "uid-a")).toEqual({
       lists: [{ id: "list_1", name: "Costco", createdAt: 1 }],
       uploadLocal: true,
     });
     expect(
-      resolveRemoteLists({ exists: true, data: { interface: {} } }),
+      resolveRemoteLists({ exists: true, data: { interface: {} } }, "uid-a"),
     ).toMatchObject({ uploadLocal: true });
+    expect(resolveRemoteLists({ exists: false }, "uid-b")).toEqual({
+      lists: [],
+      uploadLocal: false,
+    });
     expect(MAX_STORED_LISTS).toBeGreaterThan(MAX_CUSTOM_LISTS);
   });
 });

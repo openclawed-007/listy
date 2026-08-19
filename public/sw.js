@@ -1,4 +1,4 @@
-const CACHE_NAME = "cartlink-shell-v12";
+const CACHE_NAME = "cartlink-shell-v13";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -17,11 +17,14 @@ const NOTIFICATION_ICON = "/notification-icon.png";
 const NOTIFICATION_BADGE = "/notification-badge.png";
 
 const offlineFallback = () =>
-  new Response("", {
-    status: 503,
-    statusText: "Service Unavailable",
-    headers: { "Content-Type": "text/plain" },
-  });
+  new Response(
+    "<!doctype html><title>CartLink</title><p style=\"font-family:system-ui;text-align:center;padding:3rem 1.5rem\">You're offline. Reconnect and try again.</p>",
+    {
+      status: 503,
+      statusText: "Service Unavailable",
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    },
+  );
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -63,8 +66,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
+          }
           return response;
         })
         .catch(async () => {

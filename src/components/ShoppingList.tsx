@@ -626,6 +626,7 @@ const ShoppingList: React.FC = () => {
               listId: importedListId,
               listName: sharedOwnerName,
               sharedFromUserId: data.ownerId,
+              ...(item.id ? { sharedSourceItemId: item.id } : {}),
               createdAt: serverTimestamp(),
             }),
           );
@@ -690,6 +691,13 @@ const ShoppingList: React.FC = () => {
       const matchIndex = rawItems.findIndex((rawItem) => {
         const record = isRecord(rawItem) ? rawItem : {};
         // Prefer stable published id so quantity edits still match.
+        if (
+          item.sharedSourceItemId &&
+          typeof record.id === "string" &&
+          record.id === item.sharedSourceItemId
+        ) {
+          return true;
+        }
         if (
           item.id &&
           typeof record.id === "string" &&
@@ -1797,6 +1805,15 @@ const ShoppingList: React.FC = () => {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [modalOpen]);
 
+  if (!itemsLoaded || importing) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner" />
+        {importing ? <p>Adding list…</p> : null}
+      </div>
+    );
+  }
+
   return (
     <div className="app-wrapper">
       <header className="navbar">
@@ -2052,7 +2069,7 @@ const ShoppingList: React.FC = () => {
               </p>
               <p className="empty-text">
                 {isSearching
-                  ? "Try a different search term."
+                  ? "No matches. Press + to add this to the list."
                   : totalCount === 0
                     ? "Add your first item above."
                     : `Nothing left on ${activeTabName}.`}

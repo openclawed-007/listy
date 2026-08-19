@@ -34,6 +34,8 @@ export interface ShoppingItem {
   listId?: string;
   listName?: string;
   sharedFromUserId?: string;
+  /** Owner's published item id, kept when this row is an imported copy. */
+  sharedSourceItemId?: string;
   /** Must-get items — floats to top in Aisle/A–Z sorts. */
   important?: boolean;
   /** Lower values appear higher when sorted by manual order. */
@@ -157,6 +159,7 @@ export function normalizeShoppingItem(
     listId: normalizeOptionalString(data.listId, 200),
     listName: normalizeOptionalString(data.listName, 120),
     sharedFromUserId: normalizeOptionalString(data.sharedFromUserId, 128),
+    sharedSourceItemId: normalizeOptionalString(data.sharedSourceItemId, 128),
     ...(data.important === true ? { important: true } : {}),
     ...(sortOrder !== undefined ? { sortOrder } : {}),
     createdAt:

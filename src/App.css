@@ -3159,6 +3159,17 @@ body.dark .modal-backdrop {
   line-height: 1.35;
 }
 
+.share-url-line {
+  margin: 0.55rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.share-url-line a {
+  color: var(--sage-dark);
+}
+
 /* One-tap copy hero for the verbal code */
 .share-code-hero {
   display: flex;
