@@ -387,7 +387,9 @@ export const CategoryGroup: React.FC<CategoryGroupProps> = ({
   onDelete,
 }) => (
   <div className="category-group">
-    {showHeading && <div className="category-heading">{group.category}</div>}
+    {showHeading && (
+      <h3 className="category-heading">{group.category}</h3>
+    )}
     {group.items.map((item, index) => (
       <ItemRow
         key={item.id}

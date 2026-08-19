@@ -17,10 +17,12 @@ const BrandMark: React.FC<BrandMarkProps> = ({
   <img
     className={className}
     src="/icon-192.png"
-    alt={title}
+    alt=""
+    title={title}
     width={192}
     height={192}
     decoding="async"
+    draggable={false}
   />
 );
 

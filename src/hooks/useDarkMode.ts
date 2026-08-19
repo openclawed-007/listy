@@ -24,9 +24,15 @@ function prefersReducedMotion(): boolean {
  * the right palette before <body> exists. Mirror onto body too for any
  * leftover `body.dark` selectors.
  */
+function applyThemeColor(dark: boolean) {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", dark ? "#141b1e" : "#6b8f71");
+}
+
 function applyThemeClass(dark: boolean) {
   document.documentElement.classList.toggle("dark", dark);
   document.body?.classList.toggle("dark", dark);
+  applyThemeColor(dark);
 }
 
 /** Instant paint — used on first load / FOUC prevention. */

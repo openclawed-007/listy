@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&display=swap');
+/* Fonts load from index.html (preconnect + display=swap) so CSS parse is
+   not blocked on Google Fonts and weights 700/800 actually exist. */
 
 /* ===========================
    DESIGN TOKENS
@@ -16,6 +17,7 @@
   --ink-muted: #7a7268;
   --ink-faint: #b5b0a8;
   --surface: #ffffff;
+  --danger: #a04020;
   --shadow-sm: 0 1px 3px rgba(42, 37, 32, 0.08);
   --shadow-md: 0 4px 16px rgba(42, 37, 32, 0.10);
   --shadow-lg: 0 12px 40px rgba(42, 37, 32, 0.12);
@@ -24,6 +26,9 @@
   --radius-pill: 50px;
   /* Width of the main column — widened fluidly on desktop below. */
   --content-max: 640px;
+  --nav-height: 4.25rem;
+  --ui-scale: 0.95;
+  color-scheme: light;
 }
 
 /* ===========================
@@ -67,11 +72,14 @@ body.dark {
   --terra-light: #eda48d;
   --ink: #e8f0ec;
   --ink-muted: #8fa89a;
-  --ink-faint: #4a6055;
+  /* Was #4a6055 — too close to the dark cream, so stats/hints vanished. */
+  --ink-faint: #7d988c;
   --surface: #1c2528;
+  --danger: #f1b39d;
   --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
 }
 
 /* Smooth dark/light cross-fade (Chromium / Safari View Transitions API). */
@@ -115,6 +123,14 @@ body.dark .item-row.is-dragging {
   padding: 0;
 }
 
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
 body {
   font-family: 'DM Sans', system-ui, sans-serif;
   background-color: var(--cream);
@@ -122,17 +138,19 @@ body {
   line-height: 1.6;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.4s ease, color 0.4s ease;
 }
 
-/* Subtle paper grain overlay */
+/* Subtle paper grain on the page wash — behind UI so QR codes and
+   dialogs stay crisp (a 9999 overlay used to sit on top of everything). */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   pointer-events: none;
-  z-index: 9999;
+  z-index: 0;
 }
 
 /* ===========================
@@ -193,13 +211,15 @@ body::before {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 1;
 }
 
 /* ===========================
    HEADER / NAVBAR
    =========================== */
 .navbar {
-  padding: env(safe-area-inset-top, 0px) max(1.5rem, calc((100% - var(--content-max)) / 2)) 0;
+  padding: env(safe-area-inset-top, 0px) 0 0;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -223,6 +243,11 @@ input,
   -webkit-tap-highlight-color: transparent;
 }
 
+button svg,
+a svg {
+  pointer-events: none;
+}
+
 button:focus,
 input:focus,
 .item-row:focus {
@@ -243,7 +268,9 @@ a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 4.25rem;
+  height: var(--nav-height);
+  padding: 0 1.15rem;
+  width: 100%;
 }
 
 .nav-brand {
@@ -568,6 +595,7 @@ a:focus-visible {
   color: var(--ink);
   letter-spacing: -0.02em;
   line-height: 1.1;
+  overflow-wrap: break-word;
 }
 
 .page-subtitle {
@@ -624,6 +652,9 @@ body.dark .offline-pill {
   margin-bottom: 0.85rem;
   animation: slide-up 0.5s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
   position: relative;
+  /* Sit above aisle headings (their section also animates, which would
+     otherwise paint suggestions underneath the sticky labels). */
+  z-index: 8;
 }
 
 .add-primary-row {
@@ -633,18 +664,25 @@ body.dark .offline-pill {
   position: relative;
 }
 
-/* History typeahead under the add field — quiet surface, same tokens. */
+/* History typeahead overlays the list so opening it does not shove rows down. */
 .suggest-panel {
   list-style: none;
   margin: 0;
   padding: 0.3rem;
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  width: auto;
+  min-width: 0;
   background: var(--surface);
   border: 1.5px solid var(--cream-deep);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
-  z-index: 20;
+  z-index: 30;
   max-height: min(280px, 45vh);
   overflow-y: auto;
+  overscroll-behavior: contain;
   animation: suggest-in 0.15s ease both;
 }
 
@@ -813,14 +851,21 @@ body.dark .suggest-row.is-active {
   box-shadow: 0 2px 8px rgba(107, 143, 113, 0.28);
 }
 
-.add-btn:hover {
+.add-btn:hover:not(:disabled) {
   background: var(--sage-dark);
   transform: scale(1.05);
   box-shadow: 0 4px 14px rgba(107, 143, 113, 0.38);
 }
 
-.add-btn:active {
+.add-btn:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+.add-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 /* ===========================
@@ -1017,9 +1062,8 @@ body.dark .suggest-row.is-active {
     box-shadow 0.18s ease;
   /* No entrance animation — reordering must not re-trigger a full-list pop. */
   box-shadow: none;
-  will-change: transform;
   /* Keep edit fields clear of sticky nav + soft keyboard. */
-  scroll-margin-block: 5.5rem;
+  scroll-margin-block: calc(var(--nav-height) + env(safe-area-inset-top, 0px) + 1.25rem);
 }
 
 .item-row:hover {
@@ -1041,6 +1085,7 @@ body.dark .suggest-row.is-active {
   box-shadow:
     0 1px 2px rgba(42, 37, 32, 0.06),
     0 10px 28px rgba(42, 37, 32, 0.12);
+  will-change: transform;
   transition:
     box-shadow 0.16s ease,
     border-color 0.15s ease;
@@ -1133,6 +1178,8 @@ body.is-reordering {
 }
 
 .item-row:hover .important-btn,
+.item-row:focus-within .important-btn,
+.important-btn:focus-visible,
 .important-btn.is-active {
   opacity: 1;
 }
@@ -1241,16 +1288,17 @@ body.dark .item-row.is-important {
 
 .category-heading {
   margin: 0.45rem 0 0.05rem 0.15rem;
+  font-family: inherit;
   font-size: 0.66rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--sage-dark);
   position: sticky;
-  top: 3.6rem;
+  top: calc(var(--nav-height) + env(safe-area-inset-top, 0px));
   z-index: 2;
-  background: linear-gradient(var(--cream) 70%, transparent);
-  padding: 0.15rem 0;
+  background: var(--cream);
+  padding: 0.28rem 0 0.18rem;
 }
 
 .item-content {
@@ -1285,7 +1333,7 @@ body.dark .item-row.is-important {
   flex: 0 1 auto;
   min-width: 0;
   font-size: 0.9rem;
-  font-weight: 450;
+  font-weight: 500;
   color: var(--ink);
   line-height: 1.25;
   word-break: break-word;
@@ -1342,7 +1390,9 @@ body.dark .item-row.is-important {
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
-.item-row:hover .delete-btn {
+.item-row:hover .delete-btn,
+.item-row:focus-within .delete-btn,
+.delete-btn:focus-visible {
   opacity: 1;
 }
 
@@ -1500,7 +1550,9 @@ body.dark .item-row.is-important {
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
-.item-row:hover .edit-btn {
+.item-row:hover .edit-btn,
+.item-row:focus-within .edit-btn,
+.edit-btn:focus-visible {
   opacity: 1;
 }
 
@@ -1884,12 +1936,12 @@ body:has(.login-container) {
 }
 
 .login-container {
-  /* Lock to the visible viewport so mobile chrome doesn't create a dead scroll. */
+  /* Fit one screen, but scroll if the keyboard or a warning makes it taller. */
   height: 100dvh;
   min-height: 100dvh;
   max-height: 100dvh;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   /* Room for the half-off theme toggle on the card corner. */
   padding: max(1.75rem, env(safe-area-inset-top, 0px))
@@ -1898,7 +1950,9 @@ body:has(.login-container) {
     max(1.25rem, env(safe-area-inset-left, 0px));
   background: var(--cream);
   position: relative;
-  overflow: hidden;
+  z-index: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: none;
   touch-action: manipulation;
   transition: background-color 0.4s ease;
@@ -1981,6 +2035,7 @@ body:has(.login-container) {
   position: relative;
   z-index: 1;
   overflow: visible;
+  margin-block: auto;
   transition:
     background-color 0.4s ease,
     border-color 0.4s ease,
@@ -2028,14 +2083,14 @@ body:has(.login-container) {
 }
 
 .login-title em {
-  font-style: italic;
-  color: var(--sage-dark);
-  font-weight: 700;
+  font-style: normal;
+  color: var(--sage);
+  font-weight: 900;
 }
 
 .login-subtitle {
   font-size: 0.9rem;
-  font-weight: 450;
+  font-weight: 500;
   color: var(--ink-muted);
   margin: 0 auto clamp(0.8rem, 2.2vh, 1.25rem);
   line-height: 1.4;
@@ -2222,6 +2277,10 @@ body:has(.login-container) {
   justify-content: center;
   opacity: 0.72;
   padding: 0.1rem;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
 }
 
 .dismissible-message button:hover {
@@ -2298,9 +2357,16 @@ body:has(.login-container) {
 .loading-screen {
   height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.85rem;
   background: var(--cream);
+  position: relative;
+  z-index: 1;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .loading-spinner {
@@ -2653,6 +2719,11 @@ body.dark .modal-backdrop {
   transition: background 0.18s ease;
 }
 
+.settings-switch:focus-visible {
+  outline: 3px solid rgba(107, 143, 113, 0.35);
+  outline-offset: 2px;
+}
+
 .settings-switch.is-on {
   background: var(--sage);
 }
@@ -2766,6 +2837,7 @@ body.dark .modal-backdrop {
   color: var(--ink-muted);
   font: 700 0.78rem "DM Sans", sans-serif;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
@@ -2941,7 +3013,7 @@ body.dark .modal-backdrop {
 }
 
 .settings-footnote.is-error {
-  color: var(--danger, #b42318);
+  color: var(--danger);
 }
 
 @media (min-width: 560px) {
@@ -3039,8 +3111,13 @@ body.dark .modal-backdrop {
 
 .share-modal {
   width: min(100%, 25rem);
-  max-height: min(92vh, 40rem);
+  max-height: min(
+    40rem,
+    calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem)
+  );
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 1.15rem 1.15rem 1rem;
 }
 
@@ -3205,10 +3282,14 @@ body.dark .modal-backdrop {
 
 .share-code-hero-value {
   font-family: "DM Sans", ui-monospace, monospace;
-  font-size: 1.5rem;
+  font-size: clamp(1.15rem, 4.6vw, 1.5rem);
   font-weight: 800;
   letter-spacing: 0.14em;
   line-height: 1.15;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .share-code-hero-action {
@@ -3232,6 +3313,7 @@ body.dark .modal-backdrop {
 .share-send-row {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 0.5rem;
   width: 100%;
 }
@@ -3530,12 +3612,22 @@ body.dark .modal-backdrop {
 
 .join-footer {
   margin-top: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.85rem;
 }
 
 .join-footer a {
   color: var(--sage-dark);
   font-weight: 700;
   text-decoration: none;
+}
+
+.login-legal-sep {
+  color: var(--ink-muted);
+  font-weight: 700;
 }
 
 .join-footer a:hover {
@@ -3602,6 +3694,7 @@ body.dark .modal-backdrop {
   padding: 0.4rem 0.6rem 0.4rem 0.75rem;
   border-radius: var(--radius-pill);
   background: var(--cream-dark);
+  max-width: 100%;
 }
 
 .share-caps-label {
@@ -3827,17 +3920,24 @@ body.dark .modal-backdrop {
   min-height: 100vh;
   background: var(--cream);
   color: var(--ink);
+  position: relative;
+  z-index: 1;
 }
 
 .legal-header {
-  padding: 1.5rem 2rem;
+  display: flex;
+  justify-content: center;
+  padding: 1.25rem 0;
   border-bottom: 1px solid var(--cream-deep);
 }
 
 .legal-brand {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.6rem;
+  width: 100%;
+  max-width: 720px;
+  padding: 0 1.5rem;
   text-decoration: none;
   color: inherit;
 }
@@ -3905,6 +4005,8 @@ body.dark .modal-backdrop {
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
+  position: relative;
+  z-index: 1;
 }
 
 .not-found-card,
@@ -3947,12 +4049,16 @@ body.dark .modal-backdrop {
   color: var(--terra);
 }
 
-.not-found-btn {
+.not-found-btn,
+.error-boundary-card .primary-btn {
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   margin-top: 0.5rem;
+  width: auto;
+  min-width: 11rem;
+  padding-inline: 1.4rem;
 }
 
 .error-boundary-card a {
@@ -3965,8 +4071,8 @@ body.dark .modal-backdrop {
    =========================== */
 @media (max-width: 600px) {
   .add-form {
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
   }
 
   .add-primary-row {
@@ -3990,16 +4096,24 @@ body.dark .modal-backdrop {
     border-radius: var(--radius-sm);
   }
 
+  .add-clear-btn {
+    right: calc(48px + 0.5rem + 0.3rem);
+  }
+
   .item-edit-fields {
     grid-template-columns: 1fr;
   }
 
   .container {
-    padding: 2rem 1rem 4rem;
+    padding: 1rem 1rem 4rem;
   }
 
   .navbar {
-    padding: env(safe-area-inset-top, 0px) 1rem 0;
+    padding: env(safe-area-inset-top, 0px) 0 0;
+  }
+
+  .navbar-content {
+    padding: 0 1rem;
   }
 
   .page-title {
@@ -4098,26 +4212,25 @@ body.dark .modal-backdrop {
 }
 
 
-/* Comfortable minimum targets for touch without making the lean layout bulky. */
+/* Comfortable chrome on touch — row actions keep the compact look and use
+   the invisible ::after hit area instead of inflating the whole row. */
 @media (pointer: coarse) {
   .theme-toggle,
   .modal-close,
-  .edit-btn,
-  .delete-btn {
+  .nav-overflow-trigger {
     width: 2.75rem;
     height: 2.75rem;
   }
 
   .toggle-btn {
-    width: 2rem;
-    height: 2rem;
+    width: 1.75rem;
+    height: 1.75rem;
   }
 
   .list-tab,
   .perm-chip,
   .secondary-btn,
-  .danger-btn,
-  .clear-done-btn {
+  .danger-btn {
     min-height: 2.75rem;
   }
 }
@@ -4346,4 +4459,95 @@ a.theme-toggle {
   .progress-track {
     height: 3px;
   }
+}
+
+/* ===========================
+   LATE POLISH
+   =========================== */
+.nav-text-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.45rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--sage-dark);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+}
+
+.nav-text-link:hover {
+  color: var(--sage);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 380px) {
+  .login-benefits {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .login-benefits li {
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 0.45rem 0.65rem;
+    gap: 0.65rem;
+  }
+
+  .login-benefit-copy span {
+    display: inline;
+  }
+
+  .list-meta-row {
+    align-items: center;
+  }
+
+  .stats-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 420px) {
+  .share-caps {
+    border-radius: var(--radius);
+  }
+}
+
+.settings-field input[type="time"] {
+  color-scheme: inherit;
+}
+
+html.dark .add-hint-chip,
+body.dark .add-hint-chip {
+  background: rgba(127, 185, 138, 0.18);
+  color: var(--sage-light);
+}
+
+html.dark .empty-tip code,
+body.dark .empty-tip code {
+  color: var(--sage-light);
+}
+
+.import-link-btn {
+  margin-top: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+.page-heading .import-link-btn {
+  margin-top: 0.85rem;
+  margin-bottom: 0;
+}
+
+/* Keep the first category heading from sitting under the nav on iOS. */
+.category-heading:first-child {
+  margin-top: 0.15rem;
+}
+
+.sort-toggle {
+  flex-wrap: nowrap;
 }

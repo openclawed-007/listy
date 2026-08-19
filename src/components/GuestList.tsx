@@ -754,7 +754,7 @@ const GuestList: React.FC = () => {
 
         {items.length === 0 ? (
           <div className="empty-state">
-            <PackageOpen size={40} className="empty-icon" />
+            <PackageOpen size={40} className="empty-icon" strokeWidth={1.25} />
             <p className="empty-title">Ready when you are</p>
             <p className="empty-text">Add your first item above.</p>
             {interfacePrefs.emptyTips && (

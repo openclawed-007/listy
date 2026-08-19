@@ -586,7 +586,7 @@ const PublicSharedList: React.FC = () => {
             >
               {dark ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            <Link className="login-code-link" to={user ? "/" : "/login"}>
+            <Link className="nav-text-link" to={user ? "/" : "/login"}>
               {user ? "My list" : "Sign in"}
             </Link>
           </div>
@@ -640,6 +640,22 @@ const PublicSharedList: React.FC = () => {
               {saveError}
             </p>
           )}
+          {shareId && !isOwnerViewing && !displayError && (
+            <Link
+              className="import-link-btn"
+              to={
+                user
+                  ? `/import/${shareId}`
+                  : `/login?redirect=${encodeURIComponent(`/import/${shareId}`)}`
+              }
+            >
+              {user
+                ? "Add this list to my tabs"
+                : allowEdits
+                  ? "Sign in to edit this list"
+                  : "Sign in to save this list"}
+            </Link>
+          )}
         </div>
 
         {canAdd && addNotice && (
@@ -692,26 +708,9 @@ const PublicSharedList: React.FC = () => {
           </form>
         )}
 
-        {shareId && !isOwnerViewing && (
-          <Link
-            className="import-link-btn"
-            to={
-              user
-                ? `/import/${shareId}`
-                : `/login?redirect=${encodeURIComponent(`/import/${shareId}`)}`
-            }
-          >
-            {user
-              ? "Add this list to my tabs"
-              : allowEdits
-                ? "Sign in to edit this list"
-                : "Sign in to save this list"}
-          </Link>
-        )}
-
         {items.length === 0 ? (
           <div className="empty-state">
-            <PackageOpen size={56} className="empty-icon" strokeWidth={1} />
+            <PackageOpen size={40} className="empty-icon" strokeWidth={1.25} />
             <p className="empty-title">{emptyTitle}</p>
             <p className="empty-text">{emptyText}</p>
           </div>
@@ -766,7 +765,7 @@ const PublicSharedList: React.FC = () => {
                 <div className="category-group" key={group.category}>
                   {(groups.length > 1 ||
                     group.category !== DEFAULT_CATEGORY) && (
-                    <div className="category-heading">{group.category}</div>
+                    <h3 className="category-heading">{group.category}</h3>
                   )}
                   {group.items.map((item) => (
                     <div

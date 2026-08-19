@@ -120,6 +120,7 @@ const ListTabs: React.FC<ListTabsProps> = ({
           }}
           type="button"
           aria-pressed={activeId === tab.id}
+          title={tab.name}
         >
           {tab.name}
         </button>

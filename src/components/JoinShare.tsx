@@ -168,7 +168,9 @@ const JoinShare: React.FC = () => {
           ) : (
             <>
               <Link to="/login">Back to sign in</Link>
-              {" · "}
+              <span className="login-legal-sep" aria-hidden="true">
+                ·
+              </span>
               <Link to="/guest">Continue as guest</Link>
             </>
           )}

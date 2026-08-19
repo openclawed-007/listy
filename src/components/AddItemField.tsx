@@ -117,23 +117,22 @@ const AddItemField: React.FC<AddItemFieldProps> = ({
         >
           <Plus size={22} strokeWidth={2.5} />
         </button>
+        <ItemSuggestions
+          id={listboxId}
+          open={box.show}
+          suggestions={box.suggestions}
+          activeIndex={box.activeIndex}
+          onHover={box.setActiveIndex}
+          onPick={(entry) => {
+            box.close();
+            void onCommit({
+              text: entry.text,
+              category: entry.category,
+              note: entry.note,
+            });
+          }}
+        />
       </div>
-
-      <ItemSuggestions
-        id={listboxId}
-        open={box.show}
-        suggestions={box.suggestions}
-        activeIndex={box.activeIndex}
-        onHover={box.setActiveIndex}
-        onPick={(entry) => {
-          box.close();
-          void onCommit({
-            text: entry.text,
-            category: entry.category,
-            note: entry.note,
-          });
-        }}
-      />
 
       {hint !== undefined && (
         <p

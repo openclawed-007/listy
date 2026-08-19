@@ -530,6 +530,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
                     className={`settings-switch ${reminders.enabled ? "is-on" : ""}`}
                     role="switch"
                     aria-checked={reminders.enabled}
+                    aria-label="Shopping reminders"
                     onClick={toggleReminders}
                   >
                     <span className="settings-switch-knob" />

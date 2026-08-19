@@ -110,7 +110,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? "Working..." : copy.confirmLabel}
+            {busy ? "Working…" : copy.confirmLabel}
           </button>
         </div>
       </section>
