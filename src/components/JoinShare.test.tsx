@@ -32,11 +32,11 @@ function renderJoin(path = "/join", user: User | null = null) {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/join" element={<JoinShare />} />
-          <Route path="/c/:code" element={<JoinShare />} />
+          <Route path="/c/:code" element={<div>Opened shared list</div>} />
           <Route path="/" element={<div>My list home</div>} />
           <Route
             path="/share/:shareId"
-            element={<div>Opened shared list</div>}
+            element={<div>Opened shared list via uid</div>}
           />
         </Routes>
       </MemoryRouter>
@@ -75,16 +75,6 @@ describe("JoinShare", () => {
     expect(
       await screen.findByText(/that code isn’t active/i),
     ).toBeInTheDocument();
-  });
-
-  it("auto-opens a list from /c/:code", async () => {
-    mockResolve.mockResolvedValue("owner-uid");
-    renderJoin("/c/AB3DK7MP");
-
-    await waitFor(() => {
-      expect(mockResolve).toHaveBeenCalledWith({ app: "test" }, "AB3DK7MP");
-    });
-    expect(await screen.findByText("Opened shared list")).toBeInTheDocument();
   });
 
   it("sends signed-in users back to their list from the join page", () => {

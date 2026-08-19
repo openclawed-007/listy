@@ -16,6 +16,11 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { db } from "../firebase";
+import { resolveShareCode } from "../lib/allocateShareCode";
+import {
+  isValidShareCode,
+  normalizeShareCodeInput,
+} from "../lib/shareCode";
 import {
   hasAnyPermission,
   NO_PERMISSIONS,
@@ -231,7 +236,8 @@ function buildAddedPayload(
 }
 
 const PublicSharedList: React.FC = () => {
-  const { shareId } = useParams();
+  const { shareId: shareIdParam, code: codeParam } = useParams();
+  const [resolvedShareId, setResolvedShareId] = useState(shareIdParam ?? "");
   const { user } = useAuth();
   const { interfacePrefs } = usePreferences();
   const [ownerName, setOwnerName] = useState("Shared list");
@@ -250,10 +256,59 @@ const PublicSharedList: React.FC = () => {
   const allowEdits = hasAnyPermission(permissions);
   const { dark, toggle: toggleDark } = useDarkMode();
   // Ticks this device made on a list it is not allowed to write to.
-  const [localTicks, setLocalTicks] = useState<LocalTicks>(() =>
-    shareId ? readLocalTicks(shareId) : {},
-  );
+  const shareId = resolvedShareId;
+  const [localTicks, setLocalTicks] = useState<LocalTicks>({});
   useDocumentTitle(loading || error ? null : ownerName);
+
+  useEffect(() => {
+    if (shareIdParam) {
+      setResolvedShareId(shareIdParam);
+      return;
+    }
+
+    const raw = codeParam ? normalizeShareCodeInput(codeParam) : "";
+    if (!raw || !db) {
+      setResolvedShareId("");
+      return;
+    }
+    if (!isValidShareCode(raw)) {
+      setError("That share code is not valid.");
+      setLoading(false);
+      setResolvedShareId("");
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    void resolveShareCode(db, raw).then((ownerId) => {
+      if (cancelled) return;
+      if (!ownerId) {
+        setError("This shared list is no longer available.");
+        setLoading(false);
+        setResolvedShareId("");
+        return;
+      }
+      setResolvedShareId(ownerId);
+    }).catch((resolveError) => {
+      if (cancelled) return;
+      console.error("Resolve share code error:", resolveError);
+      setError("Unable to load this shared list right now.");
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shareIdParam, codeParam]);
+
+  useEffect(() => {
+    if (!shareId) {
+      setLocalTicks({});
+      return;
+    }
+    setLocalTicks(readLocalTicks(shareId));
+  }, [shareId]);
 
   useEffect(() => {
     if (!shareId || !db) return;

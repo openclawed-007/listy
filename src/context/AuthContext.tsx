@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { 
+  getRedirectResult,
   onAuthStateChanged, 
   signInWithPopup, 
   signInWithRedirect,
@@ -31,6 +32,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!auth) return undefined;
+    // Completes the PWA/mobile redirect flow and surfaces cancel/fail errors
+    // that onAuthStateChanged does not report.
+    void getRedirectResult(auth).catch((error) => {
+      console.error("Redirect Login Error:", error);
+    });
   }, []);
 
   const login = async () => {

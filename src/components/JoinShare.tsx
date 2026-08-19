@@ -58,7 +58,7 @@ const JoinShare: React.FC = () => {
         setBusy(false);
         return;
       }
-      navigate(`/share/${ownerId}`, { replace: true });
+      navigate(`/c/${raw}`, { replace: true });
     } catch (resolveError) {
       console.error("Resolve share code error:", resolveError);
       setError("Couldn’t look up that code right now. Try again.");

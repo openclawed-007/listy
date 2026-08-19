@@ -16,6 +16,11 @@ vi.mock("../firebase", () => ({
   db: mockDb,
 }));
 
+vi.mock("../lib/allocateShareCode", () => ({
+  resolveShareCode: vi.fn(),
+  allocateShareCode: vi.fn(),
+}));
+
 vi.mock("firebase/firestore", () => ({
   doc: vi.fn((_db: unknown, ...segments: string[]) => ({
     path: segments.join("/"),
@@ -58,6 +63,7 @@ function renderPublicSharedList(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/share/:shareId" element={<PublicSharedList />} />
+          <Route path="/c/:code" element={<PublicSharedList />} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>,

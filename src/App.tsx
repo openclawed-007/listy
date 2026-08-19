@@ -85,7 +85,7 @@ const App: React.FC = () => {
                 />
                 <Route path="/guest" element={<GuestList />} />
                 <Route path="/join" element={<JoinShare />} />
-                <Route path="/c/:code" element={<JoinShare />} />
+                <Route path="/c/:code" element={<PublicSharedList />} />
                 <Route path="/share/:shareId" element={<PublicSharedList />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />

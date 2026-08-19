@@ -21,6 +21,7 @@ const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY ?? "";
 const appCheckDebugToken = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN ?? "";
 
 export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
+export const isAppCheckEnabled = Boolean(recaptchaSiteKey);
 
 const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 

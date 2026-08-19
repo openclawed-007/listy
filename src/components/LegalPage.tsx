@@ -62,9 +62,9 @@ export const PrivacyPage: React.FC = () => (
         link/QR works.
       </li>
       <li>
-        <strong>Anti-abuse signals</strong> &mdash; we use Google reCAPTCHA on
-        the Sign-in screen, which collects browser/device signals to detect
-        automated abuse.
+        <strong>Anti-abuse signals</strong> &mdash; when App Check is enabled we
+        use Google reCAPTCHA on the Sign-in screen, which collects
+        browser/device signals to detect automated abuse.
       </li>
     </ul>
 
@@ -80,7 +80,7 @@ export const PrivacyPage: React.FC = () => (
       <li>
         To make share links / QR codes work when you explicitly turn sharing on.
       </li>
-      <li>To protect the sign-in form from abuse (reCAPTCHA).</li>
+      <li>To protect the sign-in form from abuse when App Check is enabled.</li>
     </ul>
 
     <h2>Where it lives</h2>

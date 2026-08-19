@@ -10,7 +10,7 @@ import {
   Sun,
 } from "lucide-react";
 import { useAuth } from "../context/useAuth";
-import { isFirebaseConfigured } from "../firebase";
+import { isAppCheckEnabled, isFirebaseConfigured } from "../firebase";
 import { useDarkMode } from "../hooks/useDarkMode";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import BrandMark from "./BrandMark";
@@ -173,7 +173,11 @@ const Login: React.FC = () => {
             </div>
 
             <p className="login-legal">
-              Protected by reCAPTCHA ·{" "}
+              {isAppCheckEnabled ? (
+                <>
+                  Protected by reCAPTCHA ·{" "}
+                </>
+              ) : null}
               <Link to="/privacy">Privacy</Link>
               {" · "}
               <Link to="/terms">Terms</Link>

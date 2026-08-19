@@ -135,7 +135,7 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
         return;
       }
       onClose();
-      navigate(`/share/${ownerId}`);
+      navigate(`/c/${joinRaw}`);
     } catch (error) {
       console.error("Join share code error:", error);
       setJoinError("Couldn’t look up that code right now. Try again.");

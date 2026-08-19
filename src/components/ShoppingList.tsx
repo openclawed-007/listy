@@ -526,6 +526,7 @@ const ShoppingList: React.FC = () => {
               ...(sharedItem.quantity ? { quantity: sharedItem.quantity } : {}),
               ...(sharedItem.category ? { category: sharedItem.category } : {}),
               ...(sharedItem.note ? { note: sharedItem.note } : {}),
+              ...(sharedItem.important ? { important: true } : {}),
               listId: PERSONAL_LIST_ID,
               listName: PERSONAL_LIST_NAME,
               createdAt: serverTimestamp(),
