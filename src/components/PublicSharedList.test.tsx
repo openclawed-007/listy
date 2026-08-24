@@ -170,6 +170,21 @@ describe("PublicSharedList", () => {
     expect(
       screen.getByText("Ask the owner to refresh their share link."),
     ).toBeInTheDocument();
+    expect(screen.queryByText("Nothing here yet.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bag is empty")).not.toBeInTheDocument();
+    expect(screen.queryByText("List unavailable")).not.toBeInTheDocument();
+  });
+
+  it("keeps a dead share-code error instead of a generic unavailable banner", async () => {
+    renderPublicSharedList("/c/NOTACODE");
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "That share code is not valid.",
+      );
+    });
+    expect(screen.queryByText("Nothing here yet.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bag is empty")).not.toBeInTheDocument();
   });
 
   it("shows an empty state for a valid shared list with no items", async () => {

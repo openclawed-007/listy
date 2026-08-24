@@ -65,6 +65,15 @@ describe("JoinShare", () => {
     expect(await screen.findByText("Opened shared list")).toBeInTheDocument();
   });
 
+  it("keeps Open list disabled until a full code is entered", async () => {
+    renderJoin();
+
+    expect(screen.getByRole("button", { name: "Open list" })).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText("Share code"), "AB3D");
+    expect(screen.getByRole("button", { name: "Open list" })).toBeDisabled();
+  });
+
   it("shows a clear error when the code is not active", async () => {
     mockResolve.mockResolvedValue(null);
     renderJoin();

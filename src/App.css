@@ -2606,7 +2606,9 @@ body.dark .modal-backdrop {
 }
 
 .settings-sheet-body {
-  flex: 1 1 auto;
+  /* Grow with content; shrink and scroll once the sheet hits max-height.
+     flex-grow 0 avoids a 0-basis collapse when the sheet has no definite height. */
+  flex: 0 1 auto;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -2615,13 +2617,14 @@ body.dark .modal-backdrop {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
-  padding: 0.85rem 1rem 0.65rem;
-  /* Extra room so the last card isn’t tight under the sticky footer */
-  scroll-padding-bottom: 0.5rem;
+  padding: 0.85rem 1rem 1.25rem;
+  scroll-padding-bottom: 1rem;
 }
 
 .settings-sheet-footer {
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
   padding: 0.65rem 1rem 0.85rem;
   border-top: 1px solid var(--cream-deep);
   background: var(--surface);
@@ -3121,6 +3124,42 @@ body.dark .modal-backdrop {
   padding: 1.15rem 1.15rem 1rem;
 }
 
+/* Thin sage thumb; native Chromium gutter is too heavy on this sheet. */
+.settings-sheet-body,
+.share-modal {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--sage) 42%, transparent) transparent;
+}
+
+.settings-sheet-body::-webkit-scrollbar,
+.share-modal::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-sheet-body::-webkit-scrollbar-track,
+.share-modal::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 0.35rem;
+}
+
+.settings-sheet-body::-webkit-scrollbar-thumb,
+.share-modal::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--sage) 40%, var(--cream-deep));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.settings-sheet-body::-webkit-scrollbar-thumb:hover,
+.share-modal::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sage-light);
+}
+
+.settings-sheet-body::-webkit-scrollbar-corner,
+.share-modal::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .share-modal-header {
   margin-bottom: 0.85rem;
 }
@@ -3432,7 +3471,9 @@ body.dark .modal-backdrop {
   flex: 1;
   min-width: 0;
   border: 0;
+  appearance: none;
   background: transparent;
+  background-color: transparent;
   color: var(--ink);
   font: 800 1.2rem/1.2 "DM Sans", ui-monospace, monospace;
   letter-spacing: 0.12em;
@@ -3557,7 +3598,9 @@ body.dark .modal-backdrop {
   flex: 1;
   min-width: 0;
   border: 0;
+  appearance: none;
   background: transparent;
+  background-color: transparent;
   color: var(--ink);
   font: 800 1.25rem/1.2 "DM Sans", ui-monospace, monospace;
   letter-spacing: 0.14em;
@@ -3584,6 +3627,19 @@ body.dark .modal-backdrop {
   color: var(--ink);
 }
 
+/* Dark color-scheme paints a native grey chip on the placeholder. */
+.join-input:-webkit-autofill,
+.join-input:-webkit-autofill:hover,
+.join-input:-webkit-autofill:focus,
+.share-join-input:-webkit-autofill,
+.share-join-input:-webkit-autofill:hover,
+.share-join-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--sage-dark);
+  box-shadow: 0 0 0 1000px transparent inset;
+  transition: background-color 10000s ease-in-out 0s;
+}
+
 .join-hint {
   margin: 0.45rem 0 1rem;
   color: var(--ink-muted);
@@ -3593,10 +3649,36 @@ body.dark .modal-backdrop {
 
 .join-submit {
   margin-top: 0.15rem;
+  background: var(--sage);
+  border-color: var(--sage);
+  color: #fff;
+  font-weight: 700;
 }
 
 .join-submit svg {
   margin-left: 0.15rem;
+}
+
+.join-submit:hover:not(:disabled) {
+  background: var(--sage-dark);
+  border-color: var(--sage-dark);
+  color: #fff;
+}
+
+/* Empty/invalid code: muted fill, not a faded copy of the enabled button. */
+.join-submit:disabled:not([aria-busy="true"]) {
+  opacity: 1;
+  background: var(--cream);
+  border-color: var(--cream-deep);
+  color: var(--ink-faint);
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
+
+.join-submit[aria-busy="true"] {
+  opacity: 0.88;
+  cursor: wait;
 }
 
 .join-resolving {
@@ -4321,11 +4403,13 @@ body.dark .login-container::before {
   margin-top: 0.45rem;
   color: var(--ink-muted);
   font-size: 0.82rem;
+  text-wrap: pretty;
 }
 
 .guest-note a {
   color: var(--sage-dark);
   font-weight: 700;
+  white-space: nowrap;
 }
 
 a.theme-toggle {

@@ -303,10 +303,12 @@ const PublicSharedList: React.FC = () => {
     return () => window.clearTimeout(timeoutId);
   }, [addNotice]);
 
-  const unavailableError =
-    !shareId || !db ? "This shared list is not available." : "";
-  const displayError = unavailableError || error;
-  const emptyTitle = displayError ? "List unavailable" : "Bag is empty";
+  // Prefer the specific resolve/snapshot error. An empty shareId after a failed
+  // /c/:code lookup used to hide that message behind a generic unavailable line.
+  const displayError =
+    error ||
+    (!shareId || !db ? "This shared list is not available." : "");
+  const emptyTitle = "Bag is empty";
   const emptyText = displayError
     ? "Ask the owner to refresh their share link."
     : "This shared list does not have any items yet.";
@@ -466,7 +468,7 @@ const PublicSharedList: React.FC = () => {
     }
   };
 
-  if (loading && !unavailableError) {
+  if (loading && !error) {
     return (
       <div className="loading-screen">
         <div className="loading-spinner" />
@@ -512,7 +514,7 @@ const PublicSharedList: React.FC = () => {
       <main className="container">
         <div className="page-heading">
           <h1 className="page-title">{ownerName}</h1>
-          {items.length === 0 && (
+          {items.length === 0 && !displayError && (
             <p className="page-subtitle">Nothing here yet.</p>
           )}
           {displayError && (
@@ -627,7 +629,7 @@ const PublicSharedList: React.FC = () => {
         {items.length === 0 ? (
           <div className="empty-state">
             <PackageOpen size={40} className="empty-icon" strokeWidth={1.25} />
-            <p className="empty-title">{emptyTitle}</p>
+            {!displayError && <p className="empty-title">{emptyTitle}</p>}
             <p className="empty-text">{emptyText}</p>
           </div>
         ) : (

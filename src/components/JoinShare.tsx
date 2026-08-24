@@ -130,8 +130,10 @@ const JoinShare: React.FC = () => {
                   setError("");
                 }}
                 placeholder="AB3D-K7MP"
-                autoComplete="off"
+                name="cartlink-share-code"
+                autoComplete="one-time-code"
                 autoCapitalize="characters"
+                autoCorrect="off"
                 spellCheck={false}
                 inputMode="text"
                 aria-invalid={Boolean(error)}
