@@ -230,10 +230,13 @@ const PublicSharedList: React.FC = () => {
   const anonymousEditingOffered =
     allowEdits && allowAnonymousEdits && !isOwnerViewing;
 
-  // Effective permissions for THIS viewer: anonymous users get the narrowed
-  // anonymous set; signed-in collaborators get the owner's full grant.
-  const effectivePermissions: SharePermissions =
-    isAnonymous && !isOwnerViewing
+  // Effective permissions for THIS viewer:
+  //   - The owner always gets full permissions on their own list.
+  //   - Anonymous users get the narrowed anonymous set.
+  //   - Signed-in collaborators get the owner's full grant.
+  const effectivePermissions: SharePermissions = isOwnerViewing
+    ? { toggle: true, add: true, remove: true }
+    : isAnonymous
       ? anonymousPermissions(permissions, allowAnonymousEdits)
       : permissions;
 
@@ -493,7 +496,14 @@ const PublicSharedList: React.FC = () => {
             </div>
 
             {shareId && !isOwnerViewing && (
-              <Link className="import-link-btn" to={`/import/${shareId}`}>
+              <Link
+                className="import-link-btn"
+                to={
+                  user && !user.isAnonymous
+                    ? `/import/${shareId}`
+                    : `/login?redirect=${encodeURIComponent(`/import/${shareId}`)}`
+                }
+              >
                 {allowEdits && !signedIn && !anonymousEditingOffered
                   ? "Sign in to edit this list"
                   : "Sign in to save this list"}

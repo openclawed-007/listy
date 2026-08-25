@@ -437,6 +437,11 @@ const ShoppingList: React.FC = () => {
     }
 
     const timeout = window.setTimeout(() => {
+      // Do not publish stale local state while a collaborator change is still
+      // being reconciled. The sync-back listener will update the shared doc
+      // once local state catches up.
+      if (pendingInboundSharedSignatureRef.current !== null) return;
+
       sharedItemsSignatureRef.current = localSignature;
       Promise.resolve(
         setDoc(doc(db, "sharedLists", user.uid), {

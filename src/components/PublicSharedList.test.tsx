@@ -69,6 +69,8 @@ function renderPublicSharedList(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/share/:shareId" element={<PublicSharedList />} />
+          <Route path="/login" element={<div>Login page</div>} />
+          <Route path="/import/:shareId" element={<div>Import page</div>} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -103,9 +105,16 @@ describe("PublicSharedList", () => {
     await userEvent.click(apples);
 
     expect(apples).toHaveAttribute("aria-pressed", "true");
-    expect(
-      screen.getByRole("link", { name: "Sign in to save this list" }),
-    ).toHaveAttribute("href", "/import/alex-uid");
+    const signInLink = screen.getByRole("link", {
+      name: "Sign in to save this list",
+    });
+    expect(signInLink).toHaveAttribute(
+      "href",
+      "/login?redirect=%2Fimport%2Falex-uid",
+    );
+
+    await userEvent.click(signInLink);
+    expect(await screen.findByText("Login page")).toBeInTheDocument();
   });
 
   it("shows an unavailable state when the shared snapshot is missing", async () => {
@@ -206,7 +215,7 @@ describe("PublicSharedList", () => {
     expect(mockUpdateDoc).not.toHaveBeenCalled();
     expect(
       screen.getByRole("link", { name: "Sign in to edit this list" }),
-    ).toHaveAttribute("href", "/import/alex-uid");
+    ).toHaveAttribute("href", "/login?redirect=%2Fimport%2Falex-uid");
   });
 
   it("lets a collaborator with toggle permission save a completion change", async () => {
@@ -353,7 +362,7 @@ describe("PublicSharedList", () => {
     expect(loginAnonymously).not.toHaveBeenCalled();
   });
 
-  it("lets an anonymous visitor toggle when anonymous edits are allowed", async () => {
+  it("lets an anonymous visitor toggle and sends login directly to the login page", async () => {
     emitSharedSnapshot({
       ownerId: "alex-uid",
       ownerName: "Alex",
@@ -370,6 +379,16 @@ describe("PublicSharedList", () => {
     await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
     const [, payload] = mockUpdateDoc.mock.calls[0];
     expect(payload.items).toEqual([{ text: "Apples", completed: true }]);
+
+    const signInLink = screen.getByRole("link", {
+      name: "Sign in to save this list",
+    });
+    expect(signInLink).toHaveAttribute(
+      "href",
+      "/login?redirect=%2Fimport%2Falex-uid",
+    );
+    await userEvent.click(signInLink);
+    expect(await screen.findByText("Login page")).toBeInTheDocument();
   });
 
   it("lets an anonymous visitor add but never offers remove", async () => {
