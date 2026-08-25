@@ -23,7 +23,10 @@ vi.mock("./shareCode", async () => {
   };
 });
 
-import { allocateShareCode } from "./allocateShareCode";
+import {
+  allocateShareCode,
+  resolveValidatedShareCode,
+} from "./allocateShareCode";
 
 const firestore = { app: "test" } as never;
 
@@ -69,5 +72,41 @@ describe("allocateShareCode", () => {
       "XY9F2NPQ",
     );
     expect(mockSetDoc).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("resolveValidatedShareCode", () => {
+  it("rejects invalid input without querying Firestore", async () => {
+    await expect(
+      resolveValidatedShareCode(firestore, "not-a-code"),
+    ).resolves.toEqual({ status: "invalid" });
+    expect(mockGetDoc).not.toHaveBeenCalled();
+  });
+
+  it("normalizes and resolves an active code", async () => {
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ownerId: "owner-1" }),
+    });
+
+    await expect(
+      resolveValidatedShareCode(firestore, "ab3d-k7mp"),
+    ).resolves.toEqual({
+      status: "ok",
+      code: "AB3DK7MP",
+      ownerId: "owner-1",
+    });
+    expect(mockGetDoc).toHaveBeenCalledOnce();
+  });
+
+  it("reports a valid but inactive code", async () => {
+    mockGetDoc.mockResolvedValue({
+      exists: () => false,
+      data: () => undefined,
+    });
+
+    await expect(
+      resolveValidatedShareCode(firestore, "AB3DK7MP"),
+    ).resolves.toEqual({ status: "inactive" });
   });
 });
