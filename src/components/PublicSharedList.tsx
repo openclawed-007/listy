@@ -20,7 +20,6 @@ import {
 import {
   hasAnyPermission,
   NO_PERMISSIONS,
-  normalizeSharePermissions,
   type SharePermissions,
 } from "../lib/sharePermissions";
 import {
@@ -30,11 +29,15 @@ import {
   MAX_ITEM_TEXT_LENGTH,
   parseItemInput,
 } from "../lib/itemInput";
+import { groupItemsByCategory, isRecord } from "../lib/shoppingItem";
 import {
-  groupItemsByCategory,
-  isRecord,
-  normalizeSharedItems as normalizeSharedPayloads,
-} from "../lib/shoppingItem";
+  createCollaboratorItemId,
+  MAX_PUBLIC_ITEMS,
+  normalizePublicSharedList,
+  payloadToPublicItems,
+  type PublicItem,
+  type SharedItemData,
+} from "../lib/publicSharedListModel";
 import {
   applySharedListMutation,
   commitSharedListMutation,
@@ -55,93 +58,6 @@ import {
 } from "../lib/localTicks";
 import BrandMark from "./BrandMark";
 import ThemeToggle from "./ThemeToggle";
-
-const MAX_ITEMS = 500;
-
-let collaboratorIdSeq = 0;
-
-function createCollaboratorItemId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  collaboratorIdSeq += 1;
-  return `c-${collaboratorIdSeq}`;
-}
-
-interface SharedItemData {
-  id?: string;
-  text: string;
-  completed: boolean;
-  quantity?: string;
-  category?: string;
-  note?: string;
-  important?: boolean;
-}
-
-interface SharedListSnapshot {
-  ownerId: string;
-  ownerName: string;
-  allowEdits: boolean;
-  permissions: SharePermissions;
-  items: SharedItemData[];
-}
-
-interface PublicItem {
-  id: string;
-  index: number;
-  text: string;
-  completed: boolean;
-  quantity?: string;
-  category?: string;
-  note?: string;
-  important?: boolean;
-}
-
-function getSafeOwnerName(value: unknown) {
-  return typeof value === "string" && value.trim()
-    ? value.trim().slice(0, 120)
-    : "Shared list";
-}
-
-function normalizeSharedItems(items: unknown): PublicItem[] {
-  return normalizeSharedPayloads(items).map((item, index) => ({
-    id: item.id ?? `${index}-${item.text}`,
-    index,
-    text: item.text,
-    completed: item.completed,
-    quantity: item.quantity,
-    category: item.category,
-    note: item.note,
-    important: item.important,
-  }));
-}
-
-function normalizeSharedListSnapshot(data: unknown): SharedListSnapshot | null {
-  if (!isRecord(data) || typeof data.ownerId !== "string") return null;
-
-  const permissions = normalizeSharePermissions(data.permissions);
-
-  return {
-    ownerId: data.ownerId,
-    ownerName: getSafeOwnerName(data.ownerName),
-    allowEdits: data.allowEdits === true && hasAnyPermission(permissions),
-    permissions,
-    items: normalizeSharedItems(data.items),
-  };
-}
-
-function payloadToPublicItems(payload: SharedItemData[]): PublicItem[] {
-  return payload.map((item, index) => ({
-    id: item.id ?? `${index}-${item.text}`,
-    index,
-    text: item.text,
-    completed: item.completed,
-    quantity: item.quantity,
-    category: item.category,
-    note: item.note,
-    important: item.important,
-  }));
-}
 
 const PublicSharedList: React.FC = () => {
   const { shareId: shareIdParam, code: codeParam } = useParams();
@@ -233,7 +149,7 @@ const PublicSharedList: React.FC = () => {
         }
 
         const raw = snapshot.data();
-        const data = normalizeSharedListSnapshot(raw);
+        const data = normalizePublicSharedList(raw);
         if (!data) {
           setError("This shared list is not available.");
           setItems([]);
@@ -429,7 +345,7 @@ const PublicSharedList: React.FC = () => {
 
     const { text, quantity, category } = parseItemInput(newItemText);
     if (!text) return;
-    if (items.length >= MAX_ITEMS) {
+    if (items.length >= MAX_PUBLIC_ITEMS) {
       setSaveError("This list is full.");
       return;
     }

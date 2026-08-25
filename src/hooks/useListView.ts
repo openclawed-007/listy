@@ -1,13 +1,22 @@
 import { useMemo } from "react";
 import { sortItemsForMode, type ListSortMode } from "../lib/listOrder";
-import {
-  groupItemsByCategory,
-  type ShoppingItem,
-} from "../lib/shoppingItem";
+import { groupItemsByCategory } from "../lib/shoppingItem";
+
+interface ListViewItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  quantity?: string;
+  category?: string;
+  note?: string;
+  important?: boolean;
+  sortOrder?: number;
+  createdAt?: { toMillis?: () => number } | number;
+}
 
 /** Derives search results, sections, and headline statistics for a list view. */
-export function useListView(
-  items: ShoppingItem[],
+export function useListView<T extends ListViewItem>(
+  items: T[],
   search: string,
   sortMode: ListSortMode,
 ) {

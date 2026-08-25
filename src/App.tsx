@@ -12,6 +12,9 @@ import { useAuth } from "./context/useAuth";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import "./App.css";
+import "./styles/auth.css";
+import "./styles/dialogs-and-sharing.css";
+import "./styles/responsive-and-themes.css";
 
 const ShoppingList = lazy(() => import("./components/ShoppingList"));
 const Login = lazy(() => import("./components/Login"));

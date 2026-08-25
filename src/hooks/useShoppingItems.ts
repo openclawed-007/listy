@@ -1,11 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "../firebase";
-import { compareManualOrder } from "../lib/listOrder";
-import {
-  normalizeShoppingItem,
-  type ShoppingItem,
-} from "../lib/shoppingItem";
+import type { ShoppingItem } from "../lib/shoppingItem";
+import { subscribeToShoppingItems } from "../services/shoppingItems";
 
 interface ShoppingItemsState {
   items: ShoppingItem[];
@@ -29,23 +25,10 @@ export function useShoppingItems(
   useEffect(() => {
     if (!userId || !db) return undefined;
 
-    const itemsQuery = query(
-      collection(db, "shoppingItems"),
-      where("userId", "==", userId),
-    );
-
-    return onSnapshot(
-      itemsQuery,
-      (snapshot) => {
-        const nextItems = snapshot.docs.flatMap((snapshotDoc) => {
-          const item = normalizeShoppingItem(
-            snapshotDoc.id,
-            snapshotDoc.data(),
-          );
-          return item ? [item] : [];
-        });
-
-        nextItems.sort(compareManualOrder);
+    return subscribeToShoppingItems(
+      db,
+      userId,
+      (nextItems) => {
         setItems(nextItems);
         setLoaded(true);
         setError("");

@@ -1,0 +1,640 @@
+/* ===========================
+   LEGAL / NOT-FOUND / ERROR
+   =========================== */
+.legal-wrapper {
+  min-height: 100vh;
+  background: var(--cream);
+  color: var(--ink);
+  position: relative;
+  z-index: 1;
+}
+
+.legal-header {
+  display: flex;
+  justify-content: center;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--cream-deep);
+}
+
+.legal-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 720px;
+  padding: 0 1.5rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.legal-content {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 5rem;
+  line-height: 1.6;
+}
+
+.legal-content h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.2rem;
+  margin: 0 0 0.4rem;
+  letter-spacing: -0.01em;
+}
+
+.legal-content h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.25rem;
+  margin: 2rem 0 0.6rem;
+  color: var(--ink);
+}
+
+.legal-content p,
+.legal-content li {
+  color: var(--ink-muted);
+  font-size: 0.96rem;
+}
+
+.legal-content ul {
+  padding-left: 1.25rem;
+}
+
+.legal-content li {
+  margin-bottom: 0.4rem;
+}
+
+.legal-content a {
+  color: var(--sage-dark);
+  text-decoration: underline;
+}
+
+.legal-content a:hover {
+  color: var(--sage);
+}
+
+.legal-meta {
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  margin: 0 0 2rem;
+}
+
+.legal-back {
+  margin-top: 3rem;
+  font-size: 0.9rem;
+}
+
+.not-found-wrapper,
+.error-boundary {
+  min-height: 100vh;
+  background: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.not-found-card,
+.error-boundary-card {
+  max-width: 420px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--cream-deep);
+  border-radius: var(--radius);
+  padding: 2.5rem 2rem;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.not-found-card h1,
+.error-boundary-card h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.7rem;
+  margin: 0;
+  color: var(--ink);
+}
+
+.not-found-card p,
+.error-boundary-card p {
+  color: var(--ink-muted);
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.not-found-card .empty-icon {
+  color: var(--ink-faint);
+}
+
+.error-boundary-card svg {
+  color: var(--terra);
+}
+
+.not-found-btn,
+.error-boundary-card .primary-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.5rem;
+  width: auto;
+  min-width: 11rem;
+  padding-inline: 1.4rem;
+}
+
+.error-boundary-card a {
+  color: var(--sage-dark);
+  text-decoration: underline;
+}
+
+/* ===========================
+   RESPONSIVE
+   =========================== */
+@media (max-width: 600px) {
+  .add-form {
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .add-primary-row {
+    gap: 0.5rem;
+  }
+
+  /* Slightly shorter controls on mobile — keep 16px type to avoid iOS zoom. */
+  .add-input,
+  .add-btn {
+    height: 48px;
+  }
+
+  .add-btn {
+    width: 48px;
+    border-radius: var(--radius-sm);
+  }
+
+  .add-input {
+    padding: 0 1rem;
+    font-size: 1rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .add-clear-btn {
+    right: calc(48px + 0.5rem + 0.3rem);
+  }
+
+  .item-edit-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .container {
+    padding: 1rem 1rem 4rem;
+  }
+
+  .navbar {
+    padding: env(safe-area-inset-top, 0px) 0 0;
+  }
+
+  .navbar-content {
+    padding: 0 1rem;
+  }
+
+  .page-title {
+    font-size: 1.9rem;
+  }
+
+  .nav-account-name {
+    display: none;
+  }
+
+  .nav-account-trigger {
+    padding: 0.22rem;
+  }
+
+  .user-avatar {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  .user-actions {
+    gap: 0.35rem;
+  }
+
+  .theme-toggle,
+  .nav-overflow-trigger {
+    width: 36px;
+    height: 36px;
+  }
+
+  .nav-account-dot {
+    top: 2px;
+    right: 2px;
+  }
+
+  .login-card {
+    padding: 1.5rem 1.15rem 1.25rem;
+    border-radius: 18px;
+  }
+
+  .login-title {
+    font-size: clamp(1.8rem, 4.5vh, 2.05rem);
+  }
+}
+
+/* Short viewports (landscape phones, small laptops): trim the nice-to-haves
+   so the whole card fits without scrolling. */
+@media (max-height: 620px) {
+  .login-benefit-copy span {
+    display: none;
+  }
+
+  .login-trust {
+    display: none;
+  }
+
+  .login-container {
+    padding-top: max(1.5rem, env(safe-area-inset-top, 0px));
+    padding-bottom: 0.75rem;
+  }
+}
+
+/* Respect mobile browser chrome and user motion preferences. */
+.app-wrapper,
+.legal-wrapper,
+.not-found-wrapper,
+.error-boundary {
+  min-height: 100dvh;
+}
+
+/* login-container sets its own 100dvh height lock above. */
+
+.loading-screen {
+  height: 100dvh;
+}
+
+.item-content {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* Comfortable chrome on touch — row actions keep the compact look and use
+   the invisible ::after hit area instead of inflating the whole row. */
+@media (pointer: coarse) {
+  .theme-toggle,
+  .modal-close,
+  .nav-overflow-trigger {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .toggle-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .list-tab,
+  .perm-chip,
+  .secondary-btn,
+  .danger-btn {
+    min-height: 2.75rem;
+  }
+}
+
+
+/* Keep status feedback legible against the dark surface. */
+html.dark .form-error,
+html.dark .setup-warning,
+body.dark .form-error,
+body.dark .setup-warning {
+  background: rgba(224, 138, 106, 0.1);
+  border-color: rgba(224, 138, 106, 0.38);
+  color: #f1b39d;
+}
+
+html.dark .clear-done-btn:hover,
+body.dark .clear-done-btn:hover {
+  background: rgba(224, 138, 106, 0.1);
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: clamp(0.6rem, 1.8vh, 0.9rem) 0 clamp(0.5rem, 1.5vh, 0.7rem);
+  color: var(--ink-faint);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--cream-deep);
+}
+
+.login-divider span {
+  flex: 0 1 auto;
+  white-space: nowrap;
+}
+
+.guest-button {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--cream-deep);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--cream);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 700;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.guest-button:hover {
+  background: var(--cream-dark);
+  border-color: var(--ink-faint);
+}
+
+html.dark .login-benefit-icon,
+body.dark .login-benefit-icon {
+  background: rgba(127, 185, 138, 0.16);
+  color: var(--sage-light);
+}
+
+html.dark .login-container::before,
+body.dark .login-container::before {
+  background:
+    radial-gradient(ellipse 70% 80% at 80% 0%, rgba(127, 185, 138, 0.12), transparent 60%),
+    radial-gradient(ellipse 55% 70% at 10% 20%, rgba(224, 138, 106, 0.07), transparent 55%);
+}
+
+.guest-badge {
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background: var(--cream-dark);
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.guest-note {
+  margin-top: 0.45rem;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+  text-wrap: pretty;
+}
+
+.guest-note a {
+  color: var(--sage-dark);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+a.theme-toggle {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ===========================
+   DESKTOP — COMFORTABLE LIST DENSITY
+   The mobile list is deliberately compact. On desktop there is room to
+   breathe, so item rows, controls, and icons step up beyond the fluid
+   root-font scaling. Kept at the end of the file so these override the
+   compact base rules.
+   =========================== */
+@media (min-width: 1024px) and (pointer: fine) {
+  .item-row {
+    gap: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    min-height: 2.9rem;
+  }
+
+  .item-row.is-editing {
+    padding-block: 0.65rem;
+  }
+
+  .item-text {
+    font-size: 1rem;
+  }
+
+  .item-qty {
+    font-size: 0.78rem;
+    padding: 0.1rem 0.5rem;
+  }
+
+  .toggle-btn {
+    width: 1.625rem;
+    height: 1.625rem;
+  }
+
+  .toggle-btn svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .important-btn,
+  .edit-btn,
+  .delete-btn {
+    width: 1.875rem;
+    height: 1.875rem;
+  }
+
+  .important-btn svg,
+  .edit-btn svg {
+    width: 0.9375rem;
+    height: 0.9375rem;
+  }
+
+  .delete-btn svg,
+  .drag-handle svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .drag-handle {
+    width: 1.75rem;
+    height: 2.1rem;
+  }
+
+  .items-list,
+  .done-section {
+    gap: 0.25rem;
+  }
+
+  .category-group {
+    gap: 0.2rem;
+  }
+
+  .category-heading {
+    font-size: 0.72rem;
+    margin-top: 0.6rem;
+  }
+
+  .items-divider-label {
+    font-size: 0.72rem;
+  }
+
+  .page-title {
+    font-size: 2.1rem;
+  }
+
+  .add-input,
+  .add-btn {
+    height: 3.125rem;
+  }
+
+  .add-btn {
+    width: 3.125rem;
+  }
+
+  .add-input {
+    font-size: 1.05rem;
+  }
+
+  /* Keep the inline clear button aligned with the wider add button. */
+  .add-clear-btn {
+    right: calc(3.125rem + 0.5rem + 0.35rem);
+  }
+
+  .add-hint {
+    font-size: 0.8rem;
+  }
+
+  .list-tab {
+    font-size: 0.86rem;
+    padding: 0.45rem 1rem;
+  }
+
+  .stats-text {
+    font-size: 0.78rem;
+  }
+
+  .sort-toggle-btn {
+    font-size: 0.74rem;
+    padding: 0.24rem 0.55rem;
+  }
+
+  .clear-done-btn {
+    font-size: 0.76rem;
+  }
+
+  .progress-track {
+    height: 3px;
+  }
+}
+
+/* ===========================
+   LATE POLISH
+   =========================== */
+.nav-text-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.45rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--sage-dark);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+}
+
+.nav-text-link:hover {
+  color: var(--sage);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 380px) {
+  .login-benefits {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .login-benefits li {
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 0.45rem 0.65rem;
+    gap: 0.65rem;
+  }
+
+  .login-benefit-copy span {
+    display: inline;
+  }
+
+  .list-meta-row {
+    align-items: center;
+  }
+
+  .stats-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 420px) {
+  .share-caps {
+    border-radius: var(--radius);
+  }
+}
+
+.settings-field input[type="time"] {
+  color-scheme: inherit;
+}
+
+html.dark .add-hint-chip,
+body.dark .add-hint-chip {
+  background: rgba(127, 185, 138, 0.18);
+  color: var(--sage-light);
+}
+
+html.dark .empty-tip code,
+body.dark .empty-tip code {
+  color: var(--sage-light);
+}
+
+.import-link-btn {
+  margin-top: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+.page-heading .import-link-btn {
+  margin-top: 0.85rem;
+  margin-bottom: 0;
+}
+
+/* Keep the first category heading from sitting under the nav on iOS. */
+.category-heading:first-child {
+  margin-top: 0.15rem;
+}
+
+.sort-toggle {
+  flex-wrap: nowrap;
+}

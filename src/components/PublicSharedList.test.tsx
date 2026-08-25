@@ -6,14 +6,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthContext } from "../context/AuthContext.shared";
 import PublicSharedList from "./PublicSharedList";
 
-const { mockDb, mockOnSnapshot, mockUpdateDoc, mockRunTransaction } = vi.hoisted(
-  () => ({
-    mockDb: { app: "test" },
-    mockOnSnapshot: vi.fn(),
-    mockUpdateDoc: vi.fn(),
-    mockRunTransaction: vi.fn(),
-  }),
-);
+const {
+  mockDb,
+  mockOnSnapshot,
+  mockUpdateDoc,
+  mockRunTransaction,
+  mockResolveValidatedShareCode,
+} = vi.hoisted(() => ({
+  mockDb: { app: "test" },
+  mockOnSnapshot: vi.fn(),
+  mockUpdateDoc: vi.fn(),
+  mockRunTransaction: vi.fn(),
+  mockResolveValidatedShareCode: vi.fn(),
+}));
 
 vi.mock("../firebase", () => ({
   db: mockDb,
@@ -24,10 +29,15 @@ vi.mock("../lib/allocateShareCode", async () => {
   return {
     resolveShareCode: vi.fn(),
     allocateShareCode: vi.fn(),
-    resolveValidatedShareCode: vi.fn(async (_db: unknown, input: string) => ({
-      status: "inactive" as const,
-      code: normalizeShareCodeInput(input),
-    })),
+    resolveValidatedShareCode: vi.fn(async (_db: unknown, input: string) => {
+      const configured = await mockResolveValidatedShareCode(_db, input);
+      return (
+        configured ?? {
+          status: "inactive" as const,
+          code: normalizeShareCodeInput(input),
+        }
+      );
+    }),
   };
 });
 
@@ -192,6 +202,30 @@ describe("PublicSharedList", () => {
     });
     expect(screen.queryByText("Nothing here yet.")).not.toBeInTheDocument();
     expect(screen.queryByText("Bag is empty")).not.toBeInTheDocument();
+  });
+
+  it("resolves a valid /c/:code route and loads its shared list", async () => {
+    mockResolveValidatedShareCode.mockResolvedValue({
+      status: "ok",
+      code: "AB3DK7MP",
+      ownerId: "alex-uid",
+    });
+    emitSharedSnapshot({
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      items: [{ text: "Apples", completed: false }],
+    });
+
+    renderPublicSharedList("/c/AB3D-K7MP");
+
+    expect(
+      await screen.findByRole("heading", { name: "Alex" }),
+    ).toBeInTheDocument();
+    expect(mockResolveValidatedShareCode).toHaveBeenCalledWith(
+      mockDb,
+      "AB3DK7MP",
+    );
+    expect(screen.getByRole("button", { name: "Apples" })).toBeInTheDocument();
   });
 
   it("shows an empty state for a valid shared list with no items", async () => {

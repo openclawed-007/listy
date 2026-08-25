@@ -27,9 +27,11 @@ import {
   setPrefGroup,
   TIPS_PREF_OPTIONS,
   type InterfacePreferences,
-  type InterfaceToggleKey,
-  type PrefOption,
 } from "../lib/userPreferences";
+import {
+  PrefSwitch,
+  SettingsPrefGroup as PrefGroup,
+} from "./SettingsPrefGroup";
 
 interface SettingsDialogProps {
   userId: string | null;
@@ -45,58 +47,6 @@ const WHEN_OPTIONS: Array<{ id: RemindWhen; label: string }> = [
 ];
 
 const SAVE_DEBOUNCE_MS = 400;
-
-function PrefSwitch({
-  label,
-  description,
-  on,
-  onToggle,
-}: {
-  label: string;
-  description: string;
-  on: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <label className="settings-pref-row">
-      <span className="settings-toggle-copy">
-        <strong>{label}</strong>
-        <span>{description}</span>
-      </span>
-      <button
-        type="button"
-        className={`settings-switch ${on ? "is-on" : ""}`}
-        role="switch"
-        aria-checked={on}
-        aria-label={label}
-        onClick={onToggle}
-      >
-        <span className="settings-switch-knob" />
-      </button>
-    </label>
-  );
-}
-
-function PrefGroup({ options, prefs, onToggle }: {
-  options: PrefOption[];
-  prefs: InterfacePreferences;
-  onToggle: (id: InterfaceToggleKey) => void;
-}) {
-  return (
-    <ul className="settings-pref-list">
-      {options.map((option) => (
-        <li key={option.id}>
-          <PrefSwitch
-            label={option.label}
-            description={option.description}
-            on={prefs[option.id]}
-            onToggle={() => onToggle(option.id)}
-          />
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
   const dialogRef = useDialogFocus<HTMLDivElement>();

@@ -37,7 +37,6 @@ import {
   nextTopSortOrder,
   readDoneCollapsed,
   readListSortMode,
-  sortItemsForMode,
   writeDoneCollapsed,
   writeListSortMode,
   type ListSortMode,
@@ -50,6 +49,7 @@ import ItemRow, {
 import AddItemField from "./AddItemField";
 import { useItemSuggestions } from "../hooks/useItemSuggestions";
 import { useItemReorder } from "../hooks/useItemReorder";
+import { useListView } from "../hooks/useListView";
 import type { ShoppingItem } from "../lib/shoppingItem";
 
 function asShoppingItem(item: GuestItem): ShoppingItem {
@@ -204,46 +204,17 @@ const GuestList: React.FC = () => {
     setEditingId(null);
   };
 
-  const listQuery = value.trim().toLowerCase();
-  const isSearching = listQuery.length > 0;
-
   const {
     activeItems,
     doneItems,
     doneGroups,
     filteredCount,
-  } = useMemo(() => {
-    const visible = listQuery
-      ? items.filter((item) =>
-          [item.text, item.quantity, item.category, item.note]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase()
-            .includes(listQuery),
-        )
-      : items;
-
-    const stillNeeded = sortItemsForMode(
-      visible.filter((item) => !item.completed),
-      sortMode,
-    );
-    const alreadyGot = sortItemsForMode(
-      visible.filter((item) => item.completed),
-      sortMode,
-    );
-    return {
-      activeItems: stillNeeded,
-      doneItems: alreadyGot,
-      doneGroups: groupItemsByCategory(alreadyGot),
-      filteredCount: visible.length,
-    };
-  }, [items, sortMode, listQuery]);
+    isSearching,
+    progress,
+  } = useListView(items, value, sortMode);
 
   const active = activeItems;
   const done = doneItems;
-  const progress = items.length
-    ? Math.round((done.length / items.length) * 100)
-    : 0;
 
   const reorderEnabled =
     !isSearching && sortMode !== "alpha" && active.length > 1;
