@@ -15,25 +15,13 @@ import {
   updateDoc,
   where,
   type WriteBatch,
-} from "firebase/firestore";
-import {
-  ChevronDown,
-  ChevronRight,
-  PackageOpen,
-  Share2,
-  WifiOff,
-} from "lucide-react";
+} from "../services/firestoreOperations";
+import { Share2, WifiOff } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
-import {
-  hasAnyPermission,
-  NO_PERMISSIONS,
-  normalizeSharePermissions,
-  type SharePermissions,
-} from "../lib/sharePermissions";
+import { hasAnyPermission } from "../lib/sharePermissions";
 import {
   AISLES,
-  DEFAULT_CATEGORY,
   formatQuantity,
   getDuplicateKey,
   MAX_CATEGORY_LENGTH,
@@ -45,7 +33,6 @@ import {
 } from "../lib/itemInput";
 import {
   buildPublishedState,
-  clearPublishedState,
   diffSharedState,
   hasSharedChanges,
   indexSharedItems,
@@ -74,12 +61,7 @@ import {
   guestMigrationNotice,
   readGuestItems,
 } from "../lib/guestItems";
-import { allocateShareCode } from "../lib/allocateShareCode";
-import {
-  buildShareCodeUrl,
-  formatShareCode,
-  isValidShareCode,
-} from "../lib/shareCode";
+import { formatShareCode } from "../lib/shareCode";
 import {
   LIST_SORT_MODES,
   nextTopSortOrder,
@@ -100,12 +82,7 @@ import DismissibleMessage from "./DismissibleMessage";
 import NavAccountMenu from "./NavAccountMenu";
 import SettingsDialog from "./SettingsDialog";
 import ShareDialog, { type ShareDialogTab } from "./ShareDialog";
-import {
-  CATEGORY_DATALIST_ID,
-  CategoryGroup,
-  ItemRow,
-  type ItemEditState,
-} from "./ItemRow";
+import { CATEGORY_DATALIST_ID } from "./ItemRow";
 import {
   startReminderWatch,
   syncReminderSchedule,
@@ -123,9 +100,12 @@ import { useItemSuggestions } from "../hooks/useItemSuggestions";
 import { useOwnedLists } from "../hooks/useOwnedLists";
 import { useShoppingItems } from "../hooks/useShoppingItems";
 import { useListView } from "../hooks/useListView";
+import { useItemActions } from "../hooks/useItemActions";
+import { useSharedList } from "../hooks/useSharedList";
 import AddItemField from "./AddItemField";
 import ListAdminControls from "./ListAdminControls";
 import ListTabs from "./ListTabs";
+import ShoppingListItems from "./ShoppingListItems";
 
 interface PendingDelete {
   item: ShoppingItem;
@@ -149,30 +129,17 @@ const ShoppingList: React.FC = () => {
   const lists = useOwnedLists(user?.uid, items);
   const { activeListId, setActiveListId, activeTabName, tabs: listTabs } =
     lists;
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState("");
-  const [editQuantity, setEditQuantity] = useState("");
-  const [editCategory, setEditCategory] = useState("");
-  const [editNote, setEditNote] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { interfacePrefs, reminderSettings } = usePreferences();
   const [shareTab, setShareTab] = useState<ShareDialogTab>("share");
-  const [shareUrl, setShareUrl] = useState("");
-  const [shareCode, setShareCode] = useState("");
-  const [shareStatus, setShareStatus] = useState("");
-  const [shareBusy, setShareBusy] = useState(false);
 
   const openShareDialog = (tab: ShareDialogTab = "share") => {
     setShareTab(tab);
     setShareOpen(true);
   };
-  const [permissions, setPermissions] =
-    useState<SharePermissions>(NO_PERMISSIONS);
-  const allowEdits = hasAnyPermission(permissions);
   const [notice, setNotice] = useState("");
   const [importing, setImporting] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
     null,
   );
@@ -187,7 +154,9 @@ const ShoppingList: React.FC = () => {
   // The snapshot we last pushed to sharedLists/{uid}. Everything the
   // collaborator listener does is measured against this, never against the
   // live list — see src/lib/sharedSync.ts for why.
-  const publishedRef = useRef<PublishedState | null>(null);
+  const publishedRef = useRef<PublishedState | null>(
+    user ? readPublishedState(user.uid) : null,
+  );
   // Latest personal items, readable from the listener without making the
   // subscription tear down and replay on every keystroke.
   const personalItemsRef = useRef<ShoppingItem[]>([]);
@@ -205,48 +174,6 @@ const ShoppingList: React.FC = () => {
     return () => window.clearTimeout(timeoutId);
   }, [notice]);
 
-  useEffect(() => {
-    if (!user || !db) return;
-    const firestore = db;
-
-    const loadShareState = async () => {
-      try {
-        const snapshot = await getDoc(doc(firestore, "sharedLists", user.uid));
-        if (!snapshot || typeof snapshot.exists !== "function" || !snapshot.exists()) {
-          return;
-        }
-
-        const data = snapshot.data();
-        setIsSharing(true);
-        setPermissions(normalizeSharePermissions(data?.permissions));
-
-        // Older shares only had a UID URL. Mint a short code once so verbal
-        // sharing and the QR both use the same join path.
-        let code =
-          typeof data?.shareCode === "string" && isValidShareCode(data.shareCode)
-            ? data.shareCode
-            : "";
-        if (!code) {
-          code = await allocateShareCode(firestore, user.uid);
-          setShareCode(code);
-          await updateDoc(doc(firestore, "sharedLists", user.uid), {
-            shareCode: code,
-          });
-        }
-
-        setShareCode(code);
-        setShareUrl(buildShareCodeUrl(window.location.origin, code));
-        // Remember what we published last session so collaborator changes made
-        // while this app was closed are still recognised as theirs.
-        publishedRef.current = readPublishedState(user.uid);
-      } catch (error) {
-        console.error("Load share state error:", error);
-      }
-    };
-
-    void loadShareState();
-  }, [user]);
-
   const showListTabs = listTabs.length > 1;
 
   /** Owned list published to collaborators — always My List (keeps share simple). */
@@ -254,6 +181,35 @@ const ShoppingList: React.FC = () => {
     () => items.filter((item) => getItemListId(item) === PERSONAL_LIST_ID),
     [items],
   );
+
+  const ownerName =
+    user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
+  const {
+    isSharing,
+    permissions,
+    shareCode,
+    shareUrl,
+    shareStatus,
+    shareBusy,
+    setShareStatus,
+    startSharing,
+    togglePermission,
+    stopSharing,
+  } = useSharedList({
+    firestore: db,
+    user,
+    ownerName,
+    items: personalItems.map(toSharedItemPayload),
+    onError: setActionError,
+    onStopped: () => setShareOpen(false),
+  });
+  const allowEdits = hasAnyPermission(permissions);
+
+  useEffect(() => {
+    if (isSharing && user && !publishedRef.current) {
+      publishedRef.current = readPublishedState(user.uid);
+    }
+  }, [isSharing, user]);
 
   // Guest mode lives only on this device. When the same person signs in, fold
   // those rows into their cloud list once so they never lose a half-built shop.
@@ -346,9 +302,6 @@ const ShoppingList: React.FC = () => {
     // Only when the first cloud snapshot lands — not on every item change.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot
   }, [user, itemsLoaded]);
-
-  const ownerName =
-    user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
 
   useEffect(() => {
     if (!isSharing || !itemsLoaded || !user || !db) return;
@@ -955,38 +908,7 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const commitEdit = async () => {
-    if (!editingId) return;
-    const saved = await updateItemDetails(
-      editingId,
-      editText,
-      editQuantity,
-      editCategory,
-      editNote,
-    );
-    if (saved) setEditingId(null);
-  };
-
-  const edit: ItemEditState = {
-    editingId,
-    text: editText,
-    quantity: editQuantity,
-    category: editCategory,
-    note: editNote,
-    onStart: (item) => {
-      setEditingId(item.id);
-      setEditText(item.text);
-      setEditQuantity(item.quantity ?? "");
-      setEditCategory(item.category ?? "");
-      setEditNote(item.note ?? "");
-    },
-    onTextChange: setEditText,
-    onQuantityChange: setEditQuantity,
-    onCategoryChange: setEditCategory,
-    onNoteChange: setEditNote,
-    onCommit: commitEdit,
-    onCancel: () => setEditingId(null),
-  };
+  const { edit } = useItemActions(updateItemDetails);
 
   const commitNewList = async (name: string) => {
     const result = await lists.createList(name);
@@ -1101,101 +1023,6 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const startSharing = async () => {
-    if (!user || !db || shareBusy) return;
-
-    setShareBusy(true);
-    setShareStatus("Creating share code…");
-    setActionError("");
-
-    try {
-      // Reuse an existing code if we already minted one this session so a
-      // failed publish after allocate doesn't orphan a fresh mapping.
-      let code = shareCode;
-      if (!code) {
-        code = await allocateShareCode(db, user.uid);
-        setShareCode(code);
-      }
-      const url = buildShareCodeUrl(window.location.origin, code);
-
-      await setDoc(doc(db, "sharedLists", user.uid), {
-        ownerId: user.uid,
-        ownerName,
-        allowEdits,
-        permissions,
-        items: personalItems.map(toSharedItemPayload),
-        shareCode: code,
-        updatedAt: serverTimestamp(),
-      });
-      setIsSharing(true);
-      setShareUrl(url);
-      setShareStatus("");
-    } catch (error) {
-      console.error("Share snapshot error:", error);
-      setShareStatus("");
-      setActionError("Unable to start sharing right now. Please try again.");
-    } finally {
-      setShareBusy(false);
-    }
-  };
-
-  const togglePermission = async (
-    key: keyof SharePermissions,
-    nextValue: boolean,
-  ) => {
-    const previous = permissions;
-    const nextPermissions = { ...permissions, [key]: nextValue };
-    setPermissions(nextPermissions);
-
-    if (!user || !db || !isSharing) return;
-
-    try {
-      setActionError("");
-      await updateDoc(doc(db, "sharedLists", user.uid), {
-        allowEdits: hasAnyPermission(nextPermissions),
-        permissions: nextPermissions,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      console.error("Toggle permission error:", error);
-      setPermissions(previous);
-      setActionError(
-        "Unable to update sharing permissions right now. Please try again.",
-      );
-    }
-  };
-
-  const stopSharing = async () => {
-    if (!user || !db || shareBusy) return;
-
-    setShareBusy(true);
-    setShareStatus("");
-    setActionError("");
-
-    try {
-      const codeToRevoke = shareCode;
-      await deleteDoc(doc(db, "sharedLists", user.uid));
-      // Revoke the join code so old texts/QRs stop resolving.
-      if (codeToRevoke) {
-        await deleteDoc(doc(db, "shareCodes", codeToRevoke)).catch((error) => {
-          console.error("Revoke share code error:", error);
-        });
-      }
-      publishedRef.current = null;
-      clearPublishedState(user.uid);
-      setIsSharing(false);
-      setPermissions(NO_PERMISSIONS);
-      setShareUrl("");
-      setShareCode("");
-      setShareOpen(false);
-    } catch (error) {
-      console.error("Stop sharing error:", error);
-      setActionError("Unable to stop sharing right now. Please try again.");
-    } finally {
-      setShareBusy(false);
-    }
-  };
-
   const runConfirmedAction = async () => {
     const action = confirmAction;
     setConfirmAction(null);
@@ -1268,7 +1095,6 @@ const ShoppingList: React.FC = () => {
     doneItems,
     doneGroups,
     activeCount,
-    doneCount,
     filteredCount,
     allDoneCount,
     totalCount,
@@ -1660,167 +1486,29 @@ const ShoppingList: React.FC = () => {
         )}
 
         <div className="items-section">
-          {filteredCount === 0 ? (
-            <div className="empty-state">
-              <PackageOpen size={40} className="empty-icon" strokeWidth={1.25} />
-              <p className="empty-title">
-                {isSearching
-                  ? "No matches"
-                  : totalCount === 0
-                    ? "Ready when you are"
-                    : "Nothing here"}
-              </p>
-              <p className="empty-text">
-                {isSearching
-                  ? "No matches. Press + to add this to the list."
-                  : totalCount === 0
-                    ? "Add your first item above."
-                    : `Nothing left on ${activeTabName}.`}
-              </p>
-              {!isSearching &&
-                totalCount === 0 &&
-                interfacePrefs.emptyTips &&
-                !isOwnedCustomListId(activeListId) && (
-                  <p className="empty-tip">
-                    Try <code>2 milk</code> to add a quantity and aisle
-                    automatically.
-                  </p>
-                )}
-              {!isSearching &&
-                totalCount === 0 &&
-                isOwnedCustomListId(activeListId) && (
-                  <p className="empty-tip">
-                    Don&apos;t need this list?{" "}
-                    <button
-                      type="button"
-                      className="empty-tip-link"
-                      onClick={() => setConfirmAction("deleteCustomList")}
-                    >
-                      Delete list
-                    </button>
-                  </p>
-                )}
-              {!isSearching &&
-                totalCount === 0 &&
-                isSharedImportListId(activeListId) && (
-                  <p className="empty-tip">
-                    Done with this shared list?{" "}
-                    <button
-                      type="button"
-                      className="empty-tip-link"
-                      onClick={() => setConfirmAction("removeSharedList")}
-                    >
-                      Remove list
-                    </button>
-                  </p>
-                )}
-            </div>
-          ) : (
-            <div className="items-list">
-              {activeCount > 0 && (
-                <>
-                  {doneCount > 0 && (
-                    <div className="items-divider">
-                      <span className="items-divider-label">To get</span>
-                      <div className="items-divider-line" />
-                    </div>
-                  )}
-                  {sortMode === "aisle"
-                    ? displayActiveGroups.map((group) => (
-                        <CategoryGroup
-                          key={group.category}
-                          group={group}
-                          showHeading={
-                            displayActiveGroups.length > 1 ||
-                            group.category !== DEFAULT_CATEGORY
-                          }
-                          edit={edit}
-                          reorder={reorderState}
-                          onToggle={toggleComplete}
-                          onToggleImportant={
-                            interfacePrefs.importantStars
-                              ? toggleImportant
-                              : undefined
-                          }
-                          onDelete={deleteItem}
-                        />
-                      ))
-                    : displayActiveItems.map((item, index) => (
-                        <ItemRow
-                          key={item.id}
-                          item={item}
-                          index={index}
-                          edit={edit}
-                          reorder={reorderState}
-                          onToggle={toggleComplete}
-                          onToggleImportant={
-                            interfacePrefs.importantStars
-                              ? toggleImportant
-                              : undefined
-                          }
-                          onDelete={deleteItem}
-                        />
-                      ))}
-                </>
-              )}
-
-              {doneCount > 0 && (
-                <div className="done-section">
-                  <button
-                    type="button"
-                    className="items-divider items-divider-btn"
-                    onClick={toggleDoneCollapsed}
-                    aria-expanded={!doneCollapsed}
-                  >
-                    {doneCollapsed ? (
-                      <ChevronRight size={14} strokeWidth={2.5} />
-                    ) : (
-                      <ChevronDown size={14} strokeWidth={2.5} />
-                    )}
-                    <span className="items-divider-label">
-                      Done · {doneCount}
-                    </span>
-                    <div className="items-divider-line" />
-                  </button>
-                  {!doneCollapsed &&
-                    (sortMode === "aisle"
-                      ? doneGroups.map((group) => (
-                          <CategoryGroup
-                            key={group.category}
-                            group={group}
-                            showHeading={
-                              doneGroups.length > 1 ||
-                              group.category !== DEFAULT_CATEGORY
-                            }
-                            edit={edit}
-                            onToggle={toggleComplete}
-                            onToggleImportant={
-                              interfacePrefs.importantStars
-                                ? toggleImportant
-                                : undefined
-                            }
-                            onDelete={deleteItem}
-                          />
-                        ))
-                      : doneItems.map((item, index) => (
-                          <ItemRow
-                            key={item.id}
-                            item={item}
-                            index={index}
-                            edit={edit}
-                            onToggle={toggleComplete}
-                            onToggleImportant={
-                              interfacePrefs.importantStars
-                                ? toggleImportant
-                                : undefined
-                            }
-                            onDelete={deleteItem}
-                          />
-                        )))}
-                </div>
-              )}
-            </div>
-          )}
+          <ShoppingListItems
+            activeItems={displayActiveItems}
+            doneItems={doneItems}
+            activeGroups={displayActiveGroups}
+            doneGroups={doneGroups}
+            sortMode={sortMode}
+            edit={edit}
+            reorder={reorderState}
+            doneCollapsed={doneCollapsed}
+            isSearching={isSearching}
+            totalCount={totalCount}
+            activeListName={activeTabName}
+            emptyTips={interfacePrefs.emptyTips}
+            importantStars={interfacePrefs.importantStars}
+            customList={isOwnedCustomListId(activeListId)}
+            sharedList={isSharedImportListId(activeListId)}
+            onToggleDone={toggleDoneCollapsed}
+            onToggle={toggleComplete}
+            onImportant={toggleImportant}
+            onDelete={deleteItem}
+            onDeleteList={() => setConfirmAction("deleteCustomList")}
+            onRemoveList={() => setConfirmAction("removeSharedList")}
+          />
         </div>
       </main>
 

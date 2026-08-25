@@ -1,11 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  doc,
-  onSnapshot,
-} from "firebase/firestore";
+import { subscribeToRawSharedList } from "../services/sharedLists";
 import {
   Check,
-  PackageOpen,
   Pencil,
   Plus,
   Trash2,
@@ -23,7 +19,6 @@ import {
   type SharePermissions,
 } from "../lib/sharePermissions";
 import {
-  DEFAULT_CATEGORY,
   formatQuantity,
   getDuplicateKey,
   MAX_ITEM_TEXT_LENGTH,
@@ -58,6 +53,7 @@ import {
 } from "../lib/localTicks";
 import BrandMark from "./BrandMark";
 import ThemeToggle from "./ThemeToggle";
+import PublicSharedItems from "./PublicSharedItems";
 
 const PublicSharedList: React.FC = () => {
   const { shareId: shareIdParam, code: codeParam } = useParams();
@@ -138,17 +134,17 @@ const PublicSharedList: React.FC = () => {
     seenShareSnapshotRef.current = false;
     lastShareFingerprintRef.current = "";
 
-    const unsubscribe = onSnapshot(
-      doc(db, "sharedLists", shareId),
-      (snapshot) => {
-        if (!snapshot.exists()) {
+    const unsubscribe = subscribeToRawSharedList(
+      db,
+      shareId,
+      (exists, raw) => {
+        if (!exists || !raw) {
           setError("This shared list is no longer available.");
           setItems([]);
           setLoading(false);
           return;
         }
 
-        const raw = snapshot.data();
         const data = normalizePublicSharedList(raw);
         if (!data) {
           setError("This shared list is not available.");
@@ -531,136 +527,24 @@ const PublicSharedList: React.FC = () => {
           </form>
         )}
 
-        {items.length === 0 ? (
-          <div className="empty-state">
-            <PackageOpen size={40} className="empty-icon" strokeWidth={1.25} />
-            {!displayError && <p className="empty-title">{emptyTitle}</p>}
-            <p className="empty-text">{emptyText}</p>
-          </div>
-        ) : (
-          <>
-            {/* Same progress summary as the owner's screen — a shared list is
-                still a shop to get through. */}
-            <div className="list-summary">
-              <div className="list-meta-row">
-                <span className="stats-text">
-                  <strong>{viewItems.length - doneCount}</strong> left
-                  {doneCount > 0 && ` · ${doneCount} done`}
-                </span>
-                <div className="stats-actions">
-                  {ticksAreLocal && doneCount > 0 && (
-                    <button
-                      className="clear-done-btn"
-                      type="button"
-                      onClick={resetLocalTicks}
-                    >
-                      Reset ticks
-                    </button>
-                  )}
-                </div>
-              </div>
-              {interfacePrefs.progressBar && (
-                <div
-                  className="progress-track"
-                  role="progressbar"
-                  aria-label={`${doneCount} of ${viewItems.length} items picked up`}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={progress}
-                >
-                  <div
-                    className="progress-fill"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              )}
-            </div>
-
-            {ticksAreLocal && interfacePrefs.onboardingCopy && (
-              <p className="local-ticks-note">
-                Ticking items keeps your place on this device. It does not
-                change the list for {ownerName}.
-              </p>
-            )}
-
-            <div className="items-list">
-              {groups.map((group) => (
-                <div className="category-group" key={group.category}>
-                  {(groups.length > 1 ||
-                    group.category !== DEFAULT_CATEGORY) && (
-                    <h3 className="category-heading">{group.category}</h3>
-                  )}
-                  {group.items.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`item-row public-item-row ${item.completed ? "completed" : ""} ${interfacePrefs.importantStars && item.important ? "is-important" : ""}`}
-                    >
-                      <button
-                        className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
-                        onClick={() => toggleItem(item)}
-                        type="button"
-                        aria-pressed={item.completed}
-                        aria-label={
-                          item.completed
-                            ? `Mark "${item.text}" as needed`
-                            : `Mark "${item.text}" as completed`
-                        }
-                      >
-                        {item.completed && <Check size={13} strokeWidth={3} />}
-                      </button>
-                      <button
-                        className="item-content public-item-content"
-                        onClick={() => toggleItem(item)}
-                        type="button"
-                        aria-pressed={item.completed}
-                        aria-label={
-                          item.important
-                            ? `Important: ${item.text}${item.note ? ` — ${item.note}` : ""}`
-                            : `${item.text}${item.note ? ` — ${item.note}` : ""}`
-                        }
-                      >
-                        <span className="item-main-line">
-                          <span className="item-text">{item.text}</span>
-                          {item.quantity && (
-                            <span className="item-qty">
-                              {formatQuantity(item.quantity)}
-                            </span>
-                          )}
-                          {interfacePrefs.importantStars && item.important && (
-                            <span
-                              className="item-important-badge"
-                              aria-hidden="true"
-                              title="Important"
-                            >
-                              ★
-                            </span>
-                          )}
-                        </span>
-                        {item.note && (
-                          <span className="item-note" title={item.note}>
-                            {item.note}
-                          </span>
-                        )}
-                      </button>
-                      {canRemove && (
-                        <button
-                          className="delete-btn"
-                          onClick={() => removeItem(item)}
-                          title="Remove item"
-                          type="button"
-                          aria-label={`Remove "${item.text}"`}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-          </>
-        )}
+        <PublicSharedItems
+          items={viewItems}
+          groups={groups}
+          doneCount={doneCount}
+          progress={progress}
+          displayError={displayError}
+          emptyTitle={emptyTitle}
+          emptyText={emptyText}
+          ownerName={ownerName}
+          ticksAreLocal={ticksAreLocal}
+          progressBar={interfacePrefs.progressBar}
+          onboardingCopy={interfacePrefs.onboardingCopy}
+          importantStars={interfacePrefs.importantStars}
+          canRemove={canRemove}
+          onToggle={toggleItem}
+          onRemove={removeItem}
+          onResetTicks={resetLocalTicks}
+        />
       </main>
     </div>
   );

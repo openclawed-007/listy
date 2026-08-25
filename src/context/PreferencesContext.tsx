@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
+import { loadUserSettings, saveUserSettings } from "../services/userSettings";
 import { useAuth } from "./useAuth";
 import {
   normalizeInterfacePreferences,
@@ -54,15 +54,10 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
       writeLocalReminderSettings(nextReminders);
 
       if (uid && db) {
-        await setDoc(
-          doc(db, "userSettings", uid),
-          {
-            interface: nextInterface,
-            shoppingReminders: nextReminders,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
+        await saveUserSettings(db, uid, {
+          interface: nextInterface,
+          shoppingReminders: nextReminders,
+        });
       }
     },
     [uid],
@@ -99,9 +94,8 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      const snap = await getDoc(doc(db, "userSettings", uid));
-      if (!snap.exists()) return;
-      const data = snap.data();
+      const data = await loadUserSettings(db, uid);
+      if (!data) return;
       const next = normalizeUserPreferences({
         interface: data.interface,
       });
