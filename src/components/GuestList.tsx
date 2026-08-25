@@ -219,7 +219,7 @@ const GuestList: React.FC = () => {
   const reorderEnabled =
     !isSearching && sortMode !== "alpha" && active.length > 1;
 
-  const { reorderState, displayActiveItems } = useItemReorder<GuestItem>({
+  const { reorderState, displayActiveItems, resetDrag } = useItemReorder<GuestItem>({
     activeItems,
     sortMode,
     enabled: reorderEnabled,
@@ -463,11 +463,7 @@ const GuestList: React.FC = () => {
                     onClick={() => {
                       setSortMode(mode.id);
                       writeListSortMode(mode.id);
-                      draggingIdRef.current = null;
-                      dragOrderIdsRef.current = null;
-                      setDraggingId(null);
-                      setDropTargetId(null);
-                      setDragOrderIds(null);
+                      resetDrag();
                     }}
                   >
                     {mode.shortLabel}

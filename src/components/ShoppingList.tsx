@@ -16,13 +16,7 @@ import {
   where,
   type WriteBatch,
 } from "firebase/firestore";
-import {
-  ChevronDown,
-  ChevronRight,
-  PackageOpen,
-  Share2,
-  WifiOff,
-} from "lucide-react";
+import { Share2, WifiOff } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
@@ -33,7 +27,6 @@ import {
 } from "../lib/sharePermissions";
 import {
   AISLES,
-  DEFAULT_CATEGORY,
   formatQuantity,
   getDuplicateKey,
   MAX_CATEGORY_LENGTH,
@@ -100,12 +93,7 @@ import DismissibleMessage from "./DismissibleMessage";
 import NavAccountMenu from "./NavAccountMenu";
 import SettingsDialog from "./SettingsDialog";
 import ShareDialog, { type ShareDialogTab } from "./ShareDialog";
-import {
-  CATEGORY_DATALIST_ID,
-  CategoryGroup,
-  ItemRow,
-  type ItemEditState,
-} from "./ItemRow";
+import { CATEGORY_DATALIST_ID } from "./ItemRow";
 import {
   startReminderWatch,
   syncReminderSchedule,
@@ -123,9 +111,11 @@ import { useItemSuggestions } from "../hooks/useItemSuggestions";
 import { useOwnedLists } from "../hooks/useOwnedLists";
 import { useShoppingItems } from "../hooks/useShoppingItems";
 import { useListView } from "../hooks/useListView";
+import { useItemActions } from "../hooks/useItemActions";
 import AddItemField from "./AddItemField";
 import ListAdminControls from "./ListAdminControls";
 import ListTabs from "./ListTabs";
+import ShoppingListItems from "./ShoppingListItems";
 
 interface PendingDelete {
   item: ShoppingItem;
@@ -149,11 +139,6 @@ const ShoppingList: React.FC = () => {
   const lists = useOwnedLists(user?.uid, items);
   const { activeListId, setActiveListId, activeTabName, tabs: listTabs } =
     lists;
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState("");
-  const [editQuantity, setEditQuantity] = useState("");
-  const [editCategory, setEditCategory] = useState("");
-  const [editNote, setEditNote] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { interfacePrefs, reminderSettings } = usePreferences();
@@ -955,38 +940,7 @@ const ShoppingList: React.FC = () => {
     }
   };
 
-  const commitEdit = async () => {
-    if (!editingId) return;
-    const saved = await updateItemDetails(
-      editingId,
-      editText,
-      editQuantity,
-      editCategory,
-      editNote,
-    );
-    if (saved) setEditingId(null);
-  };
-
-  const edit: ItemEditState = {
-    editingId,
-    text: editText,
-    quantity: editQuantity,
-    category: editCategory,
-    note: editNote,
-    onStart: (item) => {
-      setEditingId(item.id);
-      setEditText(item.text);
-      setEditQuantity(item.quantity ?? "");
-      setEditCategory(item.category ?? "");
-      setEditNote(item.note ?? "");
-    },
-    onTextChange: setEditText,
-    onQuantityChange: setEditQuantity,
-    onCategoryChange: setEditCategory,
-    onNoteChange: setEditNote,
-    onCommit: commitEdit,
-    onCancel: () => setEditingId(null),
-  };
+  const { edit } = useItemActions(updateItemDetails);
 
   const commitNewList = async (name: string) => {
     const result = await lists.createList(name);
@@ -1268,7 +1222,6 @@ const ShoppingList: React.FC = () => {
     doneItems,
     doneGroups,
     activeCount,
-    doneCount,
     filteredCount,
     allDoneCount,
     totalCount,
@@ -1660,167 +1613,29 @@ const ShoppingList: React.FC = () => {
         )}
 
         <div className="items-section">
-          {filteredCount === 0 ? (
-            <div className="empty-state">
-              <PackageOpen size={40} className="empty-icon" strokeWidth={1.25} />
-              <p className="empty-title">
-                {isSearching
-                  ? "No matches"
-                  : totalCount === 0
-                    ? "Ready when you are"
-                    : "Nothing here"}
-              </p>
-              <p className="empty-text">
-                {isSearching
-                  ? "No matches. Press + to add this to the list."
-                  : totalCount === 0
-                    ? "Add your first item above."
-                    : `Nothing left on ${activeTabName}.`}
-              </p>
-              {!isSearching &&
-                totalCount === 0 &&
-                interfacePrefs.emptyTips &&
-                !isOwnedCustomListId(activeListId) && (
-                  <p className="empty-tip">
-                    Try <code>2 milk</code> to add a quantity and aisle
-                    automatically.
-                  </p>
-                )}
-              {!isSearching &&
-                totalCount === 0 &&
-                isOwnedCustomListId(activeListId) && (
-                  <p className="empty-tip">
-                    Don&apos;t need this list?{" "}
-                    <button
-                      type="button"
-                      className="empty-tip-link"
-                      onClick={() => setConfirmAction("deleteCustomList")}
-                    >
-                      Delete list
-                    </button>
-                  </p>
-                )}
-              {!isSearching &&
-                totalCount === 0 &&
-                isSharedImportListId(activeListId) && (
-                  <p className="empty-tip">
-                    Done with this shared list?{" "}
-                    <button
-                      type="button"
-                      className="empty-tip-link"
-                      onClick={() => setConfirmAction("removeSharedList")}
-                    >
-                      Remove list
-                    </button>
-                  </p>
-                )}
-            </div>
-          ) : (
-            <div className="items-list">
-              {activeCount > 0 && (
-                <>
-                  {doneCount > 0 && (
-                    <div className="items-divider">
-                      <span className="items-divider-label">To get</span>
-                      <div className="items-divider-line" />
-                    </div>
-                  )}
-                  {sortMode === "aisle"
-                    ? displayActiveGroups.map((group) => (
-                        <CategoryGroup
-                          key={group.category}
-                          group={group}
-                          showHeading={
-                            displayActiveGroups.length > 1 ||
-                            group.category !== DEFAULT_CATEGORY
-                          }
-                          edit={edit}
-                          reorder={reorderState}
-                          onToggle={toggleComplete}
-                          onToggleImportant={
-                            interfacePrefs.importantStars
-                              ? toggleImportant
-                              : undefined
-                          }
-                          onDelete={deleteItem}
-                        />
-                      ))
-                    : displayActiveItems.map((item, index) => (
-                        <ItemRow
-                          key={item.id}
-                          item={item}
-                          index={index}
-                          edit={edit}
-                          reorder={reorderState}
-                          onToggle={toggleComplete}
-                          onToggleImportant={
-                            interfacePrefs.importantStars
-                              ? toggleImportant
-                              : undefined
-                          }
-                          onDelete={deleteItem}
-                        />
-                      ))}
-                </>
-              )}
-
-              {doneCount > 0 && (
-                <div className="done-section">
-                  <button
-                    type="button"
-                    className="items-divider items-divider-btn"
-                    onClick={toggleDoneCollapsed}
-                    aria-expanded={!doneCollapsed}
-                  >
-                    {doneCollapsed ? (
-                      <ChevronRight size={14} strokeWidth={2.5} />
-                    ) : (
-                      <ChevronDown size={14} strokeWidth={2.5} />
-                    )}
-                    <span className="items-divider-label">
-                      Done · {doneCount}
-                    </span>
-                    <div className="items-divider-line" />
-                  </button>
-                  {!doneCollapsed &&
-                    (sortMode === "aisle"
-                      ? doneGroups.map((group) => (
-                          <CategoryGroup
-                            key={group.category}
-                            group={group}
-                            showHeading={
-                              doneGroups.length > 1 ||
-                              group.category !== DEFAULT_CATEGORY
-                            }
-                            edit={edit}
-                            onToggle={toggleComplete}
-                            onToggleImportant={
-                              interfacePrefs.importantStars
-                                ? toggleImportant
-                                : undefined
-                            }
-                            onDelete={deleteItem}
-                          />
-                        ))
-                      : doneItems.map((item, index) => (
-                          <ItemRow
-                            key={item.id}
-                            item={item}
-                            index={index}
-                            edit={edit}
-                            onToggle={toggleComplete}
-                            onToggleImportant={
-                              interfacePrefs.importantStars
-                                ? toggleImportant
-                                : undefined
-                            }
-                            onDelete={deleteItem}
-                          />
-                        )))}
-                </div>
-              )}
-            </div>
-          )}
+          <ShoppingListItems
+            activeItems={displayActiveItems}
+            doneItems={doneItems}
+            activeGroups={displayActiveGroups}
+            doneGroups={doneGroups}
+            sortMode={sortMode}
+            edit={edit}
+            reorder={reorderState}
+            doneCollapsed={doneCollapsed}
+            isSearching={isSearching}
+            totalCount={totalCount}
+            activeListName={activeTabName}
+            emptyTips={interfacePrefs.emptyTips}
+            importantStars={interfacePrefs.importantStars}
+            customList={isOwnedCustomListId(activeListId)}
+            sharedList={isSharedImportListId(activeListId)}
+            onToggleDone={toggleDoneCollapsed}
+            onToggle={toggleComplete}
+            onImportant={toggleImportant}
+            onDelete={deleteItem}
+            onDeleteList={() => setConfirmAction("deleteCustomList")}
+            onRemoveList={() => setConfirmAction("removeSharedList")}
+          />
         </div>
       </main>
 
