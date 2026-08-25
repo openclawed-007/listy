@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, PackageOpen } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import BrandMark from "./BrandMark";
 import NavOverflowMenu from "./NavOverflowMenu";
@@ -14,7 +13,6 @@ import {
 import { shoppingDayBanner } from "../lib/shoppingReminders";
 import { usePreferences } from "../context/usePreferences";
 import {
-  DEFAULT_CATEGORY,
   formatQuantity,
   getDuplicateKey,
   MAX_CATEGORY_LENGTH,
@@ -41,16 +39,13 @@ import {
   writeListSortMode,
   type ListSortMode,
 } from "../lib/listOrder";
-import ItemRow, {
-  CATEGORY_DATALIST_ID,
-  CategoryGroup,
-  type ItemEditState,
-} from "./ItemRow";
+import { CATEGORY_DATALIST_ID, type ItemEditState } from "./ItemRow";
 import AddItemField from "./AddItemField";
 import { useItemSuggestions } from "../hooks/useItemSuggestions";
 import { useItemReorder } from "../hooks/useItemReorder";
 import { useListView } from "../hooks/useListView";
 import type { ShoppingItem } from "../lib/shoppingItem";
+import ShoppingListItems from "./ShoppingListItems";
 
 function asShoppingItem(item: GuestItem): ShoppingItem {
   return {
@@ -505,121 +500,37 @@ const GuestList: React.FC = () => {
           </div>
         )}
 
-        {items.length === 0 ? (
-          <div className="empty-state">
-            <PackageOpen size={40} className="empty-icon" strokeWidth={1.25} />
-            <p className="empty-title">Ready when you are</p>
-            <p className="empty-text">Add your first item above.</p>
-            {interfacePrefs.emptyTips && (
-              <p className="empty-tip">
-                Try <code>2 milk</code> to add a quantity and aisle
-                automatically.
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className="items-list">
-            {active.length > 0 &&
-              (sortMode === "aisle"
-                ? shoppingActiveGroups.map((group) => (
-                    <CategoryGroup
-                      key={group.category}
-                      group={group}
-                      showHeading={
-                        shoppingActiveGroups.length > 1 ||
-                        group.category !== DEFAULT_CATEGORY
-                      }
-                      edit={edit}
-                      reorder={reorderState}
-                      onToggle={(id) => toggleItem(id)}
-                      onToggleImportant={
-                        interfacePrefs.importantStars
-                          ? toggleImportant
-                          : undefined
-                      }
-                      onDelete={deleteItem}
-                    />
-                  ))
-                : shoppingActive.map((item, index) => (
-                    <ItemRow
-                      key={item.id}
-                      item={item}
-                      index={index}
-                      edit={edit}
-                      reorder={reorderState}
-                      onToggle={(id) => toggleItem(id)}
-                      onToggleImportant={
-                        interfacePrefs.importantStars
-                          ? toggleImportant
-                          : undefined
-                      }
-                      onDelete={deleteItem}
-                    />
-                  )))}
-
-            {done.length > 0 && (
-              <div className="done-section">
-                <button
-                  type="button"
-                  className="items-divider items-divider-btn"
-                  onClick={() => {
-                    setDoneCollapsed((current) => {
-                      const next = !current;
-                      writeDoneCollapsed(next);
-                      return next;
-                    });
-                  }}
-                  aria-expanded={!doneCollapsed}
-                >
-                  {doneCollapsed ? (
-                    <ChevronRight size={14} strokeWidth={2.5} />
-                  ) : (
-                    <ChevronDown size={14} strokeWidth={2.5} />
-                  )}
-                  <span className="items-divider-label">
-                    Done · {done.length}
-                  </span>
-                  <div className="items-divider-line" />
-                </button>
-                {!doneCollapsed &&
-                  (sortMode === "aisle"
-                    ? shoppingDoneGroups.map((group) => (
-                        <CategoryGroup
-                          key={group.category}
-                          group={group}
-                          showHeading={
-                            shoppingDoneGroups.length > 1 ||
-                            group.category !== DEFAULT_CATEGORY
-                          }
-                          edit={edit}
-                          onToggle={(id) => toggleItem(id)}
-                          onToggleImportant={
-                            interfacePrefs.importantStars
-                              ? toggleImportant
-                              : undefined
-                          }
-                          onDelete={deleteItem}
-                        />
-                      ))
-                    : shoppingDone.map((item, index) => (
-                        <ItemRow
-                          key={item.id}
-                          item={item}
-                          index={index}
-                          edit={edit}
-                          onToggle={(id) => toggleItem(id)}
-                          onToggleImportant={
-                            interfacePrefs.importantStars
-                              ? toggleImportant
-                              : undefined
-                          }
-                          onDelete={deleteItem}
-                        />
-                      )))}
-              </div>
-            )}
-          </div>
-        )}
+        <div className="items-section">
+          <ShoppingListItems
+            activeItems={shoppingActive}
+            doneItems={shoppingDone}
+            activeGroups={shoppingActiveGroups}
+            doneGroups={shoppingDoneGroups}
+            sortMode={sortMode}
+            edit={edit}
+            reorder={reorderState}
+            doneCollapsed={doneCollapsed}
+            isSearching={isSearching}
+            totalCount={items.length}
+            activeListName="My List"
+            emptyTips={interfacePrefs.emptyTips}
+            importantStars={interfacePrefs.importantStars}
+            customList={false}
+            sharedList={false}
+            onToggleDone={() => {
+              setDoneCollapsed((current) => {
+                const next = !current;
+                writeDoneCollapsed(next);
+                return next;
+              });
+            }}
+            onToggle={(id) => toggleItem(id)}
+            onImportant={toggleImportant}
+            onDelete={deleteItem}
+            onDeleteList={() => undefined}
+            onRemoveList={() => undefined}
+          />
+        </div>
       </main>
 
       {DEV_GUEST_SETTINGS && settingsOpen && (

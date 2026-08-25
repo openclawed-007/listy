@@ -21,10 +21,17 @@ export interface SharedListWrite {
   shareCode?: string;
 }
 
-export async function loadSharedList(firestore: Firestore, ownerId: string) {
+export async function loadRawSharedList(
+  firestore: Firestore,
+  ownerId: string,
+): Promise<Record<string, unknown> | null> {
   const snapshot = await getDoc(doc(firestore, "sharedLists", ownerId));
-  if (!snapshot.exists()) return null;
-  return normalizeSharedListSnapshot(snapshot.data());
+  return snapshot.exists() ? snapshot.data() : null;
+}
+
+export async function loadSharedList(firestore: Firestore, ownerId: string) {
+  const raw = await loadRawSharedList(firestore, ownerId);
+  return raw ? normalizeSharedListSnapshot(raw) : null;
 }
 
 export function publishSharedList(
@@ -57,6 +64,20 @@ export async function revokeSharedList(
 ) {
   await deleteDoc(doc(firestore, "sharedLists", ownerId));
   if (shareCode) await deleteDoc(doc(firestore, "shareCodes", shareCode));
+}
+
+export function subscribeToRawSharedList(
+  firestore: Firestore,
+  ownerId: string,
+  onValue: (exists: boolean, raw: Record<string, unknown> | null) => void,
+  onError: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    doc(firestore, "sharedLists", ownerId),
+    (snapshot) =>
+      onValue(snapshot.exists(), snapshot.exists() ? snapshot.data() : null),
+    onError,
+  );
 }
 
 export function subscribeToSharedList(

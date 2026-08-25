@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
+import { saveUserSettings, subscribeToUserSettings } from "../services/userSettings";
 import {
   addCustomList,
   buildListTabs,
@@ -47,11 +47,7 @@ export function useOwnedLists(
       if (!userId || !db) return;
       writeInFlight.current = true;
       try {
-        await setDoc(
-          doc(db, "userSettings", userId),
-          { lists: normalized, updatedAt: serverTimestamp() },
-          { merge: true },
-        );
+        await saveUserSettings(db, userId, { lists: normalized });
       } catch (error) {
         console.error("Save custom lists error:", error);
       } finally {
@@ -68,14 +64,15 @@ export function useOwnedLists(
     }
 
     const firestore = db;
-    return onSnapshot(
-      doc(firestore, "userSettings", userId),
-      (snap) => {
+    return subscribeToUserSettings(
+      firestore,
+      userId,
+      (data) => {
         if (writeInFlight.current) return;
         const resolved = resolveRemoteLists(
           {
-            exists: snap.exists(),
-            data: snap.exists() ? snap.data() : undefined,
+            exists: data !== null,
+            data: data ?? undefined,
           },
           userId,
         );
@@ -83,11 +80,9 @@ export function useOwnedLists(
         writeLocalUserLists(resolved.lists, userId);
         if (resolved.uploadLocal) {
           writeInFlight.current = true;
-          void setDoc(
-            doc(firestore, "userSettings", userId),
-            { lists: resolved.lists, updatedAt: serverTimestamp() },
-            { merge: true },
-          ).finally(() => {
+          void saveUserSettings(firestore, userId, {
+            lists: resolved.lists,
+          }).finally(() => {
             writeInFlight.current = false;
           });
         }

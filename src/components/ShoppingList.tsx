@@ -15,16 +15,11 @@ import {
   updateDoc,
   where,
   type WriteBatch,
-} from "firebase/firestore";
+} from "../services/firestoreOperations";
 import { Share2, WifiOff } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
-import {
-  hasAnyPermission,
-  NO_PERMISSIONS,
-  normalizeSharePermissions,
-  type SharePermissions,
-} from "../lib/sharePermissions";
+import { hasAnyPermission } from "../lib/sharePermissions";
 import {
   AISLES,
   formatQuantity,
@@ -38,7 +33,6 @@ import {
 } from "../lib/itemInput";
 import {
   buildPublishedState,
-  clearPublishedState,
   diffSharedState,
   hasSharedChanges,
   indexSharedItems,
@@ -67,12 +61,7 @@ import {
   guestMigrationNotice,
   readGuestItems,
 } from "../lib/guestItems";
-import { allocateShareCode } from "../lib/allocateShareCode";
-import {
-  buildShareCodeUrl,
-  formatShareCode,
-  isValidShareCode,
-} from "../lib/shareCode";
+import { formatShareCode } from "../lib/shareCode";
 import {
   LIST_SORT_MODES,
   nextTopSortOrder,
@@ -112,6 +101,7 @@ import { useOwnedLists } from "../hooks/useOwnedLists";
 import { useShoppingItems } from "../hooks/useShoppingItems";
 import { useListView } from "../hooks/useListView";
 import { useItemActions } from "../hooks/useItemActions";
+import { useSharedList } from "../hooks/useSharedList";
 import AddItemField from "./AddItemField";
 import ListAdminControls from "./ListAdminControls";
 import ListTabs from "./ListTabs";
@@ -143,21 +133,13 @@ const ShoppingList: React.FC = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { interfacePrefs, reminderSettings } = usePreferences();
   const [shareTab, setShareTab] = useState<ShareDialogTab>("share");
-  const [shareUrl, setShareUrl] = useState("");
-  const [shareCode, setShareCode] = useState("");
-  const [shareStatus, setShareStatus] = useState("");
-  const [shareBusy, setShareBusy] = useState(false);
 
   const openShareDialog = (tab: ShareDialogTab = "share") => {
     setShareTab(tab);
     setShareOpen(true);
   };
-  const [permissions, setPermissions] =
-    useState<SharePermissions>(NO_PERMISSIONS);
-  const allowEdits = hasAnyPermission(permissions);
   const [notice, setNotice] = useState("");
   const [importing, setImporting] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
     null,
   );
@@ -172,7 +154,9 @@ const ShoppingList: React.FC = () => {
   // The snapshot we last pushed to sharedLists/{uid}. Everything the
   // collaborator listener does is measured against this, never against the
   // live list — see src/lib/sharedSync.ts for why.
-  const publishedRef = useRef<PublishedState | null>(null);
+  const publishedRef = useRef<PublishedState | null>(
+    user ? readPublishedState(user.uid) : null,
+  );
   // Latest personal items, readable from the listener without making the
   // subscription tear down and replay on every keystroke.
   const personalItemsRef = useRef<ShoppingItem[]>([]);
@@ -190,48 +174,6 @@ const ShoppingList: React.FC = () => {
     return () => window.clearTimeout(timeoutId);
   }, [notice]);
 
-  useEffect(() => {
-    if (!user || !db) return;
-    const firestore = db;
-
-    const loadShareState = async () => {
-      try {
-        const snapshot = await getDoc(doc(firestore, "sharedLists", user.uid));
-        if (!snapshot || typeof snapshot.exists !== "function" || !snapshot.exists()) {
-          return;
-        }
-
-        const data = snapshot.data();
-        setIsSharing(true);
-        setPermissions(normalizeSharePermissions(data?.permissions));
-
-        // Older shares only had a UID URL. Mint a short code once so verbal
-        // sharing and the QR both use the same join path.
-        let code =
-          typeof data?.shareCode === "string" && isValidShareCode(data.shareCode)
-            ? data.shareCode
-            : "";
-        if (!code) {
-          code = await allocateShareCode(firestore, user.uid);
-          setShareCode(code);
-          await updateDoc(doc(firestore, "sharedLists", user.uid), {
-            shareCode: code,
-          });
-        }
-
-        setShareCode(code);
-        setShareUrl(buildShareCodeUrl(window.location.origin, code));
-        // Remember what we published last session so collaborator changes made
-        // while this app was closed are still recognised as theirs.
-        publishedRef.current = readPublishedState(user.uid);
-      } catch (error) {
-        console.error("Load share state error:", error);
-      }
-    };
-
-    void loadShareState();
-  }, [user]);
-
   const showListTabs = listTabs.length > 1;
 
   /** Owned list published to collaborators — always My List (keeps share simple). */
@@ -239,6 +181,35 @@ const ShoppingList: React.FC = () => {
     () => items.filter((item) => getItemListId(item) === PERSONAL_LIST_ID),
     [items],
   );
+
+  const ownerName =
+    user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
+  const {
+    isSharing,
+    permissions,
+    shareCode,
+    shareUrl,
+    shareStatus,
+    shareBusy,
+    setShareStatus,
+    startSharing,
+    togglePermission,
+    stopSharing,
+  } = useSharedList({
+    firestore: db,
+    user,
+    ownerName,
+    items: personalItems.map(toSharedItemPayload),
+    onError: setActionError,
+    onStopped: () => setShareOpen(false),
+  });
+  const allowEdits = hasAnyPermission(permissions);
+
+  useEffect(() => {
+    if (isSharing && user && !publishedRef.current) {
+      publishedRef.current = readPublishedState(user.uid);
+    }
+  }, [isSharing, user]);
 
   // Guest mode lives only on this device. When the same person signs in, fold
   // those rows into their cloud list once so they never lose a half-built shop.
@@ -331,9 +302,6 @@ const ShoppingList: React.FC = () => {
     // Only when the first cloud snapshot lands — not on every item change.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot
   }, [user, itemsLoaded]);
-
-  const ownerName =
-    user?.displayName?.trim() || user?.email?.split("@")[0] || "Shared user";
 
   useEffect(() => {
     if (!isSharing || !itemsLoaded || !user || !db) return;
@@ -1052,101 +1020,6 @@ const ShoppingList: React.FC = () => {
       setActionError(
         "Unable to remove that shared list right now. Please try again.",
       );
-    }
-  };
-
-  const startSharing = async () => {
-    if (!user || !db || shareBusy) return;
-
-    setShareBusy(true);
-    setShareStatus("Creating share code…");
-    setActionError("");
-
-    try {
-      // Reuse an existing code if we already minted one this session so a
-      // failed publish after allocate doesn't orphan a fresh mapping.
-      let code = shareCode;
-      if (!code) {
-        code = await allocateShareCode(db, user.uid);
-        setShareCode(code);
-      }
-      const url = buildShareCodeUrl(window.location.origin, code);
-
-      await setDoc(doc(db, "sharedLists", user.uid), {
-        ownerId: user.uid,
-        ownerName,
-        allowEdits,
-        permissions,
-        items: personalItems.map(toSharedItemPayload),
-        shareCode: code,
-        updatedAt: serverTimestamp(),
-      });
-      setIsSharing(true);
-      setShareUrl(url);
-      setShareStatus("");
-    } catch (error) {
-      console.error("Share snapshot error:", error);
-      setShareStatus("");
-      setActionError("Unable to start sharing right now. Please try again.");
-    } finally {
-      setShareBusy(false);
-    }
-  };
-
-  const togglePermission = async (
-    key: keyof SharePermissions,
-    nextValue: boolean,
-  ) => {
-    const previous = permissions;
-    const nextPermissions = { ...permissions, [key]: nextValue };
-    setPermissions(nextPermissions);
-
-    if (!user || !db || !isSharing) return;
-
-    try {
-      setActionError("");
-      await updateDoc(doc(db, "sharedLists", user.uid), {
-        allowEdits: hasAnyPermission(nextPermissions),
-        permissions: nextPermissions,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      console.error("Toggle permission error:", error);
-      setPermissions(previous);
-      setActionError(
-        "Unable to update sharing permissions right now. Please try again.",
-      );
-    }
-  };
-
-  const stopSharing = async () => {
-    if (!user || !db || shareBusy) return;
-
-    setShareBusy(true);
-    setShareStatus("");
-    setActionError("");
-
-    try {
-      const codeToRevoke = shareCode;
-      await deleteDoc(doc(db, "sharedLists", user.uid));
-      // Revoke the join code so old texts/QRs stop resolving.
-      if (codeToRevoke) {
-        await deleteDoc(doc(db, "shareCodes", codeToRevoke)).catch((error) => {
-          console.error("Revoke share code error:", error);
-        });
-      }
-      publishedRef.current = null;
-      clearPublishedState(user.uid);
-      setIsSharing(false);
-      setPermissions(NO_PERMISSIONS);
-      setShareUrl("");
-      setShareCode("");
-      setShareOpen(false);
-    } catch (error) {
-      console.error("Stop sharing error:", error);
-      setActionError("Unable to stop sharing right now. Please try again.");
-    } finally {
-      setShareBusy(false);
     }
   };
 
