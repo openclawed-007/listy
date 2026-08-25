@@ -81,12 +81,10 @@ import {
   isValidShareCode,
 } from "../lib/shareCode";
 import {
-  compareManualOrder,
   LIST_SORT_MODES,
   nextTopSortOrder,
   readDoneCollapsed,
   readListSortMode,
-  sortItemsForMode,
   writeDoneCollapsed,
   writeListSortMode,
   type ListSortMode,
@@ -123,6 +121,8 @@ import {
 import { usePreferences } from "../context/usePreferences";
 import { useItemSuggestions } from "../hooks/useItemSuggestions";
 import { useOwnedLists } from "../hooks/useOwnedLists";
+import { useShoppingItems } from "../hooks/useShoppingItems";
+import { useListView } from "../hooks/useListView";
 import AddItemField from "./AddItemField";
 import ListAdminControls from "./ListAdminControls";
 import ListTabs from "./ListTabs";
@@ -139,7 +139,11 @@ const ShoppingList: React.FC = () => {
   const { dark, toggle: toggleDark } = useDarkMode();
   const { canInstall, install } = useInstallPrompt();
   const online = useOnlineStatus();
-  const [items, setItems] = useState<ShoppingItem[]>([]);
+  const [actionError, setActionError] = useState("");
+  const { items, setItems, loaded: itemsLoaded } = useShoppingItems(
+    user?.uid,
+    setActionError,
+  );
   const [newItem, setNewItem] = useState("");
   const history = useItemSuggestions(newItem);
   const lists = useOwnedLists(user?.uid, items);
@@ -150,7 +154,6 @@ const ShoppingList: React.FC = () => {
   const [editQuantity, setEditQuantity] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editNote, setEditNote] = useState("");
-  const [actionError, setActionError] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { interfacePrefs, reminderSettings } = usePreferences();
@@ -169,7 +172,6 @@ const ShoppingList: React.FC = () => {
   const allowEdits = hasAnyPermission(permissions);
   const [notice, setNotice] = useState("");
   const [importing, setImporting] = useState(false);
-  const [itemsLoaded, setItemsLoaded] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
     null,
@@ -202,42 +204,6 @@ const ShoppingList: React.FC = () => {
     const timeoutId = window.setTimeout(() => setNotice(""), 5000);
     return () => window.clearTimeout(timeoutId);
   }, [notice]);
-
-  useEffect(() => {
-    if (!user || !db) return;
-
-    const q = query(
-      collection(db, "shoppingItems"),
-      where("userId", "==", user.uid),
-    );
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        setActionError("");
-        const itemsData = snapshot.docs.flatMap((snapshotDoc) => {
-          const item = normalizeShoppingItem(
-            snapshotDoc.id,
-            snapshotDoc.data(),
-          );
-          return item ? [item] : [];
-        });
-
-        itemsData.sort(compareManualOrder);
-
-        setItems(itemsData);
-        setItemsLoaded(true);
-      },
-      (error) => {
-        console.error("Snapshot error:", error);
-        setActionError(
-          "We could not sync your list. Check your connection and try again.",
-        );
-      },
-    );
-
-    return unsubscribe;
-  }, [user]);
 
   useEffect(() => {
     if (!user || !db) return;
@@ -1297,43 +1263,20 @@ const ShoppingList: React.FC = () => {
   };
 
   // One field does both: typing filters the list; Enter / + adds the item.
-  const filtered = useMemo(() => {
-    const normalizedQuery = newItem.trim().toLowerCase();
-    if (!normalizedQuery) return currentListItems;
-
-    return currentListItems.filter((item) =>
-      [item.text, item.quantity, item.category, item.note]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedQuery),
-    );
-  }, [currentListItems, newItem]);
-
   const {
     activeItems,
     doneItems,
     doneGroups,
     activeCount,
     doneCount,
-  } = useMemo(() => {
-    const stillNeeded = sortItemsForMode(
-      filtered.filter((item) => !item.completed),
-      sortMode,
-    );
-    const alreadyGot = sortItemsForMode(
-      filtered.filter((item) => item.completed),
-      sortMode,
-    );
-
-    return {
-      activeItems: stillNeeded,
-      doneItems: alreadyGot,
-      doneGroups: groupItemsByCategory(alreadyGot),
-      activeCount: stillNeeded.length,
-      doneCount: alreadyGot.length,
-    };
-  }, [filtered, sortMode]);
+    filteredCount,
+    allDoneCount,
+    totalCount,
+    isSearching,
+    progress,
+    statsLeft,
+    statsDone,
+  } = useListView(currentListItems, newItem, sortMode);
 
   const reorderEnabled =
     !newItem.trim() && sortMode !== "alpha" && activeCount > 1;
@@ -1412,17 +1355,6 @@ const ShoppingList: React.FC = () => {
     return Array.from(used).sort((a, b) => a.localeCompare(b));
   }, [items]);
 
-  const allDoneCount = currentListItems.filter((item) => item.completed).length;
-  const totalCount = currentListItems.length;
-  const allActiveCount = totalCount - allDoneCount;
-  const isSearching = newItem.trim().length > 0;
-  // Progress and "clear done" always describe the full list; the headline
-  // numbers switch to match results while searching so left/done never disagree.
-  const progress = totalCount
-    ? Math.round((allDoneCount / totalCount) * 100)
-    : 0;
-  const statsLeft = isSearching ? activeCount : allActiveCount;
-  const statsDone = isSearching ? doneCount : allDoneCount;
   const modalOpen =
     shareOpen || settingsOpen || confirmAction !== null;
 
@@ -1592,9 +1524,9 @@ const ShoppingList: React.FC = () => {
               </>
             ) : isSearching && totalCount > 0 ? (
               <span className="add-hint-search">
-                {filtered.length === 0
+                {filteredCount === 0
                   ? "No matches — press + to add it"
-                  : `${filtered.length} match${filtered.length === 1 ? "" : "es"} · press + to add`}
+                  : `${filteredCount} match${filteredCount === 1 ? "" : "es"} · press + to add`}
               </span>
             ) : interfacePrefs.addHints &&
               (preview.quantity || preview.category) ? (
@@ -1649,8 +1581,8 @@ const ShoppingList: React.FC = () => {
                   <>Empty list</>
                 ) : isSearching ? (
                   <>
-                    <strong>{filtered.length}</strong> match
-                    {filtered.length === 1 ? "" : "es"}
+                    <strong>{filteredCount}</strong> match
+                    {filteredCount === 1 ? "" : "es"}
                     {statsDone > 0 && ` · ${statsDone} done`}
                   </>
                 ) : (
@@ -1728,7 +1660,7 @@ const ShoppingList: React.FC = () => {
         )}
 
         <div className="items-section">
-          {filtered.length === 0 ? (
+          {filteredCount === 0 ? (
             <div className="empty-state">
               <PackageOpen size={40} className="empty-icon" strokeWidth={1.25} />
               <p className="empty-title">
