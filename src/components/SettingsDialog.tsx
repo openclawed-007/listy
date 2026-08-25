@@ -4,7 +4,6 @@ import { useDialogFocus } from "../hooks/useDialogFocus";
 import { usePreferences } from "../context/usePreferences";
 import {
   enableRemindersWithPermission,
-  promptAllowNotifications,
   sendTestNotification,
   syncReminderSchedule,
 } from "../lib/reminderNotifications";
@@ -15,6 +14,7 @@ import {
   normalizeReminderSettings,
   notificationBlockReason,
   notificationPermission,
+  requestNotificationPermission,
   WEEKDAY_LABELS,
   type RemindWhen,
   type ShoppingReminderSettings,
@@ -308,7 +308,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
     setNotifBusy(true);
     setNotifStatus("");
     try {
-      const result = await promptAllowNotifications();
+      const result = await requestNotificationPermission();
       setPermission(result);
       const reason = notificationBlockReason();
       if (result === "granted") {

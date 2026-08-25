@@ -4,7 +4,7 @@ import { MAX_ITEM_TEXT_LENGTH, parseItemInput } from "../lib/itemInput";
 import type { ItemSuggestionsState } from "../hooks/useItemSuggestions";
 import ItemSuggestions from "./ItemSuggestions";
 
-export interface AddCommitInput {
+interface AddCommitInput {
   text: string;
   quantity?: string;
   category?: string;

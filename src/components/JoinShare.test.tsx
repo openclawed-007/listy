@@ -14,10 +14,18 @@ vi.mock("../firebase", () => ({
   db: { app: "test" },
 }));
 
-vi.mock("../lib/allocateShareCode", () => ({
-  resolveShareCode: mockResolve,
-  allocateShareCode: vi.fn(),
-}));
+vi.mock("../lib/allocateShareCode", async () => {
+  const { normalizeShareCodeInput } = await import("../lib/shareCode");
+  return {
+    allocateShareCode: vi.fn(),
+    resolveValidatedShareCode: vi.fn(async (_db: unknown, input: string) => {
+      const raw = normalizeShareCodeInput(input);
+      const ownerId = await mockResolve(_db, raw);
+      if (!ownerId) return { status: "inactive" as const };
+      return { status: "ok" as const, code: raw, ownerId };
+    }),
+  };
+});
 
 function renderJoin(path = "/join", user: User | null = null) {
   return render(

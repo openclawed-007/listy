@@ -19,10 +19,17 @@ vi.mock("../firebase", () => ({
   db: mockDb,
 }));
 
-vi.mock("../lib/allocateShareCode", () => ({
-  resolveShareCode: vi.fn(),
-  allocateShareCode: vi.fn(),
-}));
+vi.mock("../lib/allocateShareCode", async () => {
+  const { normalizeShareCodeInput } = await import("../lib/shareCode");
+  return {
+    resolveShareCode: vi.fn(),
+    allocateShareCode: vi.fn(),
+    resolveValidatedShareCode: vi.fn(async (_db: unknown, input: string) => ({
+      status: "inactive" as const,
+      code: normalizeShareCodeInput(input),
+    })),
+  };
+});
 
 vi.mock("firebase/firestore", () => ({
   doc: vi.fn((_db: unknown, ...segments: string[]) => ({

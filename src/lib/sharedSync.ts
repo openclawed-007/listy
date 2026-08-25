@@ -20,7 +20,7 @@ import { getSharedItemKey, type SharedItemPayload } from "./shoppingItem";
 /** Map of shared-item key -> completed flag, as last seen on the server. */
 export type PublishedState = Record<string, boolean>;
 
-export interface SharedDiff {
+interface SharedDiff {
   /** Same item, someone else changed whether it is ticked off. */
   toggled: Array<{ key: string; completed: boolean }>;
   /** Keys that appeared remotely since we published. */

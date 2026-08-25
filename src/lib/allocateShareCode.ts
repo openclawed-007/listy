@@ -5,7 +5,7 @@ import {
   setDoc,
   type Firestore,
 } from "firebase/firestore";
-import { generateShareCode, isValidShareCode } from "./shareCode";
+import { generateShareCode, isValidShareCode, normalizeShareCodeInput } from "./shareCode";
 
 const MAX_ATTEMPTS = 8;
 
@@ -56,4 +56,26 @@ export async function resolveShareCode(
 
   const ownerId = snapshot.data()?.ownerId;
   return typeof ownerId === "string" && ownerId.trim() ? ownerId : null;
+}
+
+export type ShareCodeResolveResult =
+  | { status: "ok"; code: string; ownerId: string }
+  | { status: "invalid" }
+  | { status: "inactive" };
+
+/**
+ * Normalize → validate → resolve, shared by the join forms and the /c/:code
+ * landing page. Callers map each outcome to their own UI copy and busy state.
+ */
+export async function resolveValidatedShareCode(
+  firestore: Firestore,
+  input: string,
+): Promise<ShareCodeResolveResult> {
+  const raw = normalizeShareCodeInput(input);
+  if (!isValidShareCode(raw)) return { status: "invalid" };
+
+  const ownerId = await resolveShareCode(firestore, raw);
+  if (!ownerId) return { status: "inactive" };
+
+  return { status: "ok", code: raw, ownerId };
 }

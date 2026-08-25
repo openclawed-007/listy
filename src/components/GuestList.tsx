@@ -1,10 +1,4 @@
-import React, {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, PackageOpen } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import BrandMark from "./BrandMark";
@@ -39,27 +33,23 @@ import {
 } from "../lib/guestItems";
 import { groupItemsByCategory } from "../lib/shoppingItem";
 import {
-  assignSequentialOrders,
   LIST_SORT_MODES,
-  moveItemByOffset,
   nextTopSortOrder,
   readDoneCollapsed,
   readListSortMode,
-  reorderById,
   sortItemsForMode,
   writeDoneCollapsed,
   writeListSortMode,
   type ListSortMode,
 } from "../lib/listOrder";
-import { captureItemRects, playItemFlip } from "../lib/listFlip";
 import ItemRow, {
   CATEGORY_DATALIST_ID,
   CategoryGroup,
   type ItemEditState,
-  type ItemReorderState,
 } from "./ItemRow";
 import AddItemField from "./AddItemField";
 import { useItemSuggestions } from "../hooks/useItemSuggestions";
+import { useItemReorder } from "../hooks/useItemReorder";
 import type { ShoppingItem } from "../lib/shoppingItem";
 
 function asShoppingItem(item: GuestItem): ShoppingItem {
@@ -93,15 +83,8 @@ const GuestList: React.FC = () => {
   const [editNote, setEditNote] = useState("");
   const [sortMode, setSortMode] = useState<ListSortMode>(readListSortMode);
   const [doneCollapsed, setDoneCollapsed] = useState(readDoneCollapsed);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { interfacePrefs, reminderSettings } = usePreferences();
-  const draggingIdRef = useRef<string | null>(null);
-  const dragOrderIdsRef = useRef<string[] | null>(null);
-  const flipFirstRef = useRef<Map<string, DOMRect> | null>(null);
-  const activeItemsRef = useRef<GuestItem[]>([]);
   const preview = useMemo(() => parseItemInput(value), [value]);
   useDocumentTitle("Guest list");
 
@@ -262,43 +245,30 @@ const GuestList: React.FC = () => {
     ? Math.round((done.length / items.length) * 100)
     : 0;
 
-  const displayActiveItems = useMemo(() => {
-    if (!dragOrderIds) return activeItems;
-    const byId = new Map(activeItems.map((item) => [item.id, item]));
-    const ordered: GuestItem[] = [];
-    for (const id of dragOrderIds) {
-      const item = byId.get(id);
-      if (item) {
-        ordered.push(item);
-        byId.delete(id);
-      }
-    }
-    for (const item of byId.values()) ordered.push(item);
-    return ordered;
-  }, [activeItems, dragOrderIds]);
+  const reorderEnabled =
+    !isSearching && sortMode !== "alpha" && active.length > 1;
+
+  const { reorderState, displayActiveItems } = useItemReorder<GuestItem>({
+    activeItems,
+    sortMode,
+    enabled: reorderEnabled,
+    onCommitOrder: ({ nextActive }) => {
+      const orderById = new Map(
+        nextActive.map((item) => [item.id, item.sortOrder]),
+      );
+      setItems((current) =>
+        current.map((item) => {
+          const sortOrder = orderById.get(item.id);
+          return sortOrder === undefined ? item : { ...item, sortOrder };
+        }),
+      );
+    },
+  });
 
   const displayActiveGroups = useMemo(
     () => groupItemsByCategory(displayActiveItems),
     [displayActiveItems],
   );
-
-  useLayoutEffect(() => {
-    const first = flipFirstRef.current;
-    if (!first) return;
-    flipFirstRef.current = null;
-    playItemFlip(first);
-  });
-
-  useEffect(() => {
-    if (dragOrderIdsRef.current) {
-      const byId = new Map(activeItems.map((item) => [item.id, item]));
-      activeItemsRef.current = dragOrderIdsRef.current
-        .map((id) => byId.get(id))
-        .filter((item): item is GuestItem => Boolean(item));
-      return;
-    }
-    activeItemsRef.current = activeItems;
-  }, [activeItems]);
 
   // Early returns must come after every hook — a conditional hook count
   // crashes React when the auth state resolves.
@@ -312,190 +282,6 @@ const GuestList: React.FC = () => {
 
   // Signed-in users belong on the synced list; guest items migrate there once.
   if (user) return <Navigate to="/" replace />;
-
-  const applyActiveReorder = (nextActive: GuestItem[]) => {
-    const orders = assignSequentialOrders(nextActive);
-    const orderById = new Map(
-      orders.map((entry) => [entry.id, entry.sortOrder]),
-    );
-
-    activeItemsRef.current = nextActive.map((item) => ({
-      ...item,
-      sortOrder: orderById.get(item.id) ?? item.sortOrder,
-    }));
-
-    flipFirstRef.current = captureItemRects();
-    setItems((current) =>
-      current.map((item) => {
-        const sortOrder = orderById.get(item.id);
-        return sortOrder === undefined ? item : { ...item, sortOrder };
-      }),
-    );
-  };
-
-  const previewReorder = (draggedId: string, targetId: string) => {
-    if (draggedId === targetId || sortMode === "alpha") return;
-
-    const currentIds =
-      dragOrderIdsRef.current ??
-      activeItemsRef.current.map((item) => item.id);
-
-    if (sortMode === "aisle") {
-      const byId = new Map(
-        activeItemsRef.current.map((item) => [item.id, item]),
-      );
-      const dragged = byId.get(draggedId);
-      const target = byId.get(targetId);
-      if (!dragged || !target) return;
-      const draggedCat = dragged.category ?? DEFAULT_CATEGORY;
-      const targetCat = target.category ?? DEFAULT_CATEGORY;
-      if (draggedCat !== targetCat) return;
-
-      const groupIds = currentIds.filter((id) => {
-        const item = byId.get(id);
-        return (item?.category ?? DEFAULT_CATEGORY) === draggedCat;
-      });
-      const reorderedGroup = reorderById(
-        groupIds.map((id) => ({ id })),
-        draggedId,
-        targetId,
-      ).map((entry) => entry.id);
-      if (reorderedGroup.join("\0") === groupIds.join("\0")) return;
-
-      const nextIds: string[] = [];
-      let groupInserted = false;
-      for (const id of currentIds) {
-        const item = byId.get(id);
-        const cat = item?.category ?? DEFAULT_CATEGORY;
-        if (cat !== draggedCat) {
-          nextIds.push(id);
-          continue;
-        }
-        if (!groupInserted) {
-          nextIds.push(...reorderedGroup);
-          groupInserted = true;
-        }
-      }
-      flipFirstRef.current = captureItemRects();
-      dragOrderIdsRef.current = nextIds;
-      setDragOrderIds(nextIds);
-      return;
-    }
-
-    const nextIds = reorderById(
-      currentIds.map((id) => ({ id })),
-      draggedId,
-      targetId,
-    ).map((entry) => entry.id);
-    if (nextIds.join("\0") === currentIds.join("\0")) return;
-
-    flipFirstRef.current = captureItemRects();
-    dragOrderIdsRef.current = nextIds;
-    setDragOrderIds(nextIds);
-  };
-
-  const moveActiveItem = (id: string, offset: -1 | 1) => {
-    if (sortMode === "alpha") return;
-    const currentActive = activeItemsRef.current;
-
-    if (sortMode === "manual") {
-      const next = moveItemByOffset(currentActive, id, offset);
-      if (next !== currentActive) applyActiveReorder(next);
-      return;
-    }
-
-    const item = currentActive.find((entry) => entry.id === id);
-    if (!item) return;
-    const cat = item.category ?? DEFAULT_CATEGORY;
-    const groupItems = currentActive.filter(
-      (entry) => (entry.category ?? DEFAULT_CATEGORY) === cat,
-    );
-    const reorderedGroup = moveItemByOffset(groupItems, id, offset);
-    if (reorderedGroup === groupItems) return;
-
-    const nextActive: GuestItem[] = [];
-    let groupInserted = false;
-    for (const entry of currentActive) {
-      const entryCat = entry.category ?? DEFAULT_CATEGORY;
-      if (entryCat !== cat) {
-        nextActive.push(entry);
-        continue;
-      }
-      if (!groupInserted) {
-        nextActive.push(...reorderedGroup);
-        groupInserted = true;
-      }
-    }
-    applyActiveReorder(nextActive);
-  };
-
-  const commitDragOrder = () => {
-    const orderIds = dragOrderIdsRef.current;
-    if (!orderIds || orderIds.length === 0) {
-      dragOrderIdsRef.current = null;
-      setDragOrderIds(null);
-      return;
-    }
-
-    const sourceById = new Map(activeItems.map((item) => [item.id, item]));
-    const nextActive = orderIds
-      .map((id) => sourceById.get(id))
-      .filter((item): item is GuestItem => Boolean(item));
-
-    const orders = assignSequentialOrders(nextActive);
-    const orderById = new Map(
-      orders.map((entry) => [entry.id, entry.sortOrder]),
-    );
-
-    // Persist under the current visual order without a second layout jump.
-    setItems((current) =>
-      current.map((item) => {
-        const sortOrder = orderById.get(item.id);
-        return sortOrder === undefined ? item : { ...item, sortOrder };
-      }),
-    );
-    dragOrderIdsRef.current = null;
-    setDragOrderIds(null);
-  };
-
-  const reorderEnabled =
-    !isSearching && sortMode !== "alpha" && active.length > 1;
-
-  const clearDragState = () => {
-    draggingIdRef.current = null;
-    setDraggingId(null);
-    setDropTargetId(null);
-  };
-
-  const reorderState: ItemReorderState = {
-    enabled: reorderEnabled,
-    draggingId,
-    dropTargetId,
-    onDragStart: (id) => {
-      draggingIdRef.current = id;
-      const ids = activeItemsRef.current.map((item) => item.id);
-      dragOrderIdsRef.current = ids;
-      setDragOrderIds(ids);
-      setDraggingId(id);
-      setDropTargetId(null);
-    },
-    onDragOver: (id) => {
-      setDropTargetId((current) => (current === id ? current : id));
-      const fromId = draggingIdRef.current;
-      if (!fromId || fromId === id) return;
-      previewReorder(fromId, id);
-    },
-    onDragEnd: () => {
-      dragOrderIdsRef.current = null;
-      setDragOrderIds(null);
-      clearDragState();
-    },
-    onDrop: () => {
-      clearDragState();
-      commitDragOrder();
-    },
-    onMove: (id, offset) => moveActiveItem(id, offset),
-  };
 
   const edit: ItemEditState = {
     editingId,

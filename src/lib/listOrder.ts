@@ -18,7 +18,7 @@ export const LIST_SORT_MODES: Array<{
 const SORT_STORAGE_KEY = "cartlink:list-sort:v1";
 const DONE_COLLAPSED_KEY = "cartlink:done-collapsed:v1";
 
-export function isListSortMode(value: unknown): value is ListSortMode {
+function isListSortMode(value: unknown): value is ListSortMode {
   return value === "aisle" || value === "manual" || value === "alpha";
 }
 
@@ -87,7 +87,7 @@ export function compareManualOrder(a: Orderable, b: Orderable): number {
   return a.text.localeCompare(b.text, undefined, { sensitivity: "base" });
 }
 
-export function compareAlphaOrder(a: Orderable, b: Orderable): number {
+function compareAlphaOrder(a: Orderable, b: Orderable): number {
   const byText = a.text.localeCompare(b.text, undefined, {
     sensitivity: "base",
   });

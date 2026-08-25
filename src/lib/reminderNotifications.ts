@@ -139,7 +139,7 @@ async function showNow(
 }
 
 /** Fire any due reminders that were missed while the browser was closed. */
-export async function flushDueReminders(
+async function flushDueReminders(
   settings: ShoppingReminderSettings = readLocalReminderSettings(),
 ) {
   if (!settingsAreReady(settings)) return;
@@ -226,16 +226,6 @@ export async function enableRemindersWithPermission(
     scheduled: result.scheduled,
     mode: result.mode,
   };
-}
-
-/**
- * Ask the browser for notification permission (must be from a user gesture).
- * Returns the resulting permission string.
- */
-export async function promptAllowNotifications(): Promise<
-  NotificationPermission | "unsupported"
-> {
-  return requestNotificationPermission();
 }
 
 /**

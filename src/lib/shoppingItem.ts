@@ -20,7 +20,7 @@ import {
 
 export const PERSONAL_LIST_ID = "personal";
 export const PERSONAL_LIST_NAME = "My List";
-export const MAX_FIRESTORE_BATCH_WRITES = 450;
+const MAX_FIRESTORE_BATCH_WRITES = 450;
 
 export interface ShoppingItem {
   id: string;
@@ -66,10 +66,6 @@ export function getItemListId(item: ShoppingItem) {
 
 export function getItemListName(item: ShoppingItem) {
   return item.listName ?? PERSONAL_LIST_NAME;
-}
-
-export function getItemCategory(item: ShoppingItem) {
-  return item.category ?? DEFAULT_CATEGORY;
 }
 
 /** Content-only key used for legacy shared docs that have no stable id. */

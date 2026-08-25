@@ -4,6 +4,7 @@ import {
   MAX_NOTE_LENGTH,
   MAX_QUANTITY_LENGTH,
 } from "./itemInput";
+import { normalizeOptionalString } from "./shoppingItem";
 
 const STORAGE_KEY = "cartlink:guest-items:v1";
 const MAX_GUEST_ITEMS = 500;
@@ -28,7 +29,7 @@ export function readGuestItems(): GuestItem[] {
     return parsed.slice(0, MAX_GUEST_ITEMS).flatMap((value) => {
       if (!value || typeof value !== "object") return [];
       const item = value as Record<string, unknown>;
-      const text = typeof item.text === "string" ? item.text.trim().slice(0, MAX_ITEM_TEXT_LENGTH) : "";
+      const text = normalizeOptionalString(item.text, MAX_ITEM_TEXT_LENGTH);
       if (!text || typeof item.id !== "string") return [];
       const sortOrder =
         typeof item.sortOrder === "number" && Number.isFinite(item.sortOrder)
@@ -38,9 +39,9 @@ export function readGuestItems(): GuestItem[] {
         id: item.id,
         text,
         completed: item.completed === true,
-        quantity: typeof item.quantity === "string" ? item.quantity.trim().slice(0, MAX_QUANTITY_LENGTH) || undefined : undefined,
-        category: typeof item.category === "string" ? item.category.trim().slice(0, MAX_CATEGORY_LENGTH) || undefined : undefined,
-        note: typeof item.note === "string" ? item.note.trim().slice(0, MAX_NOTE_LENGTH) || undefined : undefined,
+        quantity: normalizeOptionalString(item.quantity, MAX_QUANTITY_LENGTH),
+        category: normalizeOptionalString(item.category, MAX_CATEGORY_LENGTH),
+        note: normalizeOptionalString(item.note, MAX_NOTE_LENGTH),
         ...(item.important === true ? { important: true } : {}),
         ...(sortOrder !== undefined ? { sortOrder } : {}),
         createdAt: typeof item.createdAt === "number" ? item.createdAt : 0,

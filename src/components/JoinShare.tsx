@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowRight, KeyRound, Moon, Sun } from "lucide-react";
+import { ArrowRight, KeyRound } from "lucide-react";
 import { db } from "../firebase";
-import { resolveShareCode } from "../lib/allocateShareCode";
+import { resolveValidatedShareCode } from "../lib/allocateShareCode";
 import {
   SHARE_CODE_LENGTH,
   formatShareCode,
@@ -10,9 +10,9 @@ import {
   normalizeShareCodeInput,
 } from "../lib/shareCode";
 import { useAuth } from "../context/useAuth";
-import { useDarkMode } from "../hooks/useDarkMode";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import BrandMark from "./BrandMark";
+import ThemeToggle from "./ThemeToggle";
 
 /**
  * Enter a share code (or land on /c/:code) and open the same public list
@@ -22,7 +22,6 @@ const JoinShare: React.FC = () => {
   const { code: routeCode } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { dark, toggle } = useDarkMode();
   const [value, setValue] = useState(() =>
     routeCode ? formatShareCode(normalizeShareCodeInput(routeCode)) : "",
   );
@@ -37,28 +36,26 @@ const JoinShare: React.FC = () => {
       return;
     }
 
-    const raw = normalizeShareCodeInput(rawInput);
-    if (!isValidShareCode(raw)) {
-      setError(
-        `Enter the full ${SHARE_CODE_LENGTH}-character code (for example AB3D-K7MP).`,
-      );
-      setBusy(false);
-      return;
-    }
-
     setBusy(true);
     setError("");
 
     try {
-      const ownerId = await resolveShareCode(db, raw);
-      if (!ownerId) {
+      const result = await resolveValidatedShareCode(db, rawInput);
+      if (result.status === "invalid") {
+        setError(
+          `Enter the full ${SHARE_CODE_LENGTH}-character code (for example AB3D-K7MP).`,
+        );
+        setBusy(false);
+        return;
+      }
+      if (result.status === "inactive") {
         setError(
           "That code isn’t active. Ask them to open Share and check the code.",
         );
         setBusy(false);
         return;
       }
-      navigate(`/c/${raw}`, { replace: true });
+      navigate(`/c/${result.code}`, { replace: true });
     } catch (resolveError) {
       console.error("Resolve share code error:", resolveError);
       setError("Couldn’t look up that code right now. Try again.");
@@ -84,14 +81,7 @@ const JoinShare: React.FC = () => {
   return (
     <div className="login-container">
       <div className="login-card join-card">
-        <button
-          type="button"
-          className="login-theme-toggle"
-          onClick={toggle}
-          aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          {dark ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
+        <ThemeToggle className="login-theme-toggle" />
 
         <div className="login-logo" aria-hidden="true">
           <BrandMark className="brand-mark login-brand-mark" />

@@ -2635,12 +2635,6 @@ body.dark .modal-backdrop {
   padding-bottom: max(0.85rem, env(safe-area-inset-bottom, 0px));
 }
 
-.settings-loading {
-  display: flex;
-  justify-content: center;
-  padding: 2.5rem 0;
-}
-
 .settings-card {
   display: flex;
   flex-direction: column;
@@ -2953,23 +2947,12 @@ body.dark .modal-backdrop {
   color: var(--ink-faint);
 }
 
-.settings-status {
-  margin: 0;
-  padding: 0.55rem 0.65rem;
-  border-radius: 10px;
-  background: rgba(107, 143, 113, 0.1);
-  font-size: 0.8rem;
-  color: var(--sage-dark);
-  line-height: 1.4;
-}
-
 .settings-actions {
   display: flex;
   justify-content: stretch;
   gap: 0.45rem;
 }
 
-.settings-secondary-btn,
 .settings-primary-btn {
   flex: 1;
   min-height: 44px;
@@ -2979,16 +2962,6 @@ body.dark .modal-backdrop {
   cursor: pointer;
   border: 1.5px solid var(--cream-deep);
   -webkit-tap-highlight-color: transparent;
-}
-
-.settings-secondary-btn {
-  background: transparent;
-  color: var(--ink-muted);
-}
-
-.settings-secondary-btn:hover {
-  background: var(--cream-dark);
-  color: var(--ink);
 }
 
 .settings-primary-btn {
@@ -3024,7 +2997,6 @@ body.dark .modal-backdrop {
     justify-content: flex-end;
   }
 
-  .settings-secondary-btn,
   .settings-primary-btn {
     flex: 0 0 auto;
     min-width: 6.5rem;
@@ -3065,12 +3037,6 @@ body.dark .modal-backdrop {
   text-underline-offset: 2px;
   cursor: pointer;
   padding: 0.15rem 0.2rem;
-}
-
-.theme-toggle.is-settings-active {
-  color: var(--sage-dark);
-  border-color: var(--sage-light);
-  background: rgba(107, 143, 113, 0.1);
 }
 
 .modal-header {

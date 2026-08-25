@@ -45,10 +45,10 @@ export interface PrefOption {
   description: string;
 }
 
-export const MIN_DISPLAY_SCALE = 80;
-export const MAX_DISPLAY_SCALE = 130;
+const MIN_DISPLAY_SCALE = 80;
+const MAX_DISPLAY_SCALE = 130;
 /** Slightly under the base ramp — roomy but not oversized out of the box. */
-export const DEFAULT_DISPLAY_SCALE = 95;
+const DEFAULT_DISPLAY_SCALE = 95;
 
 /** Presets for the settings segmented control. */
 export const DISPLAY_SCALE_OPTIONS: Array<{ value: number; label: string }> = [
@@ -58,7 +58,7 @@ export const DISPLAY_SCALE_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 115, label: "XL" },
 ];
 
-export interface UserPreferences {
+interface UserPreferences {
   interface: InterfacePreferences;
 }
 
@@ -187,36 +187,6 @@ export function writeLocalUserPreferences(prefs: UserPreferences) {
   } catch {
     // Private mode may block storage.
   }
-}
-
-export function allInterfaceOn(): InterfacePreferences {
-  return {
-    emptyTips: true,
-    addHints: true,
-    onboardingCopy: true,
-    sortHints: true,
-    shoppingBanners: true,
-    progressBar: true,
-    importantStars: true,
-    brandLogo: true,
-    shareChangeNotices: true,
-    displayScale: DEFAULT_DISPLAY_SCALE,
-  };
-}
-
-export function allInterfaceOff(): InterfacePreferences {
-  return {
-    emptyTips: false,
-    addHints: false,
-    onboardingCopy: false,
-    sortHints: false,
-    shoppingBanners: false,
-    progressBar: false,
-    importantStars: false,
-    brandLogo: false,
-    shareChangeNotices: false,
-    displayScale: DEFAULT_DISPLAY_SCALE,
-  };
 }
 
 export function setPrefGroup(

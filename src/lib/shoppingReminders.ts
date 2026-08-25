@@ -56,7 +56,7 @@ const MAX_FIRED_KEYS = 60;
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-export function isValidTimeString(value: unknown): value is string {
+function isValidTimeString(value: unknown): value is string {
   return typeof value === "string" && TIME_RE.test(value);
 }
 

@@ -17,7 +17,7 @@ const STORAGE_PREFIX = "cartlink:ticks:";
 export type LocalTicks = Record<string, boolean>;
 
 /** Ticks are matched on item text so they survive the owner editing quantities. */
-export function toTickKey(text: string) {
+function toTickKey(text: string) {
   return getDuplicateKey(text);
 }
 

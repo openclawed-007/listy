@@ -19,7 +19,7 @@ export interface HistoryEntry {
 
 const STORAGE_KEY = "cartlink:item-history:v1";
 export const MAX_HISTORY_ENTRIES = 200;
-export const MAX_SUGGESTIONS = 6;
+const MAX_SUGGESTIONS = 6;
 
 /** Days of recency boost for ranking. */
 const RECENCY_DAYS = 7;
@@ -78,7 +78,7 @@ export function readItemHistory(): HistoryEntry[] {
   }
 }
 
-export function writeItemHistory(entries: HistoryEntry[]) {
+function writeItemHistory(entries: HistoryEntry[]) {
   try {
     localStorage.setItem(
       STORAGE_KEY,

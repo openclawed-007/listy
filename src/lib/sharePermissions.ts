@@ -2,6 +2,8 @@
 // Used by both the owner app (ShoppingList) and the public share page
 // (PublicSharedList) so the permission shape stays consistent.
 
+import { isRecord } from "./shoppingItem";
+
 export interface SharePermissions {
   /** Collaborators may check items off (toggle the completed flag). */
   toggle: boolean;
@@ -16,10 +18,6 @@ export const NO_PERMISSIONS: SharePermissions = {
   add: false,
   remove: false,
 };
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object";
-}
 
 /** Read a permissions map from raw Firestore data, defaulting unknown to false. */
 export function normalizeSharePermissions(value: unknown): SharePermissions {

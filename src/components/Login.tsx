@@ -5,15 +5,13 @@ import {
   Check,
   Download,
   Link2,
-  Moon,
   ShoppingBasket,
-  Sun,
 } from "lucide-react";
 import { useAuth } from "../context/useAuth";
 import { isAppCheckEnabled, isFirebaseConfigured } from "../firebase";
-import { useDarkMode } from "../hooks/useDarkMode";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import BrandMark from "./BrandMark";
+import ThemeToggle from "./ThemeToggle";
 
 const BENEFITS = [
   {
@@ -56,7 +54,6 @@ const GoogleLogo: React.FC = () => (
 
 const Login: React.FC = () => {
   const { login, authError } = useAuth();
-  const { dark, toggle } = useDarkMode();
   const { canInstall, install } = useInstallPrompt();
   const [loginError, setLoginError] = React.useState(authError ?? "");
   const [isLoggingIn, setIsLoggingIn] = React.useState(false);
@@ -84,15 +81,7 @@ const Login: React.FC = () => {
   return (
     <div className="login-container">
       <div className="login-card">
-        <button
-          type="button"
-          className="login-theme-toggle"
-          onClick={toggle}
-          aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-          title={dark ? "Light mode" : "Dark mode"}
-        >
-          {dark ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
+        <ThemeToggle className="login-theme-toggle" />
 
         <div className="login-logo" aria-hidden="true">
           <BrandMark className="brand-mark login-brand-mark" />

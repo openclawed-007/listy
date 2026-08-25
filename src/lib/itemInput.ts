@@ -423,7 +423,7 @@ const LEADING_QUANTITY = new RegExp(
 const TRAILING_QUANTITY = /^(\S.*?)\s+(?:[x×]\s*(\d{1,4})|(\d{1,4})\s*[x×])$/i;
 const TRAILING_CATEGORY = /^(\S.*?)\s+#([a-z0-9][a-z0-9 &'-]*)$/i;
 
-export interface ParsedItemInput {
+interface ParsedItemInput {
   text: string;
   quantity?: string;
   category?: string;

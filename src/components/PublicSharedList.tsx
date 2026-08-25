@@ -5,16 +5,14 @@ import {
 } from "firebase/firestore";
 import {
   Check,
-  Moon,
   PackageOpen,
   Pencil,
   Plus,
-  Sun,
   Trash2,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { db } from "../firebase";
-import { resolveShareCode } from "../lib/allocateShareCode";
+import { resolveValidatedShareCode } from "../lib/allocateShareCode";
 import {
   isValidShareCode,
   normalizeShareCodeInput,
@@ -44,7 +42,6 @@ import {
 } from "../lib/sharedListMutations";
 import { useAuth } from "../context/useAuth";
 import { usePreferences } from "../context/usePreferences";
-import { useDarkMode } from "../hooks/useDarkMode";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import {
   clearLocalTicks,
@@ -57,6 +54,7 @@ import {
   type LocalTicks,
 } from "../lib/localTicks";
 import BrandMark from "./BrandMark";
+import ThemeToggle from "./ThemeToggle";
 
 const MAX_ITEMS = 500;
 
@@ -164,7 +162,6 @@ const PublicSharedList: React.FC = () => {
   const seenShareSnapshotRef = React.useRef(false);
   const lastShareFingerprintRef = React.useRef("");
   const allowEdits = hasAnyPermission(permissions);
-  const { dark, toggle: toggleDark } = useDarkMode();
   // Ticks this device made on a list it is not allowed to write to.
   const shareId = resolvedShareId;
   const [localTicks, setLocalTicks] = useState<LocalTicks>({});
@@ -191,15 +188,15 @@ const PublicSharedList: React.FC = () => {
     let cancelled = false;
     setLoading(true);
     setError("");
-    void resolveShareCode(db, raw).then((ownerId) => {
+    void resolveValidatedShareCode(db, raw).then((result) => {
       if (cancelled) return;
-      if (!ownerId) {
+      if (result.status === "inactive") {
         setError("This shared list is no longer available.");
         setLoading(false);
         setResolvedShareId("");
         return;
       }
-      setResolvedShareId(ownerId);
+      if (result.status === "ok") setResolvedShareId(result.ownerId);
     }).catch((resolveError) => {
       if (cancelled) return;
       console.error("Resolve share code error:", resolveError);
@@ -495,15 +492,7 @@ const PublicSharedList: React.FC = () => {
           </Link>
 
           <div className="user-actions">
-            <button
-              onClick={toggleDark}
-              className="theme-toggle"
-              title={dark ? "Switch to light mode" : "Switch to dark mode"}
-              type="button"
-              aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {dark ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
+            <ThemeToggle className="theme-toggle" />
             <Link className="nav-text-link" to={user ? "/" : "/login"}>
               {user ? "My list" : "Sign in"}
             </Link>

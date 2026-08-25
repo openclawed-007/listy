@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 
-export interface NavAccountMenuProps {
+interface NavAccountMenuProps {
   user: User | null;
   dark: boolean;
   onToggleDark: () => void;

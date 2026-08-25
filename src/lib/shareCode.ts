@@ -7,7 +7,7 @@
 /** Crockford-style alphabet: no 0/O, 1/I/L to avoid spoken/typed mix-ups. */
 const ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 export const SHARE_CODE_LENGTH = 8;
-export const SHARE_CODE_RAW_PATTERN = new RegExp(
+const SHARE_CODE_RAW_PATTERN = new RegExp(
   `^[${ALPHABET}]{${SHARE_CODE_LENGTH}}$`,
 );
 

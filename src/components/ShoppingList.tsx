@@ -1,10 +1,4 @@
-import React, {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -87,22 +81,19 @@ import {
   isValidShareCode,
 } from "../lib/shareCode";
 import {
-  assignSequentialOrders,
   compareManualOrder,
   LIST_SORT_MODES,
-  moveItemByOffset,
   nextTopSortOrder,
   readDoneCollapsed,
   readListSortMode,
-  reorderById,
   sortItemsForMode,
   writeDoneCollapsed,
   writeListSortMode,
   type ListSortMode,
 } from "../lib/listOrder";
-import { captureItemRects, playItemFlip } from "../lib/listFlip";
 import { useAuth } from "../context/useAuth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { useItemReorder } from "../hooks/useItemReorder";
 import { useDarkMode } from "../hooks/useDarkMode";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import BrandMark from "./BrandMark";
@@ -116,7 +107,6 @@ import {
   CategoryGroup,
   ItemRow,
   type ItemEditState,
-  type ItemReorderState,
 } from "./ItemRow";
 import {
   startReminderWatch,
@@ -186,17 +176,6 @@ const ShoppingList: React.FC = () => {
   );
   const [sortMode, setSortMode] = useState<ListSortMode>(readListSortMode);
   const [doneCollapsed, setDoneCollapsed] = useState(readDoneCollapsed);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  // Display-only order while dragging — never mutates item data until drop.
-  const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null);
-  // Ref so pointer-up drop always sees the id even before React re-renders.
-  const draggingIdRef = useRef<string | null>(null);
-  const dragOrderIdsRef = useRef<string[] | null>(null);
-  // First-frame rects for FLIP; played in useLayoutEffect after the reorder.
-  const flipFirstRef = useRef<Map<string, DOMRect> | null>(null);
-  // Fresh active order for live drag (avoids stale closures between frames).
-  const activeItemsRef = useRef<ShoppingItem[]>([]);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(
     null,
   );
@@ -1356,24 +1335,51 @@ const ShoppingList: React.FC = () => {
     };
   }, [filtered, sortMode]);
 
-  /**
-   * While dragging, reorder is a pure display list of ids — item objects stay
-   * untouched so the rest of the list does not re-render with new data.
-   */
-  const displayActiveItems = useMemo(() => {
-    if (!dragOrderIds) return activeItems;
-    const byId = new Map(activeItems.map((item) => [item.id, item]));
-    const ordered: ShoppingItem[] = [];
-    for (const id of dragOrderIds) {
-      const item = byId.get(id);
-      if (item) {
-        ordered.push(item);
-        byId.delete(id);
-      }
-    }
-    for (const item of byId.values()) ordered.push(item);
-    return ordered;
-  }, [activeItems, dragOrderIds]);
+  const reorderEnabled =
+    !newItem.trim() && sortMode !== "alpha" && activeCount > 1;
+
+  const { reorderState, displayActiveItems, resetDrag } =
+    useItemReorder<ShoppingItem>({
+      activeItems,
+      sortMode,
+      enabled: reorderEnabled,
+      canReorder: () => Boolean(user) && !newItem.trim(),
+      onCommitOrder: async ({ orders, scopeItems, changed }) => {
+        const orderById = new Map(
+          orders.map((entry) => [entry.id, entry.sortOrder]),
+        );
+
+        setItems((current) =>
+          current.map((item) => {
+            const sortOrder = orderById.get(item.id);
+            return sortOrder === undefined ? item : { ...item, sortOrder };
+          }),
+        );
+
+        if (!changed || !db || !user) return;
+        const firestore = db;
+        const touched = scopeItems.filter((item) =>
+          orderById.has(item.id),
+        );
+
+        try {
+          setActionError("");
+          await commitBatchOperations(
+            firestore,
+            touched.map((item) => (batch) => {
+              const sortOrder = orderById.get(item.id);
+              if (sortOrder === undefined) return;
+              batch.update(doc(firestore, "shoppingItems", item.id), {
+                sortOrder,
+              });
+            }),
+          );
+        } catch (error) {
+          console.error("Reorder items error:", error);
+          setActionError("Couldn't save the new order. Try again.");
+        }
+      },
+    });
 
   const displayActiveGroups = useMemo(
     () => groupItemsByCategory(displayActiveItems),
@@ -1383,11 +1389,7 @@ const ShoppingList: React.FC = () => {
   const changeSortMode = (mode: ListSortMode) => {
     setSortMode(mode);
     writeListSortMode(mode);
-    draggingIdRef.current = null;
-    dragOrderIdsRef.current = null;
-    setDraggingId(null);
-    setDropTargetId(null);
-    setDragOrderIds(null);
+    resetDrag();
   };
 
   const toggleDoneCollapsed = () => {
@@ -1396,275 +1398,6 @@ const ShoppingList: React.FC = () => {
       writeDoneCollapsed(next);
       return next;
     });
-  };
-
-  useLayoutEffect(() => {
-    const first = flipFirstRef.current;
-    if (!first) return;
-    flipFirstRef.current = null;
-    playItemFlip(first);
-  });
-
-  // Keep a live ref of the active list so rapid drag-over reorders stay in sync.
-  useEffect(() => {
-    // During a drag, the display order lives in dragOrderIds — don't clobber it.
-    if (dragOrderIdsRef.current) {
-      const byId = new Map(activeItems.map((item) => [item.id, item]));
-      activeItemsRef.current = dragOrderIdsRef.current
-        .map((id) => byId.get(id))
-        .filter((item): item is ShoppingItem => Boolean(item));
-      return;
-    }
-    activeItemsRef.current = activeItems;
-  }, [activeItems]);
-
-  /**
-   * Commit a new order: one local write + optional Firestore batch.
-   * Used for keyboard moves and for the final drop after a drag preview.
-   */
-  const applyActiveReorder = async (
-    nextActive: ShoppingItem[],
-    scopeItems: ShoppingItem[],
-  ) => {
-    if (!user) return;
-    if (newItem.trim()) return;
-
-    const orders = assignSequentialOrders(nextActive);
-    const orderById = new Map(
-      orders.map((entry) => [entry.id, entry.sortOrder]),
-    );
-    const touched = scopeItems.filter((item) => orderById.has(item.id));
-
-    activeItemsRef.current = nextActive.map((item) => ({
-      ...item,
-      sortOrder: orderById.get(item.id) ?? item.sortOrder,
-    }));
-
-    flipFirstRef.current = captureItemRects();
-    setItems((current) =>
-      current.map((item) => {
-        const sortOrder = orderById.get(item.id);
-        return sortOrder === undefined ? item : { ...item, sortOrder };
-      }),
-    );
-
-    if (!db) return;
-    const firestore = db;
-
-    try {
-      setActionError("");
-      await commitBatchOperations(
-        firestore,
-        touched.map((item) => (batch) => {
-          const sortOrder = orderById.get(item.id);
-          if (sortOrder === undefined) return;
-          batch.update(doc(firestore, "shoppingItems", item.id), { sortOrder });
-        }),
-      );
-    } catch (error) {
-      console.error("Reorder items error:", error);
-      setActionError("Couldn't save the new order. Try again.");
-    }
-  };
-
-  /** Preview-only reorder while the finger/pointer is still down. */
-  const previewReorder = (draggedId: string, targetId: string) => {
-    if (draggedId === targetId || sortMode === "alpha") return;
-
-    const currentIds =
-      dragOrderIdsRef.current ??
-      activeItemsRef.current.map((item) => item.id);
-
-    if (sortMode === "aisle") {
-      const byId = new Map(
-        activeItemsRef.current.map((item) => [item.id, item]),
-      );
-      const dragged = byId.get(draggedId);
-      const target = byId.get(targetId);
-      if (!dragged || !target) return;
-      const draggedCat = dragged.category ?? DEFAULT_CATEGORY;
-      const targetCat = target.category ?? DEFAULT_CATEGORY;
-      if (draggedCat !== targetCat) return;
-
-      // Reorder only within the aisle, keep other aisles fixed.
-      const groupIds = currentIds.filter((id) => {
-        const item = byId.get(id);
-        return (item?.category ?? DEFAULT_CATEGORY) === draggedCat;
-      });
-      const reorderedGroup = reorderById(
-        groupIds.map((id) => ({ id })),
-        draggedId,
-        targetId,
-      ).map((entry) => entry.id);
-      if (reorderedGroup.join("\0") === groupIds.join("\0")) return;
-
-      const nextIds: string[] = [];
-      let groupInserted = false;
-      for (const id of currentIds) {
-        const item = byId.get(id);
-        const cat = item?.category ?? DEFAULT_CATEGORY;
-        if (cat !== draggedCat) {
-          nextIds.push(id);
-          continue;
-        }
-        if (!groupInserted) {
-          nextIds.push(...reorderedGroup);
-          groupInserted = true;
-        }
-      }
-      flipFirstRef.current = captureItemRects();
-      dragOrderIdsRef.current = nextIds;
-      setDragOrderIds(nextIds);
-      return;
-    }
-
-    const nextIds = reorderById(
-      currentIds.map((id) => ({ id })),
-      draggedId,
-      targetId,
-    ).map((entry) => entry.id);
-    if (nextIds.join("\0") === currentIds.join("\0")) return;
-
-    flipFirstRef.current = captureItemRects();
-    dragOrderIdsRef.current = nextIds;
-    setDragOrderIds(nextIds);
-  };
-
-  const moveActiveItem = async (id: string, offset: -1 | 1) => {
-    if (sortMode === "alpha") return;
-
-    const currentActive = activeItemsRef.current;
-
-    if (sortMode === "manual") {
-      const next = moveItemByOffset(currentActive, id, offset);
-      if (next === currentActive) return;
-      await applyActiveReorder(next, currentActive);
-      return;
-    }
-
-    const item = currentActive.find((entry) => entry.id === id);
-    if (!item) return;
-    const cat = item.category ?? DEFAULT_CATEGORY;
-    const groupItems = currentActive.filter(
-      (entry) => (entry.category ?? DEFAULT_CATEGORY) === cat,
-    );
-    const reorderedGroup = moveItemByOffset(groupItems, id, offset);
-    if (reorderedGroup === groupItems) return;
-
-    const nextActive: ShoppingItem[] = [];
-    let groupInserted = false;
-    for (const entry of currentActive) {
-      const entryCat = entry.category ?? DEFAULT_CATEGORY;
-      if (entryCat !== cat) {
-        nextActive.push(entry);
-        continue;
-      }
-      if (!groupInserted) {
-        nextActive.push(...reorderedGroup);
-        groupInserted = true;
-      }
-    }
-    await applyActiveReorder(nextActive, groupItems);
-  };
-
-  const commitDragOrder = async () => {
-    const orderIds = dragOrderIdsRef.current;
-    if (!orderIds || orderIds.length === 0) {
-      dragOrderIdsRef.current = null;
-      setDragOrderIds(null);
-      return;
-    }
-
-    // Use the pre-drag active list (from state) so object data stays stable.
-    const sourceById = new Map(activeItems.map((item) => [item.id, item]));
-    const nextActive = orderIds
-      .map((id) => sourceById.get(id))
-      .filter((item): item is ShoppingItem => Boolean(item));
-
-    const unchanged =
-      nextActive.length === activeItems.length &&
-      nextActive.every((item, index) => item.id === activeItems[index]?.id);
-
-    const orders = assignSequentialOrders(nextActive);
-    const orderById = new Map(
-      orders.map((entry) => [entry.id, entry.sortOrder]),
-    );
-
-    activeItemsRef.current = nextActive.map((item) => ({
-      ...item,
-      sortOrder: orderById.get(item.id) ?? item.sortOrder,
-    }));
-
-    // Write sortOrder under the existing visual order — no second FLIP/snap.
-    // Clearing the preview in the same tick keeps the list visually still.
-    setItems((current) =>
-      current.map((item) => {
-        const sortOrder = orderById.get(item.id);
-        return sortOrder === undefined ? item : { ...item, sortOrder };
-      }),
-    );
-    dragOrderIdsRef.current = null;
-    setDragOrderIds(null);
-
-    if (unchanged || !db || !user) return;
-    const firestore = db;
-
-    try {
-      setActionError("");
-      await commitBatchOperations(
-        firestore,
-        orders.map((entry) => (batch) => {
-          batch.update(doc(firestore, "shoppingItems", entry.id), {
-            sortOrder: entry.sortOrder,
-          });
-        }),
-      );
-    } catch (error) {
-      console.error("Reorder items error:", error);
-      setActionError("Couldn't save the new order. Try again.");
-    }
-  };
-
-  const reorderEnabled =
-    !newItem.trim() && sortMode !== "alpha" && activeCount > 1;
-
-  const clearDragState = () => {
-    draggingIdRef.current = null;
-    setDraggingId(null);
-    setDropTargetId(null);
-  };
-
-  const reorderState: ItemReorderState = {
-    enabled: reorderEnabled,
-    draggingId,
-    dropTargetId,
-    onDragStart: (id) => {
-      draggingIdRef.current = id;
-      const ids = activeItemsRef.current.map((item) => item.id);
-      dragOrderIdsRef.current = ids;
-      setDragOrderIds(ids);
-      setDraggingId(id);
-      setDropTargetId(null);
-    },
-    onDragOver: (id) => {
-      setDropTargetId((current) => (current === id ? current : id));
-      const fromId = draggingIdRef.current;
-      if (!fromId || fromId === id) return;
-      previewReorder(fromId, id);
-    },
-    onDragEnd: () => {
-      // Cancelled — discard preview order, keep original item data.
-      dragOrderIdsRef.current = null;
-      setDragOrderIds(null);
-      clearDragState();
-    },
-    onDrop: () => {
-      clearDragState();
-      void commitDragOrder();
-    },
-    onMove: (id, offset) => {
-      void moveActiveItem(id, offset);
-    },
   };
 
   // Aisle suggestions while editing: the customer's own categories first, then

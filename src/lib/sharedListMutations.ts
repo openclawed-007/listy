@@ -23,7 +23,7 @@ import {
   type SharedItemPayload,
 } from "./shoppingItem";
 
-export interface SharedItemTarget {
+interface SharedItemTarget {
   id?: string;
   sharedSourceItemId?: string;
   index?: number;
@@ -42,7 +42,7 @@ export type SharedListMutation =
   | { type: "add"; item: SharedItemPayload }
   | { type: "replace"; target: SharedItemTarget; item: SharedItemPayload };
 
-export type SharedListPermissionGate = keyof SharePermissions | "edit";
+type SharedListPermissionGate = keyof SharePermissions | "edit";
 
 export function mutationPermissionGate(
   mutation: SharedListMutation,

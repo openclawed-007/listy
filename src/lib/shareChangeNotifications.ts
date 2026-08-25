@@ -14,7 +14,7 @@ const DEBOUNCE_MS = 4000;
 
 const lastShown = new Map<string, number>();
 
-export function documentLooksBackgrounded() {
+function documentLooksBackgrounded() {
   if (typeof document === "undefined") return false;
   return document.visibilityState === "hidden" || !document.hasFocus();
 }

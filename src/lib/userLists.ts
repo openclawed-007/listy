@@ -7,8 +7,8 @@ export const MAX_CUSTOM_LISTS = 8;
 /** Persist cap — high enough to keep recovered lists, not a create quota. */
 export const MAX_STORED_LISTS = 16;
 export const MAX_LIST_NAME_LENGTH = 40;
-export const LIST_ID_PREFIX = "list_";
-export const SHARED_LIST_PREFIX = "shared:";
+const LIST_ID_PREFIX = "list_";
+const SHARED_LIST_PREFIX = "shared:";
 export const PERSONAL_TAB_ID = "personal";
 export const PERSONAL_TAB_NAME = "My List";
 
@@ -31,7 +31,7 @@ function listsStorageKey(userId?: string | null) {
     : `${LEGACY_LOCAL_KEY}:guest`;
 }
 
-export function createListId() {
+function createListId() {
   const rand =
     globalThis.crypto?.randomUUID?.() ??
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -57,13 +57,13 @@ export function isOwnedListId(id: string) {
   return id === PERSONAL_TAB_ID || isOwnedCustomListId(id);
 }
 
-export function normalizeListName(value: unknown): string | undefined {
+function normalizeListName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const name = value.trim().slice(0, MAX_LIST_NAME_LENGTH);
   return name || undefined;
 }
 
-export function normalizeUserList(value: unknown): UserList | null {
+function normalizeUserList(value: unknown): UserList | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   const id = typeof record.id === "string" ? record.id.trim() : "";
@@ -105,7 +105,7 @@ export function ensureListInRegistry(
   return [...lists, { id, name: normalized, createdAt: Date.now() }];
 }
 
-export interface RemoteListsSnapshot {
+interface RemoteListsSnapshot {
   exists: boolean;
   data?: Record<string, unknown>;
 }

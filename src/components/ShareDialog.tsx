@@ -14,7 +14,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useDialogFocus } from "../hooks/useDialogFocus";
 import { db } from "../firebase";
-import { resolveShareCode } from "../lib/allocateShareCode";
+import { resolveValidatedShareCode } from "../lib/allocateShareCode";
 import {
   SHARE_CODE_LENGTH,
   formatShareCode,
@@ -128,14 +128,19 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
     setJoinBusy(true);
     setJoinError("");
     try {
-      const ownerId = await resolveShareCode(db, joinRaw);
-      if (!ownerId) {
+      const result = await resolveValidatedShareCode(db, joinRaw);
+      if (result.status === "invalid") {
+        setJoinError(`Enter the full ${SHARE_CODE_LENGTH}-character code.`);
+        setJoinBusy(false);
+        return;
+      }
+      if (result.status === "inactive") {
         setJoinError("That code isn’t active. Ask them to check Share.");
         setJoinBusy(false);
         return;
       }
       onClose();
-      navigate(`/c/${joinRaw}`);
+      navigate(`/c/${result.code}`);
     } catch (error) {
       console.error("Join share code error:", error);
       setJoinError("Couldn’t look up that code right now. Try again.");
