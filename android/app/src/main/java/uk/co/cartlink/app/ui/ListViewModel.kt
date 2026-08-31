@@ -169,7 +169,9 @@ class ListViewModel(
 
     // ------------------------------------------------------------ UI actions
 
-    fun setActiveList(listId: String) = _state.update { it.copy(activeListId = listId) }
+    // Switching tabs clears the search, mirroring the web app.
+    fun setActiveList(listId: String) =
+        _state.update { it.copy(activeListId = listId, search = "") }
 
     fun setSearch(value: String) = _state.update { it.copy(search = value) }
 

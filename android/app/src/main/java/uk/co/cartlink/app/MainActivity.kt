@@ -104,6 +104,8 @@ class MainActivity : ComponentActivity() {
                         },
                         isDark = isDark,
                         isOnline = online,
+                        userName = user.displayName ?: user.email,
+                        userPhotoUrl = user.photoUrl?.toString(),
                         onToggleDark = {
                             lifecycleScope.launch {
                                 themePreferences.setDarkMode(!isDark)
@@ -154,9 +156,12 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent.createChooser(sendIntent, "Share your list"))
     }
 
-    private fun copyLink(url: String) {
+    private fun copyLink(url: String): Boolean = try {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("CartLink share link", url))
+        true
+    } catch (e: Exception) {
+        false
     }
 }
 
