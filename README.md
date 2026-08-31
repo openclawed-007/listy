@@ -60,6 +60,43 @@ npm run build
 firebase deploy
 ```
 
+## Android app (native)
+
+A fully native Android app lives in [`android/`](./android) — Kotlin + Jetpack
+Compose talking straight to Firebase (no web view). It shares the same
+Firestore data contract as the web app: private items in `shoppingItems`,
+public snapshots in `sharedLists/{ownerId}`, including the owner ↔ collaborator
+sync and granular share permissions.
+
+**Features:** native Google Sign-In (Credential Manager), real-time sync with
+built-in offline persistence, quantity/category, undo delete, search, list tabs
+for imported shared lists, share link + QR code with granular permissions, dark
+mode, and App Links so `cartlink.co.uk/share/...` and `/import/...` open in the
+app.
+
+### Setup
+
+1. In the [Firebase Console](https://console.firebase.google.com), add an
+   **Android app** (package `uk.co.cartlink.app`) to the existing project and
+   register your debug and release **SHA-1/SHA-256 fingerprints**
+   (`./gradlew signingReport`). This is required for Google Sign-In and App
+   Check (Play Integrity).
+2. Download `google-services.json` into `android/app/` (gitignored; see
+   `android/app/google-services.example.json` for the expected shape).
+3. Because App Check is enforced on Firestore, register the app in
+   **App Check**: Play Integrity for release; for debug builds copy the debug
+   token printed in Logcat into the console.
+4. Build:
+   ```bash
+   cd android
+   gradle :app:assembleDebug   # requires JDK 17–21 and the Android SDK
+   ```
+
+Release builds are signed with `android/keystore.properties` +
+`android/keystore/` when present (both gitignored). The site already serves
+`public/.well-known/assetlinks.json` so App Links verify against the release
+signing key.
+
 ## Checks
 
 ```bash

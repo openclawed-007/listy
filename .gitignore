@@ -30,3 +30,12 @@ dist-ssr
 
 # Firebase CLI cache
 .firebase/
+
+# Android app
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore/
+android/keystore.properties
+android/app/google-services.json
