@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.CartLink" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/cartlink_surface</item>
+        <item name="android:statusBarColor">@color/cartlink_surface</item>
+        <item name="android:navigationBarColor">@color/cartlink_surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

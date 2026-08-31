@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "uk.co.cartlink.app",
+      "sha256_cert_fingerprints": [
+        "98:2E:E2:CF:03:BB:F5:DB:F2:87:9D:F8:91:C5:F5:BC:58:B3:CE:D1:7D:F4:8B:43:12:3E:43:1C:08:0A:F6:30"
+      ]
+    }
+  }
+]
