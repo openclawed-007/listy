@@ -103,6 +103,9 @@ dependencies {
     // QR code generation
     implementation "com.google.zxing:core:3.5.3"
 
+    // Avatar image loading
+    implementation "io.coil-kt:coil-compose:2.7.0"
+
     // Unit tests (pure JVM: sync/permission logic)
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0"
