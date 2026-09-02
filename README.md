@@ -25,7 +25,9 @@ A clean, minimal shopping list app with Google sign-in and real-time sync.
 - ⚡ Real-time sync across devices (Firestore)
 - 🔍 Search (appears once a list is worth searching; press `/` any time)
 - ⌨️ Shortcuts: `/` search, `n` new item, `Enter` save, `Esc` cancel
-- 🌙 Dark mode with persistent preference
+- 🌙 Dark mode — follows your device setting until you pick one yourself
+- 🔠 **Text size** setting (Small → XL) that applies on every screen, plus
+  44px touch targets and WCAG-contrast helper text
 - 📱 Fully responsive
 - 📶 Offline-ready with local changes synced when the connection returns
 
@@ -97,6 +99,10 @@ firebase deploy
 
 ```bash
 npm run lint
+npm run typecheck
 npm run test
 npm run build
 ```
+
+`npm run build` type-checks the whole project (`tsc -b`) before bundling, so
+a type error fails the build and CI rather than shipping.

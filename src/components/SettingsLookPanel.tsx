@@ -17,8 +17,8 @@ export default function SettingsLookPanel({ prefs, onChange }: Props) {
   const tipsOn = countEnabledPrefGroup(prefs, TIPS_PREF_OPTIONS);
   return <>
     <section className="settings-card">
-      <div className="settings-toggle-row"><span className="settings-toggle-copy"><strong>Size on big screens</strong><span>Phones and tablets stay compact. This only changes desktop.</span></span></div>
-      <div className="settings-segment is-four" role="group" aria-label="Display scale">
+      <div className="settings-toggle-row"><span className="settings-toggle-copy"><strong>Text size</strong><span>Bigger or smaller text and controls, on every screen.</span></span></div>
+      <div className="settings-segment is-four" role="group" aria-label="Text size">
         {DISPLAY_SCALE_OPTIONS.map((option) => {
           const active = prefs.displayScale === option.value;
           return <button key={option.value} type="button" className={`settings-segment-btn ${active ? "active" : ""}`} aria-pressed={active} onClick={() => onChange({ ...prefs, displayScale: option.value })}>{option.label}</button>;

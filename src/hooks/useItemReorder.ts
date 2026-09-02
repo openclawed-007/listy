@@ -44,6 +44,7 @@ export interface UseItemReorderOptions<T> {
 interface ReorderableItem {
   id: string;
   category?: string;
+  sortOrder?: number;
 }
 
 /**

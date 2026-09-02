@@ -33,7 +33,14 @@
     <script>
       try {
         // Tokens use html.dark so this can run in <head> before body exists.
-        if (localStorage.getItem("theme") === "dark") document.documentElement.classList.add("dark");
+        // No saved choice yet: follow the device's light/dark setting.
+        var stored = localStorage.getItem("theme");
+        var dark =
+          stored === "dark" ||
+          (stored !== "light" &&
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
       } catch {}
     </script>
   </head>

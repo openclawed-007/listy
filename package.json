@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "start": "npm install && vite",
-    "build": "tsc && vite build",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run --exclude src/firestore.rules.test.ts",
     "test:rules": "firebase emulators:exec --only firestore --project cartlink-rules-test 'vitest run src/firestore.rules.test.ts'",

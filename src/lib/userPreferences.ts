@@ -26,9 +26,9 @@ export interface InterfacePreferences {
    */
   shareChangeNotices: boolean;
   /**
-   * Desktop display scale in percent (100 = the base fluid ramp).
-   * Applied via the `--ui-scale` CSS variable on screens ≥1024px only;
-   * phones and tablets keep the compact layout regardless.
+   * Text/control size in percent (95 = default). Applied via the
+   * `--ui-scale` CSS variable on every screen size: phones scale from the
+   * browser's base font size, desktop from its fluid ramp.
    */
   displayScale: number;
 }

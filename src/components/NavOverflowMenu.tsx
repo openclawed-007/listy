@@ -7,6 +7,7 @@ import {
   Settings,
   Sun,
 } from "lucide-react";
+import { useMenuKeyboard } from "../hooks/useMenuKeyboard";
 
 interface NavOverflowMenuProps {
   dark: boolean;
@@ -31,7 +32,9 @@ const NavOverflowMenu: React.FC<NavOverflowMenuProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId();
+  useMenuKeyboard(menuRef, open);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -48,6 +51,8 @@ const NavOverflowMenu: React.FC<NavOverflowMenuProps> = ({
       if (event.key === "Escape") {
         event.preventDefault();
         setOpen(false);
+        // Items unmount with the menu; hand focus back to the trigger.
+        rootRef.current?.querySelector("button")?.focus();
       }
     };
 
@@ -87,6 +92,7 @@ const NavOverflowMenu: React.FC<NavOverflowMenuProps> = ({
       {open && (
         <div
           id={menuId}
+          ref={menuRef}
           className="nav-account-menu"
           role="menu"
           aria-label="More options"

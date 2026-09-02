@@ -14,8 +14,11 @@
   --terra: #c06b4a;
   --terra-light: #d4846a;
   --ink: #2a2520;
-  --ink-muted: #7a7268;
-  --ink-faint: #b5b0a8;
+  /* ≥4.5:1 on cream so small helper text stays readable for everyone. */
+  --ink-muted: #6b6459;
+  /* Was #b5b0a8 (≈2:1) — placeholders, icons and hints were near-invisible
+     for many readers. ≈3.2:1 keeps the "quiet" feel while remaining legible. */
+  --ink-faint: #8f877c;
   --surface: #ffffff;
   --danger: #a04020;
   --shadow-sm: 0 1px 3px rgba(42, 37, 32, 0.08);
@@ -29,6 +32,17 @@
   --nav-height: 4.25rem;
   --ui-scale: 0.95;
   color-scheme: light;
+}
+
+/* ===========================
+   TEXT SIZE (all screens)
+   Settings → Look → Text size drives --ui-scale (0.95 = default). Phones
+   and tablets scale from the browser's own base size (100%) so a user's
+   OS/browser accessibility setting is respected and then multiplied by
+   their in-app choice. Everything sized in rem follows.
+   =========================== */
+html {
+  font-size: calc(100% * var(--ui-scale, 0.95) / 0.95);
 }
 
 /* ===========================
@@ -601,7 +615,7 @@ a:focus-visible {
 .page-subtitle {
   font-size: 0.9rem;
   font-weight: 400;
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   margin-top: 0.4rem;
   letter-spacing: 0.01em;
 }
@@ -790,7 +804,7 @@ body.dark .suggest-row.is-active {
   gap: 0.35rem;
   min-height: 1rem;
   padding: 0 0.25rem;
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   font-weight: 500;
   color: var(--ink-muted);
 }
@@ -818,7 +832,8 @@ body.dark .suggest-row.is-active {
   border-radius: var(--radius);
   background: var(--surface);
   font-family: 'DM Sans', sans-serif;
-  font-size: 1rem;
+  /* Never under 16px (even at the "Small" text size) or iOS zooms on focus. */
+  font-size: max(1rem, 16px);
   font-weight: 400;
   color: var(--ink);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -1026,11 +1041,11 @@ body.dark .suggest-row.is-active {
 }
 
 .items-divider-label {
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   white-space: nowrap;
 }
 
@@ -1050,8 +1065,8 @@ body.dark .suggest-row.is-active {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.38rem 0.5rem;
-  min-height: 2.35rem;
+  padding: 0.42rem 0.55rem;
+  min-height: 2.5rem;
   background: var(--surface);
   border: 1px solid var(--cream-dark);
   border-radius: var(--radius-sm);
@@ -1289,7 +1304,7 @@ body.dark .item-row.is-important {
 .category-heading {
   margin: 0.45rem 0 0.05rem 0.15rem;
   font-family: inherit;
-  font-size: 0.66rem;
+  font-size: 0.71rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.09em;
@@ -1332,7 +1347,7 @@ body.dark .item-row.is-important {
 .item-text {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 500;
   color: var(--ink);
   line-height: 1.25;
@@ -1343,11 +1358,11 @@ body.dark .item-row.is-important {
 /* Quantity chip sits inline so each row is one glanceable line. */
 .item-qty {
   flex-shrink: 0;
-  padding: 0.05rem 0.38rem;
+  padding: 0.05rem 0.42rem;
   border-radius: var(--radius-pill);
   background: var(--cream-dark);
   color: var(--ink-muted);
-  font-size: 0.7rem;
+  font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1.35;
@@ -1356,7 +1371,7 @@ body.dark .item-row.is-important {
 .item-note {
   display: block;
   max-width: 100%;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 500;
   color: var(--ink-muted);
   line-height: 1.3;
@@ -1497,7 +1512,7 @@ body.dark .item-row.is-important {
   padding: 0.05rem 0.2rem;
   font-family: 'DM Sans', sans-serif;
   /* ≥16px so iOS does not zoom the page when the field is focused. */
-  font-size: 1rem;
+  font-size: max(1rem, 16px);
   font-weight: 400;
   color: var(--ink);
   outline: none;
@@ -1510,7 +1525,7 @@ body.dark .item-row.is-important {
 }
 
 .item-edit-meta {
-  font-size: 1rem;
+  font-size: max(1rem, 16px);
 }
 
 /* Optional note spans the full edit strip under title / qty / aisle. */
@@ -1605,9 +1620,9 @@ body.dark .item-row.is-important {
 }
 
 .empty-text {
-  font-size: 0.9rem;
-  color: var(--ink-faint);
-  max-width: 220px;
+  font-size: 0.92rem;
+  color: var(--ink-muted);
+  max-width: 240px;
   line-height: 1.5;
 }
 
@@ -1674,27 +1689,28 @@ body.dark .item-row.is-important {
 .stats-text {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 500;
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .stats-text strong {
-  color: var(--ink-muted);
-  font-weight: 600;
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .clear-done-btn {
-  font-size: 0.7rem;
+  font-size: 0.76rem;
   font-weight: 600;
   color: var(--terra);
   background: none;
   border: none;
   cursor: pointer;
-  padding: 0.15rem 0.3rem;
+  min-height: 1.9rem;
+  padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
   transition: background 0.15s ease;
   font-family: 'DM Sans', sans-serif;
@@ -1707,13 +1723,14 @@ body.dark .item-row.is-important {
 
 /* Non-destructive list actions (Rename) — muted, not terra. */
 .list-admin-btn {
-  font-size: 0.7rem;
+  font-size: 0.76rem;
   font-weight: 600;
   color: var(--ink-muted);
   background: none;
   border: none;
   cursor: pointer;
-  padding: 0.15rem 0.3rem;
+  min-height: 1.9rem;
+  padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
   transition: background 0.15s ease, color 0.15s ease;
   font-family: 'DM Sans', sans-serif;
@@ -1753,10 +1770,11 @@ body.dark .item-row.is-important {
   background: transparent;
   color: var(--ink-muted);
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.68rem;
+  font-size: 0.74rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  padding: 0.18rem 0.42rem;
+  min-height: 1.7rem;
+  padding: 0.18rem 0.5rem;
   border-radius: var(--radius-pill);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
@@ -1775,7 +1793,7 @@ body.dark .item-row.is-important {
 
 /* Thin "how far through the shop am I" bar under the meta row. */
 .progress-track {
-  height: 2px;
+  height: 3px;
   border-radius: var(--radius-pill);
   background: var(--cream-deep);
   overflow: hidden;

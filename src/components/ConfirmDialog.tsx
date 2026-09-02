@@ -71,6 +71,17 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   const copy = getConfirmCopy(action, itemCount, listName);
   const dialogRef = useDialogFocus<HTMLElement>();
 
+  // Self-contained Escape so every host (owner list, guest list) behaves alike.
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onCancel();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onCancel]);
+
   return (
     <div
       className="modal-backdrop confirm-backdrop"
