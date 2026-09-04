@@ -1,56 +1,86 @@
-# CartLink
+<p align="center">
+  <a href="https://cartlink.co.uk"><img src="public/cartlink-mark.png" alt="CartLink" width="72" /></a>
+</p>
 
-A clean, minimal shopping list app with Google sign-in and real-time sync.
+<h1 align="center">CartLink</h1>
 
-**Live:** Firebase Hosting · **Stack:** React + TypeScript + Vite + Firebase
+<p align="center">
+  <strong>Add it on the sofa. Tick it off in aisle four.</strong><br/>
+  A free shared shopping list that lives on every phone in the house — share it with a link or a QR code, and the people you live with don't even need an account to help.
+</p>
 
-## Features
+<p align="center">
+  <a href="https://cartlink.co.uk"><strong>cartlink.co.uk</strong></a> · 
+  <a href="https://github.com/openclawed-007/listy/releases/latest">Android APK</a> · 
+  <a href="#run-it-yourself">Self-host</a> · 
+  <a href="#contributing">Contribute</a>
+</p>
 
-- ✍️ **One smart field** — type `2 milk`, `500g flour` or `bread x3` and the
-  quantity is read for you. No extra boxes, no toggles.
-- 🧺 **Sorts itself by aisle** — items are matched against a built-in grocery
-  dictionary and grouped under Produce, Bakery, Dairy & Eggs, and so on.
-  Unrecognised items stay in *General* rather than being filed somewhere wrong.
-  Override any aisle by editing the row, or by typing `batteries #shed`.
-- 🔁 **No duplicate rows** — adding something already on the list bumps its
-  quantity (and un-checks it if you'd already ticked it off).
-- 📊 **Progress bar** so you can see how much of the shop is left.
-- 🔗 Share by **short code**, link or QR (all open the same live list), with
-  per-visitor permissions (check off / add / remove). Codes are random and
-  revoked when you stop sharing. Visitors who can't (or don't want to) sign in
-  can still tick items off — their progress stays on their device.
-- 👤 **Guest mode** — use a private list on this device with no account. Sign in
-  later and your guest items are brought into the synced list automatically.
-- 🔐 Google Sign-In (Firebase Auth)
-- ⚡ Real-time sync across devices (Firestore)
-- 🔍 Search (appears once a list is worth searching; press `/` any time)
-- ⌨️ Shortcuts: `/` search, `n` new item, `Enter` save, `Esc` cancel
-- 🌙 Dark mode with persistent preference
-- 📱 Fully responsive
-- 📶 Offline-ready with local changes synced when the connection returns
+<p align="center">
+  <img alt="React 19" src="https://img.shields.io/badge/React-19-20232a?logo=react&logoColor=61dafb" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white" />
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-7-646cff?logo=vite&logoColor=white" />
+  <img alt="Firebase" src="https://img.shields.io/badge/Firebase-Firestore-ffca28?logo=firebase&logoColor=black" />
+  <img alt="Kotlin" src="https://img.shields.io/badge/Android-Kotlin%20%2B%20Compose-7f52ff?logo=kotlin&logoColor=white" />
+  <img alt="PWA" src="https://img.shields.io/badge/PWA-offline%20ready-6b8f71" />
+</p>
 
-## Project layout
+<p align="center">
+  <a href="https://cartlink.co.uk"><img src="docs/media/landing-hero.jpg" alt="CartLink landing page — a shared shopping list being ticked off live" width="880" /></a>
+</p>
 
-```
-src/lib/itemInput.ts     smart parsing: quantity, #category, aisle guessing
-src/lib/shoppingItem.ts  item shape, Firestore sanitising, grouping, batching
-src/lib/sharePermissions.ts  what a share-link visitor is allowed to do
-src/lib/sharedSync.ts    diffing the published list against collaborator edits
-src/lib/localTicks.ts    a visitor's own ticks on a list they can't write to
-src/components/          ShoppingList (screen) + ItemRow, ShareDialog,
-                         ConfirmDialog, DismissibleMessage, UserAvatar
-src/hooks/               useDarkMode, useOnlineStatus
-```
+---
 
-Parsing and item rules are pure functions in `src/lib`, so behaviour is unit
-tested without Firebase or a browser.
+## Why this exists
 
-## Setup
+Every "family shopping list" app dies at the same step: getting everyone else in the house to download the thing and make an account. So the list ends up on one phone, and the person in the shop is texting *"did you say oat or almond?"*.
+
+CartLink skips that step. You sign in, add things, and turn on sharing. You get a link and a **QR code you can stick on the fridge**. Anyone who scans it sees the live list on their own phone and can tick things off or add to it — **with no account at all**, if you allow it. Changes land on everyone's screen in real time.
+
+It's small, it's free, there are no ads, and the whole thing is open source.
+
+## What it does
+
+| | |
+|---|---|
+| ✍️ **One smart field** | Type `2 milk`, `500g flour` or `bread x3` and the quantity is read for you. Adding something already on the list bumps its quantity instead of making a duplicate row. |
+| 🧺 **Sorts itself by aisle** | Items are matched against a built-in grocery dictionary and grouped under Produce, Bakery, Dairy & Eggs, and so on. Override any aisle by editing the row, or by typing `batteries #shed`. |
+| ⚡ **Real-time sync** | Tick it on one phone, it's gone on all of them. Firestore listeners, no refresh button. |
+| 🔗 **Share by code, link or QR** | One toggle gives you a short share code, a URL and a printable QR code — all open the same live list. Turn it off any time and the code is revoked. |
+| 👤 **Helpers don't need an account** | Optional guest editing lets anyone with the link tick and add. Guests can *never* delete. |
+| 🔒 **Granular permissions** | Let signed-in collaborators tick, add or remove — separately. Enforced in **Firestore security rules**, not just the UI. |
+| 🗂️ **Multiple lists & notes** | Keep separate lists, add notes to items, and get typeahead suggestions from things you've bought before. |
+| 🧍 **Guest mode** | Use a private list on this device with no account. Sign in later and your guest items are brought into the synced list automatically. |
+| ↩️ **Undo delete** | Slipped a thumb in the queue? One tap brings it back. |
+| ⌨️ **Keyboard-friendly** | `/` search, `n` new item, `Enter` save, `Esc` cancel. |
+| 📶 **Offline** | Keep ticking in the basement supermarket. Changes queue locally and sync when you're back online. |
+| 🌙 **Dark mode** | Deep forest palette, remembered between visits, no white flash on load. |
+| 📱 **Installable + native Android** | Add to home screen as a PWA, or grab the native Kotlin/Compose app from [Releases](https://github.com/openclawed-007/listy/releases/latest). Share links deep-link straight into the app. |
+
+## How sharing works (the interesting bit)
+
+- Your items live in a **private** `shoppingItems` collection only you can read.
+- Turning on sharing publishes a snapshot to `sharedLists/{yourId}`, readable by anyone who has the ID (but never listable).
+- Signed-in collaborators can import your list as a tab in their own app; ticks flow **both ways**.
+- Anonymous visitors on the share page are auto-signed-in anonymously and may only toggle/add when you've enabled it. A shrinking items array from an anonymous writer is **always rejected server-side**.
+- App Check is enforced on Firestore so only the real web and Android clients can write.
+
+The full rules are in [`firestore.rules`](./firestore.rules) and explained in [Security](#firestore-security-rules) below.
+
+## Stack
+
+**Web:** React 19 · TypeScript · Vite 7 · React Router 7 · Firebase Auth + Firestore + App Check · `qrcode.react` · Lucide icons · Vitest + Testing Library  
+**Android:** Kotlin · Jetpack Compose · Firebase SDK · Credential Manager sign-in · App Links  
+**Hosting:** Firebase Hosting
+
+## Run it yourself
+
+Want your own private instance? It's one Firebase project and about ten minutes.
 
 1. **Clone and install**
    ```bash
-   git clone <repo-url>
-   cd cartlink
+   git clone https://github.com/openclawed-007/listy.git
+   cd listy
    npm install
    ```
 
@@ -137,3 +167,17 @@ npm run lint
 npm run test
 npm run build
 ```
+
+## Contributing
+
+Bug reports and small, focused PRs are very welcome. If you've stood in a supermarket wishing the list did something, [open an issue](https://github.com/openclawed-007/listy/issues) and describe the moment — that's exactly how most of the current features started.
+
+Before opening a PR, please run the three checks above. Tests live next to the components (`*.test.tsx`) and use Vitest + Testing Library with Firebase mocked, so you don't need a Firebase project to run them.
+
+## Spread the word
+
+If CartLink saved you a "did we need milk?" text, a ⭐ on this repo or a link to [cartlink.co.uk](https://cartlink.co.uk) genuinely helps more people find it. Ready-to-post copy for various places lives in [`marketing/`](./marketing).
+
+---
+
+<p align="center">Made in the UK · <a href="https://cartlink.co.uk/privacy">Privacy</a> · <a href="https://cartlink.co.uk/terms">Terms</a> · <a href="mailto:hello@cartlink.co.uk">hello@cartlink.co.uk</a></p>

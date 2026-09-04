@@ -91,7 +91,8 @@ const Login: React.FC = () => {
           Cart<em>Link</em>
         </h1>
         <p className="login-subtitle">
-          Smart shopping lists — sorted by aisle, shared in real time.
+          Smart shopping lists — sorted by aisle, shared in real time.{" "}
+          <Link to="/">New here? See how it works.</Link>
         </p>
 
         <ul className="login-benefits" aria-label="Why use CartLink">

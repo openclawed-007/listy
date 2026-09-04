@@ -171,6 +171,18 @@ body:has(.login-container) {
   max-width: 28ch;
 }
 
+.login-subtitle a {
+  color: var(--sage-dark);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1.5px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+.login-subtitle a:hover {
+  border-color: var(--sage);
+}
+
 .login-benefits {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

@@ -17,6 +17,7 @@ import "./styles/dialogs-and-sharing.css";
 import "./styles/responsive-and-themes.css";
 
 const ShoppingList = lazy(() => import("./components/ShoppingList"));
+const Landing = lazy(() => import("./components/Landing"));
 const Login = lazy(() => import("./components/Login"));
 const GuestList = lazy(() => import("./components/GuestList"));
 const PublicSharedList = lazy(() => import("./components/PublicSharedList"));
@@ -54,6 +55,18 @@ const AuthRedirect: React.FC<{ children: React.ReactNode }> = ({
   return <>{children}</>;
 };
 
+/**
+ * The root URL is the marketing front door for visitors and the actual list
+ * for account holders. Rendering the landing page here (rather than bouncing
+ * to /login) means search engines and shared links land on real content.
+ */
+export const Home: React.FC = () => {
+  const { user, loading } = useAuth();
+  if (loading) return <AppLoader />;
+  if (user && !user.isAnonymous) return <ShoppingList />;
+  return <Landing />;
+};
+
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
@@ -70,14 +83,7 @@ const App: React.FC = () => {
                     </AuthRedirect>
                   }
                 />
-                <Route
-                  path="/"
-                  element={
-                    <ProtectedRoute>
-                      <ShoppingList />
-                    </ProtectedRoute>
-                  }
-                />
+                <Route path="/" element={<Home />} />
                 <Route
                   path="/import/:shareId"
                   element={
