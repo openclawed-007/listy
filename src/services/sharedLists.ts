@@ -17,6 +17,8 @@ export interface SharedListWrite {
   ownerId: string;
   ownerName: string;
   permissions: SharePermissions;
+  /** Let not-signed-in visitors toggle/add (never remove). */
+  allowAnonymousEdits?: boolean;
   items: SharedItemData[];
   shareCode?: string;
 }
@@ -38,9 +40,12 @@ export function publishSharedList(
   firestore: Firestore,
   value: SharedListWrite,
 ) {
+  const allowEdits = Object.values(value.permissions).some(Boolean);
   return setDoc(doc(firestore, "sharedLists", value.ownerId), {
     ...value,
-    allowEdits: Object.values(value.permissions).some(Boolean),
+    allowEdits,
+    // Anonymous editing is meaningless without a granted permission.
+    allowAnonymousEdits: allowEdits && value.allowAnonymousEdits === true,
     updatedAt: serverTimestamp(),
   });
 }
@@ -49,10 +54,24 @@ export function updateSharedListPermissions(
   firestore: Firestore,
   ownerId: string,
   permissions: SharePermissions,
+  allowAnonymousEdits = false,
 ) {
+  const allowEdits = Object.values(permissions).some(Boolean);
   return updateDoc(doc(firestore, "sharedLists", ownerId), {
     permissions,
-    allowEdits: Object.values(permissions).some(Boolean),
+    allowEdits,
+    allowAnonymousEdits: allowEdits && allowAnonymousEdits,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export function updateSharedListAnonymousEdits(
+  firestore: Firestore,
+  ownerId: string,
+  allowAnonymousEdits: boolean,
+) {
+  return updateDoc(doc(firestore, "sharedLists", ownerId), {
+    allowAnonymousEdits,
     updatedAt: serverTimestamp(),
   });
 }

@@ -2,6 +2,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // True when the signed-in user is anonymous (Firebase Anonymous Auth, no
+    // federated/email identity). Anonymous sessions exist only so a link/QR
+    // holder can edit someone else's shared list; they never own data.
+    function isAnonymousUser() {
+      return request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    // A real, non-anonymous account holder.
+    function isAccountHolder() {
+      return request.auth != null && !isAnonymousUser();
+    }
+
     function isShoppingItemValid(data) {
       return data.keys().hasOnly([
           'userId', 'text', 'completed', 'quantity', 'category', 'note',
@@ -29,13 +41,13 @@ service cloud.firestore {
     }
 
     match /shoppingItems/{itemId} {
-      allow read, delete: if request.auth != null
+      allow read, delete: if isAccountHolder()
         && request.auth.uid == resource.data.userId;
       // create covers first write and undo-restore via setDoc on a deleted id.
-      allow create: if request.auth != null
+      allow create: if isAccountHolder()
         && request.auth.uid == request.resource.data.userId
         && isShoppingItemValid(request.resource.data);
-      allow update: if request.auth != null
+      allow update: if isAccountHolder()
         && request.auth.uid == resource.data.userId
         && request.resource.data.userId == resource.data.userId
         && isShoppingItemValid(request.resource.data)
@@ -54,8 +66,8 @@ service cloud.firestore {
 
     function isSharedListValid(data, ownerId) {
       return data.keys().hasOnly([
-          'ownerId', 'ownerName', 'items', 'allowEdits', 'permissions',
-          'shareCode', 'updatedAt'
+          'ownerId', 'ownerName', 'items', 'allowEdits', 'allowAnonymousEdits',
+          'permissions', 'shareCode', 'updatedAt'
         ])
         && data.ownerId == ownerId
         && data.ownerName is string
@@ -63,6 +75,7 @@ service cloud.firestore {
         && data.items is list
         && data.items.size() <= 500
         && (!('allowEdits' in data) || data.allowEdits is bool)
+        && (!('allowAnonymousEdits' in data) || data.allowAnonymousEdits is bool)
         && (!('permissions' in data) || arePermissionsValid(data.permissions))
         && (!('updatedAt' in data) || data.updatedAt is timestamp)
         // Short join code (8 chars, no 0/O/1/I/L). Optional for older docs.
@@ -77,7 +90,7 @@ service cloud.firestore {
     match /shareCodes/{code} {
       allow get: if true;
       allow list: if false;
-      allow create: if request.auth != null
+      allow create: if isAccountHolder()
         && code.matches('^[2-9A-HJ-NP-Z]{8}$')
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.keys().hasOnly(['ownerId', 'createdAt'])
@@ -93,6 +106,7 @@ service cloud.firestore {
         && 'permissions' in data
         && data.permissions is map;
     }
+
 
     // Size-based guards for collaborator permission flags.
     // Full per-item content checks are not practical in rules without
@@ -125,20 +139,32 @@ service cloud.firestore {
         && incoming.items is list
         && incoming.items.size() <= 500
         && collaboratorSizeAllowed(existing, incoming)
+        // Also freezes allowAnonymousEdits / shareCode: only items may change.
         && incoming.diff(existing).affectedKeys().hasOnly(['items', 'updatedAt']);
+    }
+
+    // An anonymous visitor may only edit when the owner opted in via
+    // `allowAnonymousEdits`, and may only toggle or add (never remove): a
+    // shrinking items array from an anonymous writer is always rejected, even
+    // if the owner granted `remove` to signed-in collaborators.
+    function isAnonymousListUpdate(existing, incoming) {
+      return existing.allowAnonymousEdits == true
+        && isCollaboratorListUpdate(existing, incoming)
+        && incoming.items.size() >= existing.items.size();
     }
 
     match /sharedLists/{ownerId} {
       allow get: if true;
       allow list: if false;
-      allow create: if request.auth != null
+      allow create: if isAccountHolder()
         && request.auth.uid == ownerId
         && request.resource.data.ownerId == request.auth.uid
         && isSharedListValid(request.resource.data, ownerId);
       allow update: if request.auth != null
         && (
           (
-            request.auth.uid == ownerId
+            isAccountHolder()
+            && request.auth.uid == ownerId
             && request.resource.data.ownerId == ownerId
             && isSharedListValid(request.resource.data, ownerId)
             // Once a join code is attached it stays put; rotating would leave
@@ -150,7 +176,13 @@ service cloud.firestore {
           )
           || (
             request.auth.uid != ownerId
+            && !isAnonymousUser()
             && isCollaboratorListUpdate(resource.data, request.resource.data)
+          )
+          || (
+            request.auth.uid != ownerId
+            && isAnonymousUser()
+            && isAnonymousListUpdate(resource.data, request.resource.data)
           )
         );
       allow delete: if request.auth != null
@@ -248,7 +280,7 @@ service cloud.firestore {
 
     match /userSettings/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
-      allow create, update: if request.auth != null
+      allow create, update: if isAccountHolder()
         && request.auth.uid == uid
         && request.resource.data.keys().hasOnly([
           'shoppingReminders', 'interface', 'lists', 'updatedAt'

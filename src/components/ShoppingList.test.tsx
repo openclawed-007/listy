@@ -130,6 +130,7 @@ function renderShoppingList(initialPath = "/") {
         user,
         loading: false,
         login: vi.fn(),
+        loginAnonymously: vi.fn(),
         logout: vi.fn(),
       }}
     >

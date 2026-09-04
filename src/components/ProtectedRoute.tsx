@@ -15,7 +15,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
     );
   }
 
-  if (!user) {
+  // Anonymous users (auto-signed-in on a public shared page so they can edit a
+  // QR/link list) are not real account holders. The personal list and import
+  // flows require a full Google sign-in, so treat anonymous users as logged out.
+  if (!user || user.isAnonymous) {
     // Dev / test server only: land on the guest list so features can be tried
     // without signing in. Production still requires login for protected routes.
     if (import.meta.env.DEV) {

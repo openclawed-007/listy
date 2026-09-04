@@ -4,6 +4,7 @@ import type { Firestore } from "firebase/firestore";
 import { allocateShareCode } from "../lib/allocateShareCode";
 import { buildShareCodeUrl, isValidShareCode } from "../lib/shareCode";
 import {
+  hasAnyPermission,
   NO_PERMISSIONS,
   normalizeSharePermissions,
   type SharePermissions,
@@ -13,6 +14,7 @@ import {
   loadRawSharedList,
   publishSharedList,
   revokeSharedList,
+  updateSharedListAnonymousEdits,
   updateSharedListPermissions,
 } from "../services/sharedLists";
 
@@ -35,6 +37,7 @@ export function useSharedList({
 }: Options) {
   const [isSharing, setIsSharing] = useState(false);
   const [permissions, setPermissions] = useState<SharePermissions>(NO_PERMISSIONS);
+  const [allowAnonymousEdits, setAllowAnonymousEdits] = useState(false);
   const [shareCode, setShareCode] = useState("");
   const [shareUrl, setShareUrl] = useState("");
   const [shareStatus, setShareStatus] = useState("");
@@ -48,6 +51,7 @@ export function useSharedList({
         if (!shared || cancelled) return;
         setIsSharing(true);
         setPermissions(normalizeSharePermissions(shared.permissions));
+        setAllowAnonymousEdits(shared.allowAnonymousEdits === true);
         let code = shared.shareCode && isValidShareCode(shared.shareCode)
           ? shared.shareCode
           : "";
@@ -73,6 +77,7 @@ export function useSharedList({
         ownerId: user.uid,
         ownerName,
         permissions,
+        allowAnonymousEdits,
         items,
         shareCode: code,
       });
@@ -87,7 +92,17 @@ export function useSharedList({
     } finally {
       setShareBusy(false);
     }
-  }, [firestore, items, onError, ownerName, permissions, shareBusy, shareCode, user]);
+  }, [
+    allowAnonymousEdits,
+    firestore,
+    items,
+    onError,
+    ownerName,
+    permissions,
+    shareBusy,
+    shareCode,
+    user,
+  ]);
 
   const togglePermission = useCallback(async (
     key: keyof SharePermissions,
@@ -96,16 +111,41 @@ export function useSharedList({
     const previous = permissions;
     const next = { ...permissions, [key]: nextValue };
     setPermissions(next);
+
+    // If no permission is granted at all, anonymous editing is meaningless, so
+    // turn it off too and keep the stored flags consistent.
+    const previousAnon = allowAnonymousEdits;
+    const nextAnon = hasAnyPermission(next) ? allowAnonymousEdits : false;
+    setAllowAnonymousEdits(nextAnon);
+
     if (!firestore || !user || !isSharing) return;
     try {
       onError("");
-      await updateSharedListPermissions(firestore, user.uid, next);
+      await updateSharedListPermissions(firestore, user.uid, next, nextAnon);
     } catch (error) {
       console.error("Toggle permission error:", error);
       setPermissions(previous);
+      setAllowAnonymousEdits(previousAnon);
       onError("Unable to update sharing permissions right now. Please try again.");
     }
-  }, [firestore, isSharing, onError, permissions, user]);
+  }, [allowAnonymousEdits, firestore, isSharing, onError, permissions, user]);
+
+  const toggleAnonymousEdits = useCallback(async (nextValue: boolean) => {
+    // Never enable without a granted permission (the UI disables the control,
+    // this guards programmatic callers and stale state).
+    const next = nextValue && hasAnyPermission(permissions);
+    const previous = allowAnonymousEdits;
+    setAllowAnonymousEdits(next);
+    if (!firestore || !user || !isSharing) return;
+    try {
+      onError("");
+      await updateSharedListAnonymousEdits(firestore, user.uid, next);
+    } catch (error) {
+      console.error("Toggle anonymous edits error:", error);
+      setAllowAnonymousEdits(previous);
+      onError("Unable to update sharing permissions right now. Please try again.");
+    }
+  }, [allowAnonymousEdits, firestore, isSharing, onError, permissions, user]);
 
   const stopSharing = useCallback(async () => {
     if (!firestore || !user || shareBusy) return;
@@ -116,6 +156,7 @@ export function useSharedList({
       await revokeSharedList(firestore, user.uid, shareCode || undefined);
       setIsSharing(false);
       setPermissions(NO_PERMISSIONS);
+      setAllowAnonymousEdits(false);
       setShareUrl("");
       setShareCode("");
       onStopped?.();
@@ -130,6 +171,7 @@ export function useSharedList({
   return {
     isSharing,
     permissions,
+    allowAnonymousEdits,
     shareCode,
     shareUrl,
     shareStatus,
@@ -138,6 +180,7 @@ export function useSharedList({
     setShareCode,
     startSharing,
     togglePermission,
+    toggleAnonymousEdits,
     stopSharing,
   };
 }

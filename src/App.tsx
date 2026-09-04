@@ -51,7 +51,9 @@ const AuthRedirect: React.FC<{ children: React.ReactNode }> = ({
   );
 
   if (loading) return <AppLoader />;
-  if (user) return <Navigate to={redirect} replace />;
+  // Anonymous users (used only for editing public shared lists) are not treated
+  // as signed in for the app itself, so they still see the login screen.
+  if (user && !user.isAnonymous) return <Navigate to={redirect} replace />;
   return <>{children}</>;
 };
 

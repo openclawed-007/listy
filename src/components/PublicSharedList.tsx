@@ -14,6 +14,7 @@ import {
   normalizeShareCodeInput,
 } from "../lib/shareCode";
 import {
+  effectivePermissionsFor,
   hasAnyPermission,
   NO_PERMISSIONS,
   type SharePermissions,
@@ -58,12 +59,13 @@ import PublicSharedItems from "./PublicSharedItems";
 const PublicSharedList: React.FC = () => {
   const { shareId: shareIdParam, code: codeParam } = useParams();
   const [resolvedShareId, setResolvedShareId] = useState(shareIdParam ?? "");
-  const { user } = useAuth();
+  const { user, loginAnonymously } = useAuth();
   const { interfacePrefs } = usePreferences();
   const [ownerName, setOwnerName] = useState("Shared list");
   const [items, setItems] = useState<PublicItem[]>([]);
   const [permissions, setPermissions] =
     useState<SharePermissions>(NO_PERMISSIONS);
+  const [allowAnonymousEdits, setAllowAnonymousEdits] = useState(false);
   const [ownerId, setOwnerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -73,6 +75,7 @@ const PublicSharedList: React.FC = () => {
   const rawItemsRef = React.useRef<unknown>([]);
   const seenShareSnapshotRef = React.useRef(false);
   const lastShareFingerprintRef = React.useRef("");
+  const anonSignInAttempted = React.useRef(false);
   const allowEdits = hasAnyPermission(permissions);
   // Ticks this device made on a list it is not allowed to write to.
   const shareId = resolvedShareId;
@@ -192,6 +195,7 @@ const PublicSharedList: React.FC = () => {
         setOwnerName(data.ownerName);
         setOwnerId(data.ownerId);
         setPermissions(data.permissions);
+        setAllowAnonymousEdits(data.allowAnonymousEdits);
         setItems(payloadToPublicItems(data.items));
         setLoading(false);
       },
@@ -223,11 +227,48 @@ const PublicSharedList: React.FC = () => {
     : "This shared list does not have any items yet.";
 
   const signedIn = Boolean(user) && Boolean(db) && Boolean(shareId);
-  const canEdit = allowEdits && signedIn;
-  const canToggle = signedIn && permissions.toggle;
-  const canAdd = signedIn && permissions.add;
-  const canRemove = signedIn && permissions.remove;
+  const isAnonymous = Boolean(user?.isAnonymous);
+  // A real account holder (not an anonymous share-page session).
+  const hasAccount = Boolean(user) && !isAnonymous;
   const isOwnerViewing = Boolean(user) && user?.uid === ownerId;
+
+  // The owner offers anonymous (not-signed-in) editing when sharing is on, at
+  // least one permission is granted, and they opted in.
+  const anonymousEditingOffered =
+    allowEdits && allowAnonymousEdits && !isOwnerViewing;
+
+  // Effective permissions for THIS viewer: anonymous sessions get the narrowed
+  // toggle/add set; signed-in collaborators get the owner's full grant.
+  const effectivePermissions = effectivePermissionsFor(
+    permissions,
+    allowAnonymousEdits,
+    isAnonymous && !isOwnerViewing,
+  );
+
+  const canToggle = signedIn && effectivePermissions.toggle;
+  const canAdd = signedIn && effectivePermissions.add;
+  const canRemove = signedIn && effectivePermissions.remove;
+  const canEdit = signedIn && hasAnyPermission(effectivePermissions);
+
+  // Silently sign visitors in anonymously when the owner has opted in, so a
+  // QR/link scanner can edit (toggle/add) without a Google sign-in popup.
+  // App Check is enforced server-side, so these anonymous writes still require
+  // a valid app attestation and carry a real, traceable uid.
+  useEffect(() => {
+    if (
+      !db ||
+      !shareId ||
+      user ||
+      !anonymousEditingOffered ||
+      anonSignInAttempted.current
+    )
+      return;
+
+    anonSignInAttempted.current = true;
+    loginAnonymously().catch((signInError) => {
+      console.error("Anonymous sign-in for shared list failed:", signInError);
+    });
+  }, [user, anonymousEditingOffered, shareId, loginAnonymously]);
   // Whoever is holding the link is usually the one at the shop, so ticking
   // always works. When it cannot be saved for everyone it is kept on this
   // device instead of being silently thrown away.
@@ -274,7 +315,7 @@ const PublicSharedList: React.FC = () => {
     const payload = applySharedListMutation(rawItemsRef.current, mutation);
     rawItemsRef.current = payload;
 
-    void commitSharedListMutation(db, shareId, mutation).catch(
+    void commitSharedListMutation(db, shareId, mutation, { isAnonymous }).catch(
       (updateError) => {
         console.error("Collaborator update error:", updateError);
         onError();
@@ -390,7 +431,7 @@ const PublicSharedList: React.FC = () => {
       <header className="navbar">
         <div className="navbar-content">
           <Link
-            to={user ? "/" : "/login"}
+            to={hasAccount ? "/" : "/login"}
             className={`nav-brand ${interfacePrefs.brandLogo ? "" : "is-text-only"}`}
           >
             {interfacePrefs.brandLogo && (
@@ -405,8 +446,8 @@ const PublicSharedList: React.FC = () => {
 
           <div className="user-actions">
             <ThemeToggle className="theme-toggle" />
-            <Link className="nav-text-link" to={user ? "/" : "/login"}>
-              {user ? "My list" : "Sign in"}
+            <Link className="nav-text-link" to={hasAccount ? "/" : "/login"}>
+              {hasAccount ? "My list" : "Sign in"}
             </Link>
           </div>
         </div>
@@ -433,19 +474,19 @@ const PublicSharedList: React.FC = () => {
                 {canEdit ? "You can" : "Sign in to"}
               </span>
               <span className="share-caps-chips">
-                {permissions.toggle && (
+                {effectivePermissions.toggle && (
                   <span className="share-cap" title="Check items off">
                     <Check size={13} strokeWidth={2.75} />
                     Check off
                   </span>
                 )}
-                {permissions.add && (
+                {effectivePermissions.add && (
                   <span className="share-cap" title="Add items">
                     <Plus size={13} strokeWidth={2.75} />
                     Add
                   </span>
                 )}
-                {permissions.remove && (
+                {effectivePermissions.remove && (
                   <span className="share-cap" title="Remove items">
                     <Trash2 size={12} strokeWidth={2.75} />
                     Remove
@@ -463,14 +504,14 @@ const PublicSharedList: React.FC = () => {
             <Link
               className="import-link-btn"
               to={
-                user
+                hasAccount
                   ? `/import/${shareId}`
                   : `/login?redirect=${encodeURIComponent(`/import/${shareId}`)}`
               }
             >
-              {user
+              {hasAccount
                 ? "Add this list to my tabs"
-                : allowEdits
+                : allowEdits && !anonymousEditingOffered
                   ? "Sign in to edit this list"
                   : "Sign in to save this list"}
             </Link>

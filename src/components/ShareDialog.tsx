@@ -35,6 +35,8 @@ interface ShareDialogProps {
   shareStatus: string;
   busy: boolean;
   permissions: SharePermissions;
+  /** Owner lets not-signed-in visitors check off / add (never remove). */
+  allowAnonymousEdits: boolean;
   /** Which pane to show when the dialog opens. */
   initialTab?: ShareDialogTab;
   /** Name of the list that sharing publishes (currently always My List). */
@@ -47,6 +49,7 @@ interface ShareDialogProps {
   onCopyCode: () => void;
   onSystemShare: () => void;
   onTogglePermission: (key: keyof SharePermissions, next: boolean) => void;
+  onToggleAnonymousEdits: (next: boolean) => void;
   onRequestStopSharing: () => void;
 }
 
@@ -84,6 +87,7 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
   shareStatus,
   busy,
   permissions,
+  allowAnonymousEdits,
   initialTab = "share",
   sharedListName = "My List",
   hasOtherLists = false,
@@ -93,6 +97,7 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
   onCopyCode,
   onSystemShare,
   onTogglePermission,
+  onToggleAnonymousEdits,
   onRequestStopSharing,
 }) => {
   const dialogRef = useDialogFocus<HTMLElement>();
@@ -403,9 +408,31 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
                 </div>
                 <p className="share-section-hint">
                   {canEdit
-                    ? "Edits need Google sign-in. Anyone can still tick privately."
+                    ? allowAnonymousEdits
+                      ? "Anyone with the link can edit. Removing still needs Google sign-in."
+                      : "Edits need Google sign-in. Anyone can still tick privately."
                     : "Anyone can tick items privately on their device."}
                 </p>
+                <label
+                  className={`anon-edit-toggle ${canEdit ? "" : "is-disabled"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={allowAnonymousEdits && canEdit}
+                    disabled={!canEdit}
+                    onChange={(e) => onToggleAnonymousEdits(e.target.checked)}
+                  />
+                  <span className="anon-edit-toggle-text">
+                    <span className="anon-edit-toggle-title">
+                      Let people edit without signing in
+                    </span>
+                    <span className="anon-edit-toggle-hint">
+                      {canEdit
+                        ? "Anyone with the link or QR can check off and add. They can never remove items."
+                        : "Turn on a permission above first."}
+                    </span>
+                  </span>
+                </label>
               </section>
 
               <button

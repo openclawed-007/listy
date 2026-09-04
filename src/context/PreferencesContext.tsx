@@ -24,7 +24,9 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user } = useAuth();
-  const uid = user?.uid ?? null;
+  // Anonymous share-page sessions keep preferences on the device only; they
+  // have no account to sync to (and the rules block their userSettings writes).
+  const uid = user && !user.isAnonymous ? user.uid : null;
   const [interfacePrefs, setInterfaceState] = useState<InterfacePreferences>(
     () => readLocalUserPreferences().interface,
   );

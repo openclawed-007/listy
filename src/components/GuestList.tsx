@@ -247,7 +247,8 @@ const GuestList: React.FC = () => {
   }
 
   // Signed-in users belong on the synced list; guest items migrate there once.
-  if (user) return <Navigate to="/" replace />;
+  // Anonymous share-page sessions are not accounts, so they stay here.
+  if (user && !user.isAnonymous) return <Navigate to="/" replace />;
 
   const edit: ItemEditState = {
     editingId,

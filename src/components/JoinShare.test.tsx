@@ -34,6 +34,7 @@ function renderJoin(path = "/join", user: User | null = null) {
         user,
         loading: false,
         login: vi.fn(),
+        loginAnonymously: vi.fn(),
         logout: vi.fn(),
       }}
     >

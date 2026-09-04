@@ -22,6 +22,7 @@ function renderLanding(login = vi.fn().mockResolvedValue(undefined)) {
         user: null,
         loading: false,
         login,
+        loginAnonymously: vi.fn(),
         logout: vi.fn(),
       }}
     >

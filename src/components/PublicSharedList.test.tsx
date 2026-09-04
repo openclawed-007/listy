@@ -61,6 +61,15 @@ const visitor = {
   photoURL: null,
 } as User;
 
+// A Firebase Anonymous Auth session, as created silently on the share page.
+const anonymousVisitor = {
+  uid: "anon-uid",
+  displayName: null,
+  email: null,
+  photoURL: null,
+  isAnonymous: true,
+} as User;
+
 function emitSharedSnapshot(data: Record<string, unknown> | null) {
   liveSharedDoc = data;
   mockOnSnapshot.mockImplementation((_doc, next) => {
@@ -75,6 +84,7 @@ function emitSharedSnapshot(data: Record<string, unknown> | null) {
 function renderPublicSharedList(
   path = "/share/alex-uid",
   user: User | null = null,
+  loginAnonymously = vi.fn().mockResolvedValue(undefined),
 ) {
   return render(
     <AuthContext.Provider
@@ -82,6 +92,7 @@ function renderPublicSharedList(
         user,
         loading: false,
         login: vi.fn(),
+        loginAnonymously,
         logout: vi.fn(),
       }}
     >
@@ -312,6 +323,110 @@ describe("PublicSharedList", () => {
     expect(
       screen.getByRole("link", { name: "Sign in to edit this list" }),
     ).toHaveAttribute("href", "/login?redirect=%2Fimport%2Falex-uid");
+  });
+
+  describe("editing without signing in (allowAnonymousEdits)", () => {
+    const anonEnabledDoc = {
+      ownerId: "alex-uid",
+      ownerName: "Alex",
+      allowEdits: true,
+      allowAnonymousEdits: true,
+      permissions: { toggle: true, add: true, remove: true },
+      items: [
+        { id: "a1", text: "Apples", completed: false },
+        { id: "t1", text: "Tea", completed: false },
+      ],
+    };
+
+    it("silently signs a signed-out visitor in anonymously when the owner opted in", async () => {
+      emitSharedSnapshot(anonEnabledDoc);
+      const loginAnonymously = vi.fn().mockResolvedValue(undefined);
+
+      renderPublicSharedList("/share/alex-uid", null, loginAnonymously);
+
+      await screen.findByRole("heading", { name: "Alex" });
+      await waitFor(() => expect(loginAnonymously).toHaveBeenCalledTimes(1));
+      // Not nagged to sign in to edit: the anonymous session handles that.
+      expect(
+        screen.getByRole("link", { name: "Sign in to save this list" }),
+      ).toBeInTheDocument();
+    });
+
+    it("does not sign in anonymously when the owner has not opted in", async () => {
+      emitSharedSnapshot({ ...anonEnabledDoc, allowAnonymousEdits: false });
+      const loginAnonymously = vi.fn();
+
+      renderPublicSharedList("/share/alex-uid", null, loginAnonymously);
+
+      await screen.findByRole("heading", { name: "Alex" });
+      expect(loginAnonymously).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole("link", { name: "Sign in to edit this list" }),
+      ).toBeInTheDocument();
+    });
+
+    it("lets an anonymous session toggle and add, but never remove", async () => {
+      emitSharedSnapshot(anonEnabledDoc);
+
+      renderPublicSharedList("/share/alex-uid", anonymousVisitor);
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Apples" }),
+      );
+      await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
+      expect(mockUpdateDoc.mock.calls[0][1].items).toEqual([
+        { id: "a1", text: "Apples", completed: true },
+        { id: "t1", text: "Tea", completed: false },
+      ]);
+
+      await userEvent.type(
+        screen.getByLabelText("Add an item to the shared list"),
+        "Bread",
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Add item" }));
+      await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(2));
+      expect(mockUpdateDoc.mock.calls[1][1].items).toHaveLength(3);
+
+      // Remove is granted to signed-in collaborators but narrowed away here.
+      expect(
+        screen.queryByRole("button", { name: 'Remove "Apples"' }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("You can")).toBeInTheDocument();
+      expect(screen.queryByText("Remove")).not.toBeInTheDocument();
+    });
+
+    it("treats an anonymous session as signed out for navigation", async () => {
+      emitSharedSnapshot(anonEnabledDoc);
+
+      renderPublicSharedList("/share/alex-uid", anonymousVisitor);
+
+      await screen.findByRole("heading", { name: "Alex" });
+      expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+        "href",
+        "/login",
+      );
+      expect(
+        screen.getByRole("link", { name: "Sign in to save this list" }),
+      ).toHaveAttribute("href", "/login?redirect=%2Fimport%2Falex-uid");
+      expect(
+        screen.queryByRole("link", { name: "My list" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps ticks local for an anonymous session once the owner withdraws the opt-in", async () => {
+      emitSharedSnapshot({ ...anonEnabledDoc, allowAnonymousEdits: false });
+
+      renderPublicSharedList("/share/alex-uid", anonymousVisitor);
+
+      const apples = await screen.findByRole("button", { name: "Apples" });
+      await userEvent.click(apples);
+
+      expect(apples).toHaveAttribute("aria-pressed", "true");
+      expect(mockUpdateDoc).not.toHaveBeenCalled();
+      expect(
+        screen.queryByLabelText("Add an item to the shared list"),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("lets a collaborator with toggle permission save a completion change", async () => {

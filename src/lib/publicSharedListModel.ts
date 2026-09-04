@@ -27,6 +27,8 @@ export interface PublicSharedListSnapshot {
   ownerId: string;
   ownerName: string;
   allowEdits: boolean;
+  /** Owner opted in to letting not-signed-in visitors toggle/add. */
+  allowAnonymousEdits: boolean;
   permissions: SharePermissions;
   items: SharedItemData[];
 }
@@ -71,6 +73,7 @@ export function normalizePublicSharedList(
     ownerId: data.ownerId,
     ownerName: getSafeOwnerName(data.ownerName),
     allowEdits: data.allowEdits === true && hasAnyPermission(permissions),
+    allowAnonymousEdits: data.allowAnonymousEdits === true,
     permissions,
     items: normalizeSharedItems(data.items),
   };

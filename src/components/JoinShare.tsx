@@ -21,7 +21,9 @@ import ThemeToggle from "./ThemeToggle";
 const JoinShare: React.FC = () => {
   const { code: routeCode } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
+  // Anonymous share-page sessions have no "my list" to go back to.
+  const user = authUser && !authUser.isAnonymous ? authUser : null;
   const [value, setValue] = useState(() =>
     routeCode ? formatShareCode(normalizeShareCodeInput(routeCode)) : "",
   );

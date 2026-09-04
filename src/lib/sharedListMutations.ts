@@ -12,6 +12,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import {
+  effectivePermissionsFor,
   hasAnyPermission,
   normalizeSharePermissions,
   type SharePermissions,
@@ -169,10 +170,20 @@ export function applySharedListMutation(
   );
 }
 
+export interface CommitOptions {
+  /**
+   * The writer is an anonymous (not-signed-in) session. Their permissions are
+   * narrowed to toggle/add and gated on the owner's `allowAnonymousEdits`, so
+   * a change the server rules would reject is never attempted.
+   */
+  isAnonymous?: boolean;
+}
+
 export async function commitSharedListMutation(
   firestore: Firestore,
   ownerId: string,
   mutation: SharedListMutation,
+  options: CommitOptions = {},
 ): Promise<SharedItemPayload[] | null> {
   const gate = mutationPermissionGate(mutation);
 
@@ -182,7 +193,11 @@ export async function commitSharedListMutation(
     if (!snapshot.exists()) return null;
 
     const raw = snapshot.data();
-    const permissions = normalizeSharePermissions(raw?.permissions);
+    const permissions = effectivePermissionsFor(
+      normalizeSharePermissions(raw?.permissions),
+      raw?.allowAnonymousEdits === true,
+      options.isAnonymous === true,
+    );
     const allowEdits = raw?.allowEdits === true && hasAnyPermission(permissions);
     if (!isMutationPermitted(permissions, allowEdits, gate)) return null;
 

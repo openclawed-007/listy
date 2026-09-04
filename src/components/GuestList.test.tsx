@@ -13,6 +13,7 @@ function renderGuest(user: User | null = null) {
         user,
         loading: false,
         login: vi.fn(),
+        loginAnonymously: vi.fn(),
         logout: vi.fn(),
       }}
     >
@@ -78,6 +79,7 @@ describe("GuestList", () => {
       user: null,
       loading: true,
       login: vi.fn(),
+      loginAnonymously: vi.fn(),
       logout: vi.fn(),
     };
     const ui = (auth: typeof value) => (

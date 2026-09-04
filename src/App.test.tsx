@@ -20,6 +20,7 @@ function renderHome(user: Partial<User> | null, loading = false) {
         user: user as User | null,
         loading,
         login: vi.fn(),
+        loginAnonymously: vi.fn(),
         logout: vi.fn(),
       }}
     >

@@ -23,11 +23,25 @@ describe("publicSharedListModel", () => {
       ownerId: "owner-1",
       ownerName: "Alex",
       allowEdits: true,
+      // Missing on older docs → defaults to off.
+      allowAnonymousEdits: false,
       permissions: { toggle: true, add: false, remove: false },
       items: [
         expect.objectContaining({ id: "a", text: "Apples", completed: true }),
       ],
     });
+  });
+
+  it("only reads allowAnonymousEdits when it is literally true", () => {
+    const base = { ownerId: "o", ownerName: "O", items: [] };
+    expect(
+      normalizePublicSharedList({ ...base, allowAnonymousEdits: true })
+        ?.allowAnonymousEdits,
+    ).toBe(true);
+    expect(
+      normalizePublicSharedList({ ...base, allowAnonymousEdits: "true" })
+        ?.allowAnonymousEdits,
+    ).toBe(false);
   });
 
   it("disables editing when no permission is enabled", () => {

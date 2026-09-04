@@ -187,6 +187,7 @@ const ShoppingList: React.FC = () => {
   const {
     isSharing,
     permissions,
+    allowAnonymousEdits,
     shareCode,
     shareUrl,
     shareStatus,
@@ -194,6 +195,7 @@ const ShoppingList: React.FC = () => {
     setShareStatus,
     startSharing,
     togglePermission,
+    toggleAnonymousEdits,
     stopSharing,
   } = useSharedList({
     firestore: db,
@@ -330,6 +332,9 @@ const ShoppingList: React.FC = () => {
           ownerId: user.uid,
           ownerName,
           allowEdits,
+          // set() replaces the whole doc, so the anonymous flag must ride along
+          // or every auto-sync would silently switch it off.
+          allowAnonymousEdits: allowEdits && allowAnonymousEdits,
           permissions,
           items: itemsToWrite,
           ...(shareCode ? { shareCode } : {}),
@@ -343,6 +348,7 @@ const ShoppingList: React.FC = () => {
     return () => window.clearTimeout(timeout);
   }, [
     allowEdits,
+    allowAnonymousEdits,
     permissions,
     itemsLoaded,
     ownerName,
@@ -1529,6 +1535,7 @@ const ShoppingList: React.FC = () => {
           shareStatus={shareStatus}
           busy={shareBusy}
           permissions={permissions}
+          allowAnonymousEdits={allowAnonymousEdits}
           initialTab={shareTab}
           sharedListName={PERSONAL_LIST_NAME}
           hasOtherLists={showListTabs}
@@ -1538,6 +1545,7 @@ const ShoppingList: React.FC = () => {
           onCopyCode={copyShareCode}
           onSystemShare={shareViaSystem}
           onTogglePermission={togglePermission}
+          onToggleAnonymousEdits={toggleAnonymousEdits}
           onRequestStopSharing={() => setConfirmAction("stopSharing")}
         />
       )}
