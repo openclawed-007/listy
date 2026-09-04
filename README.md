@@ -54,7 +54,8 @@ It's small, it's free, there are no ads, and the whole thing is open source.
 | ↩️ **Undo delete** | Slipped a thumb in the queue? One tap brings it back. |
 | ⌨️ **Keyboard-friendly** | `/` search, `n` new item, `Enter` save, `Esc` cancel. |
 | 📶 **Offline** | Keep ticking in the basement supermarket. Changes queue locally and sync when you're back online. |
-| 🌙 **Dark mode** | Deep forest palette, remembered between visits, no white flash on load. |
+| 🌙 **Dark mode** | Deep forest palette that follows your device setting until you pick one yourself. No white flash on load. |
+| 🔠 **Text size & accessibility** | Small → XL text setting that applies on every screen, 44px touch targets, WCAG-contrast helper text, keyboard-navigable menus. |
 | 📱 **Installable + native Android** | Add to home screen as a PWA, or grab the native Kotlin/Compose app from [Releases](https://github.com/openclawed-007/listy/releases/latest). Share links deep-link straight into the app. |
 
 ## How sharing works (the interesting bit)
@@ -164,9 +165,13 @@ signing key.
 
 ```bash
 npm run lint
+npm run typecheck
 npm run test
 npm run build
 ```
+
+`npm run build` type-checks the whole project (`tsc -b`) before bundling, so
+a type error fails the build and CI rather than shipping.
 
 ## Contributing
 

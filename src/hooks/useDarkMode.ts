@@ -3,9 +3,30 @@ import React from "react";
 const THEME_KEY = "theme";
 const THEME_TRANSITION_MS = 400;
 
+function systemPrefersDark(): boolean {
+  try {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  } catch {
+    return false;
+  }
+}
+
+/** Saved choice wins; otherwise follow the device setting. */
 function readStoredTheme(): boolean {
   try {
-    return localStorage.getItem(THEME_KEY) === "dark";
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "dark") return true;
+    if (stored === "light") return false;
+    return systemPrefersDark();
+  } catch {
+    return systemPrefersDark();
+  }
+}
+
+function hasStoredTheme(): boolean {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    return stored === "dark" || stored === "light";
   } catch {
     return false;
   }
@@ -79,6 +100,8 @@ function applyThemeClassSmooth(dark: boolean) {
 export function useDarkMode() {
   const [dark, setDark] = React.useState<boolean>(readStoredTheme);
   const isFirstPaint = React.useRef(true);
+  // Only an explicit toggle pins the theme; until then we track the device.
+  const pinnedRef = React.useRef(hasStoredTheme());
 
   React.useEffect(() => {
     if (isFirstPaint.current) {
@@ -89,6 +112,7 @@ export function useDarkMode() {
       applyThemeClassSmooth(dark);
     }
 
+    if (!pinnedRef.current) return;
     try {
       localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
     } catch {
@@ -96,5 +120,26 @@ export function useDarkMode() {
     }
   }, [dark]);
 
-  return { dark, toggle: () => setDark((value) => !value) };
+  // Follow the OS setting live while the user hasn't chosen for themselves.
+  React.useEffect(() => {
+    if (pinnedRef.current) return undefined;
+    let media: MediaQueryList;
+    try {
+      media = window.matchMedia("(prefers-color-scheme: dark)");
+    } catch {
+      return undefined;
+    }
+    const onChange = (event: MediaQueryListEvent) => {
+      if (!pinnedRef.current) setDark(event.matches);
+    };
+    media.addEventListener?.("change", onChange);
+    return () => media.removeEventListener?.("change", onChange);
+  }, []);
+
+  const toggle = () => {
+    pinnedRef.current = true;
+    setDark((value) => !value);
+  };
+
+  return { dark, toggle };
 }

@@ -54,8 +54,40 @@ describe("GuestList", () => {
       "aria-valuenow",
       "100",
     );
+    expect(screen.getByText("Done · 1")).toBeInTheDocument();
+
+    // Bulk removal asks first, exactly like the signed-in list.
     await userEvent.click(screen.getByRole("button", { name: "Clear done" }));
-    expect(screen.queryByText("Bread")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Clear completed items?" }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Clear items" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("Done · 1")).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("offers Undo after removing an item", async () => {
+    renderGuest();
+    await userEvent.type(screen.getByLabelText("Add or search items"), "Eggs");
+    await userEvent.click(screen.getByRole("button", { name: "Add item" }));
+    await userEvent.click(screen.getByRole("button", { name: 'Remove "Eggs"' }));
+
+    expect(screen.queryByText("Eggs")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Removed “Eggs”.");
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByText("Eggs")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  });
+
+  it("opens Settings for guests so text size and reminders are reachable", async () => {
+    renderGuest();
+    await userEvent.click(screen.getByRole("button", { name: "More options" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Settings" }));
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Text size" })).toBeInTheDocument();
   });
 
   it("lets guests edit a typo without signing in", async () => {

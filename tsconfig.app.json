@@ -24,5 +24,8 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* Runs under the Firestore emulator with Node types (npm run test:rules);
+     the browser-typed app project would otherwise fail on `node:fs`. */
+  "exclude": ["src/firestore.rules.test.ts"]
 }

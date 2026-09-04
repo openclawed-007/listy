@@ -52,9 +52,9 @@ export function useSharedList({
         setIsSharing(true);
         setPermissions(normalizeSharePermissions(shared.permissions));
         setAllowAnonymousEdits(shared.allowAnonymousEdits === true);
-        let code = shared.shareCode && isValidShareCode(shared.shareCode)
-          ? shared.shareCode
-          : "";
+        const storedCode =
+          typeof shared.shareCode === "string" ? shared.shareCode : "";
+        let code = storedCode && isValidShareCode(storedCode) ? storedCode : "";
         if (!code) code = await allocateShareCode(firestore, user.uid);
         if (cancelled) return;
         setShareCode(code);

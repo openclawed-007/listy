@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import BrandMark from "./BrandMark";
+import ConfirmDialog from "./ConfirmDialog";
 import NavOverflowMenu from "./NavOverflowMenu";
 import SettingsDialog from "./SettingsDialog";
 import { useAuth } from "../context/useAuth";
@@ -61,9 +62,6 @@ function asShoppingItem(item: GuestItem): ShoppingItem {
   };
 }
 
-/** Vite dev / test server only — never ships to production builds. */
-const DEV_GUEST_SETTINGS = import.meta.env.DEV;
-
 const GuestList: React.FC = () => {
   const { user, loading } = useAuth();
   const { dark, toggle } = useDarkMode();
@@ -79,25 +77,36 @@ const GuestList: React.FC = () => {
   const [sortMode, setSortMode] = useState<ListSortMode>(readListSortMode);
   const [doneCollapsed, setDoneCollapsed] = useState(readDoneCollapsed);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    item: GuestItem;
+    timeoutId: number;
+  } | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const { interfacePrefs, reminderSettings } = usePreferences();
   const preview = useMemo(() => parseItemInput(value), [value]);
   useDocumentTitle("Guest list");
 
   useEffect(() => writeGuestItems(items), [items]);
   useEffect(() => {
+    return () => {
+      if (pendingDelete) window.clearTimeout(pendingDelete.timeoutId);
+    };
+  }, [pendingDelete]);
+  useEffect(() => {
     if (!message) return undefined;
     const timer = window.setTimeout(() => setMessage(""), 3000);
     return () => window.clearTimeout(timer);
   }, [message]);
 
+  // Reminders and preferences live in local storage while signed out, so
+  // guests get the same Settings sheet as everyone else.
   useEffect(() => {
-    if (!DEV_GUEST_SETTINGS) return undefined;
     void syncReminderSchedule(reminderSettings);
     return startReminderWatch(() => reminderSettings);
   }, [reminderSettings]);
 
   const reminderBanner = useMemo(() => {
-    if (!DEV_GUEST_SETTINGS || !interfacePrefs.shoppingBanners) return null;
+    if (!interfacePrefs.shoppingBanners) return null;
     return shoppingDayBanner(reminderSettings);
   }, [interfacePrefs.shoppingBanners, reminderSettings]);
 
@@ -266,24 +275,43 @@ const GuestList: React.FC = () => {
   };
 
   const toggleItem = (id: string) => {
+    const entry = items.find((item) => item.id === id);
+    if (!entry) return;
+    // Checking off reinforces staples for typeahead.
+    if (!entry.completed) {
+      history.remember({
+        text: entry.text,
+        category: entry.category,
+        note: entry.note,
+      });
+    }
     setItems((current) =>
-      current.map((entry) => {
-        if (entry.id !== id) return entry;
-        const nextCompleted = !entry.completed;
-        if (nextCompleted) {
-          history.remember({
-            text: entry.text,
-            category: entry.category,
-            note: entry.note,
-          });
-        }
-        return { ...entry, completed: nextCompleted };
-      }),
+      current.map((item) =>
+        item.id === id ? { ...item, completed: !item.completed } : item,
+      ),
     );
   };
 
   const deleteItem = (id: string) => {
+    const item = items.find((entry) => entry.id === id);
+    if (!item) return;
+    if (pendingDelete) window.clearTimeout(pendingDelete.timeoutId);
+
     setItems((current) => current.filter((entry) => entry.id !== id));
+    const timeoutId = window.setTimeout(() => {
+      setPendingDelete((current) => (current?.item.id === id ? null : current));
+    }, 6000);
+    setPendingDelete({ item, timeoutId });
+  };
+
+  const undoDeleteItem = () => {
+    if (!pendingDelete) return;
+    window.clearTimeout(pendingDelete.timeoutId);
+    const { item } = pendingDelete;
+    setPendingDelete(null);
+    setItems((current) =>
+      current.some((entry) => entry.id === item.id) ? current : [item, ...current],
+    );
   };
 
   const toggleImportant = (id: string, important: boolean) => {
@@ -328,13 +356,11 @@ const GuestList: React.FC = () => {
             </span>
           </div>
           <div className="user-actions">
-            <span className="guest-badge">
-              Guest{DEV_GUEST_SETTINGS ? " · test" : ""}
-            </span>
+            <span className="guest-badge">Guest</span>
             <NavOverflowMenu
               dark={dark}
               onToggleDark={toggle}
-              showSettings={DEV_GUEST_SETTINGS}
+              showSettings
               settingsActive={reminderSettings.enabled}
               onOpenSettings={() => setSettingsOpen(true)}
               signInTo="/login"
@@ -370,12 +396,6 @@ const GuestList: React.FC = () => {
                 Settings
               </button>
             </div>
-          )}
-          {DEV_GUEST_SETTINGS && interfacePrefs.onboardingCopy && (
-            <p className="guest-note" style={{ marginTop: "0.35rem" }}>
-              Dev only: settings &amp; reminders are available while logged out
-              on the test server.
-            </p>
           )}
         </div>
 
@@ -472,11 +492,7 @@ const GuestList: React.FC = () => {
                   <button
                     className="clear-done-btn"
                     type="button"
-                    onClick={() =>
-                      setItems((current) =>
-                        current.filter((item) => !item.completed),
-                      )
-                    }
+                    onClick={() => setConfirmClear(true)}
                   >
                     Clear done
                   </button>
@@ -534,7 +550,30 @@ const GuestList: React.FC = () => {
         </div>
       </main>
 
-      {DEV_GUEST_SETTINGS && settingsOpen && (
+      {pendingDelete && (
+        <div className="undo-toast" role="status">
+          <span>Removed “{pendingDelete.item.text}”.</span>
+          <button type="button" onClick={undoDeleteItem}>
+            Undo
+          </button>
+        </div>
+      )}
+
+      {confirmClear && (
+        <ConfirmDialog
+          action="clearCompleted"
+          itemCount={items.filter((item) => item.completed).length}
+          listName="My List"
+          busy={false}
+          onCancel={() => setConfirmClear(false)}
+          onConfirm={() => {
+            setConfirmClear(false);
+            setItems((current) => current.filter((item) => !item.completed));
+          }}
+        />
+      )}
+
+      {settingsOpen && (
         <SettingsDialog
           userId={null}
           onClose={() => setSettingsOpen(false)}

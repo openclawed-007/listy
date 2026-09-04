@@ -23,9 +23,30 @@ function getLoginErrorMessage(error: unknown): string {
 
 const POPUP_FALLBACK_CODES = new Set([
   "auth/popup-blocked",
-  "auth/popup-closed-by-user",
   "auth/operation-not-supported-in-this-environment",
 ]);
+
+/**
+ * Installed PWAs (notably iOS) report a popup the OS bounced as
+ * "closed by user", so only there do we treat that as a reason to fall back
+ * to redirect sign-in. In a normal tab closing the popup means "not now" and
+ * must not yank the user off to Google.
+ */
+function isStandaloneDisplay(): boolean {
+  try {
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+function shouldFallBackToRedirect(code: string): boolean {
+  if (POPUP_FALLBACK_CODES.has(code)) return true;
+  return code === "auth/popup-closed-by-user" && isStandaloneDisplay();
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -62,7 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
       const code = (error as Partial<AuthError> | undefined)?.code ?? "";
-      if (POPUP_FALLBACK_CODES.has(code)) {
+      if (shouldFallBackToRedirect(code)) {
         // Popups are unreliable in installed PWAs and some mobile browsers;
         // fall back to a full-page redirect sign-in.
         try {

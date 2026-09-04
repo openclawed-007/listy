@@ -8,6 +8,7 @@ import {
   Settings,
   Sun,
 } from "lucide-react";
+import { useMenuKeyboard } from "../hooks/useMenuKeyboard";
 import UserAvatar from "./UserAvatar";
 
 interface NavAccountMenuProps {
@@ -38,7 +39,9 @@ const NavAccountMenu: React.FC<NavAccountMenuProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId();
+  useMenuKeyboard(menuRef, open);
   const displayName =
     user?.displayName?.trim() || user?.email?.split("@")[0] || "Account";
   const email = user?.email?.trim() || "";
@@ -58,6 +61,8 @@ const NavAccountMenu: React.FC<NavAccountMenuProps> = ({
       if (event.key === "Escape") {
         event.preventDefault();
         setOpen(false);
+        // Items unmount with the menu; hand focus back to the trigger.
+        rootRef.current?.querySelector("button")?.focus();
       }
     };
 
@@ -98,6 +103,7 @@ const NavAccountMenu: React.FC<NavAccountMenuProps> = ({
       {open && (
         <div
           id={menuId}
+          ref={menuRef}
           className="nav-account-menu"
           role="menu"
           aria-label="Account"

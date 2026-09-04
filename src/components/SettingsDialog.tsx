@@ -91,6 +91,17 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
     );
   }, [iface.displayScale]);
 
+  // Self-contained Escape so the sheet closes the same way from every host.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   const preview = useMemo(() => nextReminderPreview(reminders), [reminders]);
   const block = notificationBlockReason();
 
