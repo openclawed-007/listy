@@ -1,4 +1,10 @@
-const CACHE_NAME = "cartlink-shell-v14";
+const CACHE_NAME = "cartlink-shell-v15";
+// Content-hashed build output: safe to serve from cache forever.
+const ASSET_CACHE = "cartlink-assets-v1";
+const MAX_ASSET_ENTRIES = 120;
+// On "lie-fi" (one bar in the supermarket) a navigation waits this long for
+// the network before falling back to the cached app shell.
+const NAVIGATION_TIMEOUT_MS = 4000;
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -46,7 +52,7 @@ self.addEventListener("activate", (event) => {
       .then((cacheNames) =>
         Promise.all(
           cacheNames
-            .filter((cacheName) => cacheName !== CACHE_NAME)
+            .filter((cacheName) => cacheName !== CACHE_NAME && cacheName !== ASSET_CACHE)
             .map((cacheName) => caches.delete(cacheName)),
         ),
       )
@@ -63,21 +69,12 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     // Catch up any due shopping reminders when a page loads.
     event.waitUntil(flushDueFromStore());
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
-          }
-          return response;
-        })
-        .catch(async () => {
-          const cached =
-            (await caches.match("/index.html")) || (await caches.match("/"));
-          return cached || offlineFallback();
-        }),
-    );
+    event.respondWith(navigationResponse(request, event));
+    return;
+  }
+
+  if (url.pathname.startsWith("/assets/")) {
+    event.respondWith(cachedAsset(request, event));
     return;
   }
 
@@ -99,6 +96,66 @@ self.addEventListener("fetch", (event) => {
     })(),
   );
 });
+
+/** Network first (fresh deploys win), but never hang on a dead connection. */
+async function navigationResponse(request, event) {
+  let shellWrite = Promise.resolve();
+  const network = fetch(request).then((response) => {
+    if (response.ok) {
+      const copy = response.clone();
+      shellWrite = caches
+        .open(CACHE_NAME)
+        .then((cache) => cache.put("/index.html", copy));
+    }
+    return response;
+  });
+  // Registered now, while the event is live: the network may answer after
+  // we have already served the cached shell, and still refresh it.
+  event.waitUntil(network.then(() => shellWrite).catch(() => undefined));
+  const cachedShell = async () =>
+    (await caches.match("/index.html")) || (await caches.match("/"));
+
+  const timeout = new Promise((resolve) =>
+    setTimeout(resolve, NAVIGATION_TIMEOUT_MS, null),
+  );
+  try {
+    const first = await Promise.race([network, timeout]);
+    if (first) return first;
+    // Slow network: show the cached app now if we have it.
+    return (await cachedShell()) || (await network);
+  } catch {
+    return (await cachedShell()) || offlineFallback();
+  }
+}
+
+/** Hashed files never change, so cache first and skip the network. */
+async function cachedAsset(request, event) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const copy = response.clone();
+      event.waitUntil(
+        caches
+          .open(ASSET_CACHE)
+          .then((cache) => cache.put(request, copy))
+          .then(trimAssetCache),
+      );
+    }
+    return response;
+  } catch {
+    return offlineFallback();
+  }
+}
+
+/** Old deploys' chunks are dead weight; keep only the newest entries. */
+async function trimAssetCache() {
+  const cache = await caches.open(ASSET_CACHE);
+  const keys = await cache.keys();
+  const excess = keys.length - MAX_ASSET_ENTRIES;
+  if (excess > 0) await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
+}
 
 // ---------- Shopping reminders ----------
 

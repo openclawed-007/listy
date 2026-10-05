@@ -7,7 +7,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import { db } from "../firebase";
+import { db } from "../firestore";
 import { resolveValidatedShareCode } from "../lib/allocateShareCode";
 import {
   isValidShareCode,
@@ -42,6 +42,7 @@ import {
 import { useAuth } from "../context/useAuth";
 import { usePreferences } from "../context/usePreferences";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useTransientMessage } from "../hooks/useTransientMessage";
 import {
   clearLocalTicks,
   pruneTicks,
@@ -71,7 +72,7 @@ const PublicSharedList: React.FC = () => {
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [newItemText, setNewItemText] = useState("");
-  const [addNotice, setAddNotice] = useState("");
+  const [addNotice, setAddNotice] = useTransientMessage(4000);
   const rawItemsRef = React.useRef<unknown>([]);
   const seenShareSnapshotRef = React.useRef(false);
   const lastShareFingerprintRef = React.useRef("");
@@ -208,13 +209,6 @@ const PublicSharedList: React.FC = () => {
 
     return unsubscribe;
   }, [interfacePrefs.shareChangeNotices, shareId]);
-
-  useEffect(() => {
-    if (!addNotice) return undefined;
-
-    const timeoutId = window.setTimeout(() => setAddNotice(""), 4000);
-    return () => window.clearTimeout(timeoutId);
-  }, [addNotice]);
 
   // Prefer the specific resolve/snapshot error. An empty shareId after a failed
   // /c/:code lookup used to hide that message behind a generic unavailable line.

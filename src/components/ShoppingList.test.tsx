@@ -43,7 +43,7 @@ const {
   mockBatchCommit: vi.fn(),
 }));
 
-vi.mock("../firebase", () => ({
+vi.mock("../firestore", () => ({
   db: mockDb,
 }));
 
@@ -324,6 +324,10 @@ describe("ShoppingList sharing", () => {
       }),
     });
 
+    localStorage.setItem(
+      "cartlink:published:owner-uid",
+      JSON.stringify({ "id:personal-1": false }),
+    );
     renderShoppingList();
 
     await userEvent.click(
@@ -349,6 +353,10 @@ describe("ShoppingList sharing", () => {
     });
     expect(mockDeleteDoc).toHaveBeenCalledWith({
       path: "shareCodes/AB3DK7MP",
+    });
+    // Sharing again later must start from a fresh baseline, not a stale one.
+    await waitFor(() => {
+      expect(localStorage.getItem("cartlink:published:owner-uid")).toBeNull();
     });
   });
 
@@ -695,6 +703,38 @@ describe("ShoppingList smart add field", () => {
         }),
       );
     });
+  });
+
+  it("keeps working offline, when Firestore writes never resolve", async () => {
+    // Offline, Firestore applies writes to its local cache at once but the
+    // returned promises wait for the server forever. Nothing may wait on them.
+    const pending = () => new Promise<never>(() => {});
+    mockAddDoc.mockImplementation(pending);
+    mockUpdateDoc.mockImplementation(pending);
+    mockDeleteDoc.mockImplementation(pending);
+    snapshotDocs = [
+      makeDoc("personal-1", {
+        text: "Bread",
+        completed: false,
+        userId: user.uid,
+        listId: "personal",
+      }),
+    ];
+    renderShoppingList();
+
+    const input = await screen.findByLabelText("Add or search items");
+    await userEvent.type(input, "milk{Enter}");
+    expect(mockAddDoc).toHaveBeenCalled();
+    expect(input).toHaveValue("");
+
+    await userEvent.click(screen.getByRole("button", { name: 'Edit "Bread"' }));
+    const editField = screen.getByLabelText("Edit item text");
+    await userEvent.clear(editField);
+    await userEvent.type(editField, "Rye bread{Enter}");
+    expect(screen.queryByLabelText("Edit item text")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: 'Remove "Bread"' }));
+    expect(await screen.findByRole("button", { name: "Undo" })).toBeInTheDocument();
   });
 
   it("bumps the existing row instead of adding a duplicate", async () => {

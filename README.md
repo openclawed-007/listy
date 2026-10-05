@@ -51,9 +51,11 @@ It's small, it's free, there are no ads, and the whole thing is open source.
 | 🔒 **Granular permissions** | Let signed-in collaborators tick, add or remove — separately. Enforced in **Firestore security rules**, not just the UI. |
 | 🗂️ **Multiple lists & notes** | Keep separate lists, add notes to items, and get typeahead suggestions from things you've bought before. |
 | 🧍 **Guest mode** | Use a private list on this device with no account. Sign in later and your guest items are brought into the synced list automatically. |
+| 👆 **Made for one thumb** | On a phone each row is just a tick and a name. Swipe left (or tap ⋯) for star, edit and delete; a floating **+** appears on long lists so you never scroll back up to add. |
 | ↩️ **Undo delete** | Slipped a thumb in the queue? One tap brings it back. |
 | ⌨️ **Keyboard-friendly** | `/` search, `n` new item, `Enter` save, `Esc` cancel. |
-| 📶 **Offline** | Keep ticking in the basement supermarket. Changes queue locally and sync when you're back online. |
+| 📶 **Offline** | Keep ticking in the basement supermarket. Changes queue locally and sync when you're back online, and on one bar of signal the app opens from cache instead of hanging. |
+| 🪶 **Light** | The landing page, sign-in and guest list never download the database SDK, so a first visit loads well under half the JavaScript of the full app. |
 | 🌙 **Dark mode** | Deep forest palette that follows your device setting until you pick one yourself. No white flash on load. |
 | 🔠 **Text size & accessibility** | Small → XL text setting that applies on every screen, 44px touch targets, WCAG-contrast helper text, keyboard-navigable menus. |
 | 📱 **Installable + native Android** | Add to home screen as a PWA, or grab the native Kotlin/Compose app from [Releases](https://github.com/openclawed-007/listy/releases/latest). Share links deep-link straight into the app. |
@@ -168,16 +170,29 @@ npm run lint
 npm run typecheck
 npm run test
 npm run build
+npm run test:rules   # security rules against the Firestore emulator (needs Java)
 ```
 
 `npm run build` type-checks the whole project (`tsc -b`) before bundling, so
 a type error fails the build and CI rather than shipping.
 
+## Project layout
+
+```
+src/
+  lib/          pure logic — parsing "2 milk", sorting, share sync diffs (unit tested)
+  services/     the only code that talks to Firestore
+  hooks/        state + side effects (sync, sharing, undo, reminders)
+  components/   UI; the signed-in and guest lists share the same pieces
+  firebase.ts   app + auth (loaded on every page)
+  firestore.ts  the database (loaded only by screens that need it)
+```
+
 ## Contributing
 
 Bug reports and small, focused PRs are very welcome. If you've stood in a supermarket wishing the list did something, [open an issue](https://github.com/openclawed-007/listy/issues) and describe the moment — that's exactly how most of the current features started.
 
-Before opening a PR, please run the three checks above. Tests live next to the components (`*.test.tsx`) and use Vitest + Testing Library with Firebase mocked, so you don't need a Firebase project to run them.
+Before opening a PR, please run the checks above. Tests live next to the components (`*.test.tsx`) and use Vitest + Testing Library with Firebase mocked, so you don't need a Firebase project to run them.
 
 ## Spread the word
 

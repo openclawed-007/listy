@@ -20,7 +20,7 @@ const {
   mockResolveValidatedShareCode: vi.fn(),
 }));
 
-vi.mock("../firebase", () => ({
+vi.mock("../firestore", () => ({
   db: mockDb,
 }));
 

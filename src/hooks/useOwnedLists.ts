@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { db } from "../firebase";
+import { db } from "../firestore";
 import { saveUserSettings, subscribeToUserSettings } from "../services/userSettings";
 import {
   addCustomList,
@@ -96,11 +96,13 @@ export function useOwnedLists(
   const activeTabName =
     tabs.find((tab) => tab.id === activeListId)?.name ?? PERSONAL_TAB_NAME;
 
+  // These update local state at once and save in the background: the save
+  // only resolves once the server has it, which never happens offline.
   const createList = useCallback(
-    async (name: string) => {
+    (name: string) => {
       const result = addCustomList(customLists, name);
       if ("error" in result) return result;
-      await persist(result.lists);
+      void persist(result.lists);
       setActiveListId(result.list.id);
       return result;
     },
@@ -108,7 +110,7 @@ export function useOwnedLists(
   );
 
   const renameActive = useCallback(
-    async (name: string) => {
+    (name: string): { error: string } | { name: string; listId: string } => {
       if (!isOwnedCustomListId(activeListId)) {
         return { error: "That list was not found." };
       }
@@ -119,19 +121,18 @@ export function useOwnedLists(
       );
       const result = renameCustomList(base, activeListId, name);
       if ("error" in result) return result;
-      const nextName = result.lists.find(
-        (list) => list.id === activeListId,
-      )?.name;
-      await persist(result.lists);
+      const nextName =
+        result.lists.find((list) => list.id === activeListId)?.name ?? name;
+      void persist(result.lists);
       return { name: nextName, listId: activeListId };
     },
     [activeListId, activeTabName, customLists, persist],
   );
 
-  const removeActive = useCallback(async () => {
+  const removeActive = useCallback(() => {
     if (!isOwnedCustomListId(activeListId)) return undefined;
     const listId = activeListId;
-    await persist(removeCustomList(customLists, listId));
+    void persist(removeCustomList(customLists, listId));
     setActiveListId(PERSONAL_TAB_ID);
     return listId;
   }, [activeListId, customLists, persist]);

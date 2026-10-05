@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { db } from "../firebase";
-import { loadUserSettings, saveUserSettings } from "../services/userSettings";
 import { useAuth } from "./useAuth";
 import {
   normalizeInterfacePreferences,
@@ -19,6 +17,18 @@ import {
   PreferencesContext,
   type PreferencesContextValue,
 } from "./PreferencesContext.shared";
+
+/**
+ * Settings sync is the only reason this always-mounted provider would need
+ * Firestore, so load it on demand: signed-out visitors never download it.
+ */
+async function loadSettingsStore() {
+  const [{ db }, settings] = await Promise.all([
+    import("../firestore"),
+    import("../services/userSettings"),
+  ]);
+  return db ? { db, ...settings } : null;
+}
 
 export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -54,12 +64,12 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
       writeLocalUserPreferences({ interface: nextInterface });
       writeLocalReminderSettings(nextReminders);
 
-      if (uid && db) {
-        await saveUserSettings(db, uid, {
-          interface: nextInterface,
-          shoppingReminders: nextReminders,
-        });
-      }
+      if (!uid) return;
+      const store = await loadSettingsStore();
+      await store?.saveUserSettings(store.db, uid, {
+        interface: nextInterface,
+        shoppingReminders: nextReminders,
+      });
     },
     [uid],
   );
@@ -87,7 +97,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
   // every change writes through to it — so there is no sync fallback here,
   // which also keeps setState out of the synchronous effect path.
   const refreshFromCloud = useCallback(async () => {
-    if (!uid || !db) {
+    if (!uid) {
       const local = readLocalUserPreferences();
       setInterfaceState(local.interface);
       setReminderState(readLocalReminderSettings());
@@ -95,7 +105,9 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      const data = await loadUserSettings(db, uid);
+      const store = await loadSettingsStore();
+      if (!store) return;
+      const data = await store.loadUserSettings(store.db, uid);
       if (!data) return;
       const next = normalizeUserPreferences({
         interface: data.interface,

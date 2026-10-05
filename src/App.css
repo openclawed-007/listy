@@ -20,6 +20,9 @@
      for many readers. ≈3.2:1 keeps the "quiet" feel while remaining legible. */
   --ink-faint: #8f877c;
   --surface: #ffffff;
+  /* Unticked check circles — the main control, so it must read at a glance
+     (cream-deep was ≈1.3:1 against the row). */
+  --check-ring: #aaa398;
   --danger: #a04020;
   --shadow-sm: 0 1px 3px rgba(42, 37, 32, 0.08);
   --shadow-md: 0 4px 16px rgba(42, 37, 32, 0.10);
@@ -89,6 +92,7 @@ body.dark {
   /* Was #4a6055 — too close to the dark cream, so stats/hints vanished. */
   --ink-faint: #7d988c;
   --surface: #1c2528;
+  --check-ring: #587066;
   --danger: #f1b39d;
   --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.45);
@@ -154,17 +158,6 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.4s ease, color 0.4s ease;
-}
-
-/* Subtle paper grain on the page wash — behind UI so QR codes and
-   dialogs stay crisp (a 9999 overlay used to sit on top of everything). */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* ===========================
@@ -1037,7 +1030,17 @@ body.dark .suggest-row.is-active {
 }
 
 .items-divider-btn:hover .items-divider-label {
+  color: var(--ink);
+}
+
+.items-divider-chevron {
+  flex-shrink: 0;
   color: var(--ink-muted);
+  transition: transform 0.2s ease;
+}
+
+.done-section.is-collapsed .items-divider-chevron {
+  transform: rotate(-90deg);
 }
 
 .items-divider-label {
@@ -1212,11 +1215,6 @@ body.is-reordering {
   transform: scale(0.92);
 }
 
-@media (hover: none), (max-width: 768px) {
-  .important-btn {
-    opacity: 1;
-  }
-}
 
 html.dark .item-row.is-important,
 body.dark .item-row.is-important {
@@ -1268,7 +1266,7 @@ body.dark .item-row.is-important {
   height: 1.375rem;
   flex-shrink: 0;
   border-radius: 50%;
-  border: 1.75px solid var(--cream-deep);
+  border: 1.75px solid var(--check-ring);
   background: transparent;
   cursor: pointer;
   display: flex;
@@ -1314,6 +1312,22 @@ body.dark .item-row.is-important {
   z-index: 2;
   background: var(--cream);
   padding: 0.28rem 0 0.18rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.category-count {
+  min-width: 1.15rem;
+  padding: 0 0.32rem;
+  border-radius: var(--radius-pill);
+  background: var(--cream-dark);
+  color: var(--ink-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .item-content {
@@ -1582,15 +1596,118 @@ body.dark .item-row.is-important {
   transform: scale(0.92);
 }
 
-/* Always visible on touch/mobile screens */
-@media (hover: none),
-(max-width: 768px) {
+/* ===========================
+   ROW ACTIONS
+   Mice: star / edit / delete fade in on hover or keyboard focus.
+   Touch: they live in a tray behind one quiet "⋯" (or a swipe left), so a
+   phone shows each item as a check, a name and nothing else to mis-tap.
+   =========================== */
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
 
-  .delete-btn,
-  .edit-btn,
-  .important-btn,
-  .drag-handle {
+.item-more-btn,
+.item-important-mark {
+  display: none;
+}
+
+.item-more-btn {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.item-more-btn::after {
+  content: "";
+  position: absolute;
+  inset: -6px -4px;
+}
+
+.item-more-btn svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.item-important-mark {
+  flex-shrink: 0;
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--terra);
+}
+
+@keyframes tray-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
+@media (hover: none) {
+  .item-row {
+    /* Horizontal swipes reach the row; vertical ones still scroll the page. */
+    touch-action: pan-y;
+  }
+
+  .item-actions {
+    display: none;
+  }
+
+  .item-row.is-actions-open {
+    border-color: var(--sage-light);
+    box-shadow: 0 0 0 2px rgba(107, 143, 113, 0.12);
+  }
+
+  /* Grips stay discoverable without adding a column of dots to every row. */
+  .item-row .drag-handle {
+    opacity: 0.55;
+  }
+
+  .item-row.is-actions-open .item-actions {
+    display: flex;
+    animation: tray-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .item-row .row-action {
     opacity: 1;
+  }
+
+  .item-row .delete-btn {
+    color: var(--terra);
+  }
+
+  .item-more-btn {
+    display: inline-flex;
+  }
+
+  .item-row.is-actions-open .item-more-btn {
+    background: var(--cream-dark);
+    color: var(--ink);
+  }
+
+  .item-important-mark {
+    display: inline-block;
+  }
+
+  .item-row.completed .item-more-btn {
+    opacity: 0.8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item-row.is-actions-open .item-actions {
+    animation: none;
   }
 }
 
@@ -1870,6 +1987,73 @@ body.dark .item-row.is-important {
  * Keep translateX(-50%) inside the toast animation. Shared `pop-in` overwrites
  * transform and left the bar half off-screen on mobile after animation fill.
  */
+/* ===========================
+   FLOATING ADD BUTTON
+   Appears once the add field scrolls out of view on long lists.
+   =========================== */
+.add-fab {
+  position: fixed;
+  right: max(1rem, calc(0.5rem + env(safe-area-inset-right, 0px)));
+  bottom: max(1.25rem, calc(0.85rem + env(safe-area-inset-bottom, 0px)));
+  z-index: 650;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: none;
+  border-radius: 50%;
+  background: var(--sage);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow:
+    0 10px 28px rgba(42, 37, 32, 0.22),
+    0 2px 6px rgba(42, 37, 32, 0.12);
+  opacity: 0;
+  transform: translateY(18px) scale(0.85);
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.25),
+    bottom 0.22s ease,
+    background 0.2s ease;
+}
+
+.add-fab.is-visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* Sit above the undo toast rather than covering its button. */
+.add-fab.is-raised {
+  bottom: max(5.5rem, calc(5.1rem + env(safe-area-inset-bottom, 0px)));
+}
+
+.add-fab:hover {
+  background: var(--sage-dark);
+}
+
+.add-fab:active {
+  transform: scale(0.94);
+}
+
+.add-fab svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+html.dark .add-fab {
+  color: #0f1517;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+/* Desktop has room, a scroll wheel and the "/" shortcut. */
+@media (hover: hover) and (pointer: fine) and (min-width: 1024px) {
+  .add-fab {
+    display: none;
+  }
+}
+
 @keyframes undo-toast-in {
   0% {
     opacity: 0;

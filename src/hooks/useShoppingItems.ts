@@ -1,5 +1,5 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import { db } from "../firebase";
+import { db } from "../firestore";
 import type { ShoppingItem } from "../lib/shoppingItem";
 import { subscribeToShoppingItems } from "../services/shoppingItems";
 

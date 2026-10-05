@@ -3,13 +3,17 @@ import {
   doc,
   getDoc,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
   type Firestore,
   type Unsubscribe,
 } from "firebase/firestore";
-import { normalizeSharedListSnapshot } from "../lib/shoppingItem";
+import {
+  normalizeSharedListSnapshot,
+  type SharedItemPayload,
+} from "../lib/shoppingItem";
 import type { SharePermissions } from "../lib/sharePermissions";
 import type { SharedItemData } from "../lib/publicSharedListModel";
 
@@ -31,11 +35,6 @@ export async function loadRawSharedList(
   return snapshot.exists() ? snapshot.data() : null;
 }
 
-export async function loadSharedList(firestore: Firestore, ownerId: string) {
-  const raw = await loadRawSharedList(firestore, ownerId);
-  return raw ? normalizeSharedListSnapshot(raw) : null;
-}
-
 export function publishSharedList(
   firestore: Firestore,
   value: SharedListWrite,
@@ -47,6 +46,40 @@ export function publishSharedList(
     // Anonymous editing is meaningless without a granted permission.
     allowAnonymousEdits: allowEdits && value.allowAnonymousEdits === true,
     updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * The owner's debounced auto-publish. Runs as a transaction so collaborator
+ * writes that landed since our last publish are merged (by `merge`) instead
+ * of being overwritten by a stale copy of the owner's list.
+ */
+export function publishOwnerSnapshot(
+  firestore: Firestore,
+  value: SharedListWrite,
+  merge: (remoteItems: SharedItemPayload[] | null) => SharedItemPayload[],
+) {
+  const listRef = doc(firestore, "sharedLists", value.ownerId);
+  return runTransaction(firestore, async (transaction) => {
+    const snapshot = await transaction.get(listRef);
+    const remoteItems = snapshot.exists()
+      ? normalizeSharedListSnapshot(snapshot.data())?.items ?? []
+      : null;
+    const items = merge(remoteItems);
+    const allowEdits = Object.values(value.permissions).some(Boolean);
+
+    // set() replaces the whole doc, so every flag must ride along or each
+    // auto-sync would silently switch it off.
+    transaction.set(listRef, {
+      ownerId: value.ownerId,
+      ownerName: value.ownerName,
+      allowEdits,
+      allowAnonymousEdits: allowEdits && value.allowAnonymousEdits === true,
+      permissions: value.permissions,
+      items,
+      ...(value.shareCode ? { shareCode: value.shareCode } : {}),
+      updatedAt: serverTimestamp(),
+    });
   });
 }
 

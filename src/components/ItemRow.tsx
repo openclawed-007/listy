@@ -1,5 +1,13 @@
 import React, { useEffect, useRef } from "react";
-import { Check, GripVertical, Pencil, Star, Trash2 } from "lucide-react";
+import {
+  Check,
+  GripVertical,
+  MoreHorizontal,
+  Pencil,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 import {
   formatQuantity,
   MAX_CATEGORY_LENGTH,
@@ -42,166 +50,275 @@ export interface ItemReorderState {
   onMove: (id: string, offset: -1 | 1) => void;
 }
 
-interface ItemRowProps {
-  item: ShoppingItem;
-  index: number;
+/** Row callbacks, shared by every row in a list. */
+export interface ItemRowHandlers {
   edit: ItemEditState;
   reorder?: ItemReorderState;
-  onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
-  onToggleImportant?: (id: string, important: boolean) => void;
-  onDelete: (id: string) => void;
+  onToggle: (item: ShoppingItem) => void;
+  /** Omitted when the "important" star is switched off in Settings. */
+  onToggleImportant?: (item: ShoppingItem) => void;
+  onDelete: (item: ShoppingItem) => void;
+  /** Touch screens keep row actions in a tray; one row's tray is open at once. */
+  actionsOpenId: string | null;
+  onActionsOpenChange: (id: string | null) => void;
 }
 
-// Enter saves, Escape reverts — on every edit field, so the row behaves the
-// same wherever the caret happens to be.
-function useEditKeys(edit: ItemEditState) {
-  return (event: React.KeyboardEvent<HTMLInputElement>) => {
+interface ItemRowProps extends ItemRowHandlers {
+  item: ShoppingItem;
+}
+
+/** A horizontal flick this far (px) opens or closes the actions tray. */
+const SWIPE_DISTANCE = 32;
+
+function rowIdFromPoint(x: number, y: number): string | null {
+  const node = document.elementFromPoint(x, y);
+  const row = node instanceof Element ? node.closest("[data-item-id]") : null;
+  return row instanceof HTMLElement ? (row.dataset.itemId ?? null) : null;
+}
+
+/**
+ * Pointer drag from the grip only — starts immediately (no long-press).
+ * Native HTML5 drag forces a hold on many touch browsers; this avoids that.
+ */
+function startHandleDrag(
+  event: React.PointerEvent<HTMLButtonElement>,
+  itemId: string,
+  reorder: ItemReorderState,
+) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const handle = event.currentTarget;
+  const pointerId = event.pointerId;
+  handle.setPointerCapture(pointerId);
+
+  const body = document.body;
+  const previousUserSelect = body.style.userSelect;
+  const previousTouchAction = body.style.touchAction;
+  body.style.userSelect = "none";
+  body.style.touchAction = "none";
+  body.classList.add("is-reordering");
+
+  reorder.onDragStart(itemId);
+  let lastTargetId = itemId;
+  let finished = false;
+
+  const finish = (clientX: number, clientY: number, cancelled: boolean) => {
+    if (finished) return;
+    finished = true;
+    try {
+      handle.releasePointerCapture(pointerId);
+    } catch {
+      // Already released.
+    }
+    body.style.userSelect = previousUserSelect;
+    body.style.touchAction = previousTouchAction;
+    body.classList.remove("is-reordering");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onCancel);
+
+    if (cancelled) reorder.onDragEnd();
+    // The live preview already moved rows; commit wherever the pointer ended.
+    else reorder.onDrop(rowIdFromPoint(clientX, clientY) ?? lastTargetId);
+  };
+
+  const onMove = (moveEvent: PointerEvent) => {
+    if (moveEvent.pointerId !== pointerId) return;
+    moveEvent.preventDefault();
+    const targetId = rowIdFromPoint(moveEvent.clientX, moveEvent.clientY);
+    if (!targetId || targetId === lastTargetId) return;
+    lastTargetId = targetId;
+    reorder.onDragOver(targetId);
+  };
+  const onUp = (upEvent: PointerEvent) => {
+    if (upEvent.pointerId === pointerId) finish(upEvent.clientX, upEvent.clientY, false);
+  };
+  const onCancel = (cancelEvent: PointerEvent) => {
+    if (cancelEvent.pointerId === pointerId) {
+      finish(cancelEvent.clientX, cancelEvent.clientY, true);
+    }
+  };
+
+  window.addEventListener("pointermove", onMove, { passive: false });
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onCancel);
+}
+
+/**
+ * Swipe left on a row to open its actions tray, right to close it. Touch
+ * only — mice get hover. Vertical movement is left to the page scroll.
+ */
+function useSwipeActions(setOpen: (open: boolean) => void) {
+  const start = useRef<{ x: number; y: number; id: number; swiping: boolean } | null>(null);
+  const swallowClick = useRef(false);
+
+  return {
+    onPointerDown: (event: React.PointerEvent) => {
+      // Browsers usually send no click after a swipe, so a stale flag would
+      // eat the next real tap. Each gesture starts clean.
+      swallowClick.current = false;
+      if (event.pointerType !== "touch") return;
+      start.current = { x: event.clientX, y: event.clientY, id: event.pointerId, swiping: false };
+    },
+    onPointerMove: (event: React.PointerEvent) => {
+      const gesture = start.current;
+      if (!gesture || gesture.id !== event.pointerId || gesture.swiping) return;
+      const dx = event.clientX - gesture.x;
+      const dy = event.clientY - gesture.y;
+      if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) {
+        start.current = null;
+      } else if (Math.abs(dx) >= SWIPE_DISTANCE && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        gesture.swiping = true;
+        swallowClick.current = true;
+        setOpen(dx < 0);
+      }
+    },
+    onPointerUp: () => {
+      start.current = null;
+    },
+    onPointerCancel: () => {
+      start.current = null;
+    },
+    // A swipe must not also count as a tap that ticks the item off.
+    onClickCapture: (event: React.MouseEvent) => {
+      if (!swallowClick.current) return;
+      swallowClick.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+  };
+}
+
+const EditFields: React.FC<{ edit: ItemEditState }> = ({ edit }) => {
+  // Enter saves, Escape reverts — on every field, wherever the caret is.
+  const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
       event.preventDefault();
       edit.onCommit();
-    }
-    if (event.key === "Escape") {
+    } else if (event.key === "Escape") {
       event.preventDefault();
       edit.onCancel();
     }
   };
-}
 
-function rowIdFromPoint(x: number, y: number): string | null {
-  const node = document.elementFromPoint(x, y);
-  if (!node || !(node instanceof Element)) return null;
-  const row = node.closest("[data-item-id]");
-  if (!(row instanceof HTMLElement)) return null;
-  return row.dataset.itemId ?? null;
-}
+  return (
+    <div
+      className="item-edit-fields"
+      onClick={(event) => event.stopPropagation()}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          edit.onCommit();
+        }
+      }}
+    >
+      <input
+        className="item-edit-input"
+        value={edit.text}
+        autoFocus
+        onChange={(event) => edit.onTextChange(event.target.value)}
+        maxLength={MAX_ITEM_TEXT_LENGTH}
+        onKeyDown={onKeyDown}
+        aria-label="Edit item text"
+      />
+      <input
+        className="item-edit-input item-edit-meta"
+        value={edit.quantity}
+        onChange={(event) => edit.onQuantityChange(event.target.value)}
+        maxLength={MAX_QUANTITY_LENGTH}
+        onKeyDown={onKeyDown}
+        placeholder="Qty"
+        aria-label="Edit item quantity"
+      />
+      <input
+        className="item-edit-input item-edit-meta"
+        value={edit.category}
+        onChange={(event) => edit.onCategoryChange(event.target.value)}
+        maxLength={MAX_CATEGORY_LENGTH}
+        onKeyDown={onKeyDown}
+        placeholder="Aisle"
+        aria-label="Edit item category"
+        list={CATEGORY_DATALIST_ID}
+      />
+      <input
+        className="item-edit-input item-edit-note"
+        value={edit.note}
+        onChange={(event) => edit.onNoteChange(event.target.value)}
+        maxLength={MAX_NOTE_LENGTH}
+        onKeyDown={onKeyDown}
+        placeholder="Note (optional)"
+        aria-label="Edit item note"
+      />
+    </div>
+  );
+};
 
 export const ItemRow: React.FC<ItemRowProps> = ({
   item,
-  index: _index,
   edit,
   reorder,
   onToggle,
   onToggleImportant,
   onDelete,
+  actionsOpenId,
+  onActionsOpenChange,
 }) => {
-  void _index;
-  const isEditing = edit.editingId === item.id;
-  const handleEditKeys = useEditKeys(edit);
   const rowRef = useRef<HTMLDivElement | null>(null);
+  const isEditing = edit.editingId === item.id;
+  const isImportant = item.important === true;
+  const actionsOpen = actionsOpenId === item.id && !isEditing;
   const canReorder = Boolean(reorder?.enabled && !item.completed && !isEditing);
   const isDragging = reorder?.draggingId === item.id;
-  const isImportant = item.important === true;
-  // Star control doubles as the gate for important row chrome.
-  const showImportantUi = Boolean(onToggleImportant) && isImportant;
   const isDropTarget =
-    Boolean(reorder?.dropTargetId === item.id) &&
-    Boolean(reorder?.draggingId) &&
-    reorder?.draggingId !== item.id;
+    reorder?.dropTargetId === item.id &&
+    Boolean(reorder.draggingId) &&
+    reorder.draggingId !== item.id;
+  const swipe = useSwipeActions((open) => onActionsOpenChange(open ? item.id : null));
 
   // Soft keyboard can cover lower rows; bring the edit target into view.
   useEffect(() => {
     if (!isEditing) return undefined;
-    const reduceMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const frame = window.requestAnimationFrame(() => {
-      const node = rowRef.current;
-      // jsdom has no layout engine; scrollIntoView is missing or throws.
-      if (!node || typeof node.scrollIntoView !== "function") return;
-      try {
-        node.scrollIntoView({
-          block: "nearest",
-          behavior: reduceMotion ? "auto" : "smooth",
-        });
-      } catch {
-        // Ignore environments without scroll support.
-      }
+      // jsdom has no layout engine; scrollIntoView is missing there.
+      rowRef.current?.scrollIntoView?.({
+        block: "nearest",
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [isEditing]);
 
-  /**
-   * Pointer drag from the grip only — starts immediately (no long-press).
-   * Native HTML5 drag forces a hold on many touch browsers; this avoids that.
-   */
-  const startHandleDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (!canReorder || !reorder) return;
-    if (event.button !== 0) return;
-
-    event.preventDefault();
+  const act = (action: () => void) => (event: React.MouseEvent) => {
     event.stopPropagation();
-
-    const handle = event.currentTarget;
-    const pointerId = event.pointerId;
-    handle.setPointerCapture(pointerId);
-
-    const previousUserSelect = document.body.style.userSelect;
-    const previousTouchAction = document.body.style.touchAction;
-    document.body.style.userSelect = "none";
-    document.body.style.touchAction = "none";
-    document.body.classList.add("is-reordering");
-
-    // Begin as soon as the dotted handle is pressed — no delay / long-press.
-    reorder.onDragStart(item.id);
-    let lastTargetId = item.id;
-    let finished = false;
-
-    const finish = (clientX: number, clientY: number, cancelled: boolean) => {
-      if (finished) return;
-      finished = true;
-
-      try {
-        handle.releasePointerCapture(pointerId);
-      } catch {
-        // Already released.
-      }
-      document.body.style.userSelect = previousUserSelect;
-      document.body.style.touchAction = previousTouchAction;
-      document.body.classList.remove("is-reordering");
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onCancel);
-
-      if (cancelled) {
-        reorder.onDragEnd();
-        return;
-      }
-
-      // Always commit on release — live preview already moved rows; cancel
-      // only happens via pointercancel above.
-      const targetId = rowIdFromPoint(clientX, clientY) ?? lastTargetId;
-      reorder.onDrop(targetId ?? item.id);
-    };
-
-    const onMove = (moveEvent: PointerEvent) => {
-      if (moveEvent.pointerId !== pointerId) return;
-      moveEvent.preventDefault();
-      const targetId = rowIdFromPoint(moveEvent.clientX, moveEvent.clientY);
-      if (!targetId || targetId === lastTargetId) return;
-      lastTargetId = targetId;
-      reorder.onDragOver(targetId);
-    };
-
-    const onUp = (upEvent: PointerEvent) => {
-      if (upEvent.pointerId !== pointerId) return;
-      finish(upEvent.clientX, upEvent.clientY, false);
-    };
-
-    const onCancel = (cancelEvent: PointerEvent) => {
-      if (cancelEvent.pointerId !== pointerId) return;
-      finish(cancelEvent.clientX, cancelEvent.clientY, true);
-    };
-
-    window.addEventListener("pointermove", onMove, { passive: false });
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onCancel);
+    onActionsOpenChange(null);
+    action();
   };
+
+  const className = [
+    "item-row",
+    item.completed && "completed",
+    isImportant && onToggleImportant && "is-important",
+    isEditing && "is-editing",
+    isDragging && "is-dragging",
+    isDropTarget && "is-drop-target",
+    canReorder && "is-reorderable",
+    actionsOpen && "is-actions-open",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div
       ref={rowRef}
       data-item-id={item.id}
-      className={`item-row ${item.completed ? "completed" : ""} ${showImportantUi ? "is-important" : ""} ${isEditing ? "is-editing" : ""} ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""} ${canReorder ? "is-reorderable" : ""}`}
+      className={className}
+      onPointerDown={swipe.onPointerDown}
+      onPointerMove={swipe.onPointerMove}
+      onPointerUp={swipe.onPointerUp}
+      onPointerCancel={swipe.onPointerCancel}
+      onClickCapture={swipe.onClickCapture}
     >
       {canReorder && reorder && (
         <button
@@ -209,15 +326,11 @@ export const ItemRow: React.FC<ItemRowProps> = ({
           className="drag-handle"
           aria-label={`Reorder "${item.text}". Use arrow keys to move.`}
           title="Drag to reorder"
-          onPointerDown={startHandleDrag}
+          onPointerDown={(event) => startHandleDrag(event, item.id, reorder)}
           onKeyDown={(event) => {
-            if (event.key === "ArrowUp") {
-              event.preventDefault();
-              reorder.onMove(item.id, -1);
-            } else if (event.key === "ArrowDown") {
-              event.preventDefault();
-              reorder.onMove(item.id, 1);
-            }
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+            event.preventDefault();
+            reorder.onMove(item.id, event.key === "ArrowUp" ? -1 : 1);
           }}
         >
           <GripVertical size={14} strokeWidth={2.25} />
@@ -228,7 +341,7 @@ export const ItemRow: React.FC<ItemRowProps> = ({
         className={`toggle-btn ${item.completed ? "is-checked" : ""}`}
         onClick={(event) => {
           event.stopPropagation();
-          if (!isEditing) onToggle(item.id, item.completed, item);
+          if (!isEditing) onToggle(item);
         }}
         type="button"
         aria-label={
@@ -242,66 +355,24 @@ export const ItemRow: React.FC<ItemRowProps> = ({
       </button>
 
       {isEditing ? (
-        <div
-          className="item-edit-fields"
-          onClick={(event) => event.stopPropagation()}
-          onBlur={(event) => {
-            if (
-              !event.currentTarget.contains(event.relatedTarget as Node | null)
-            ) {
-              edit.onCommit();
-            }
-          }}
-        >
-          <input
-            className="item-edit-input"
-            value={edit.text}
-            autoFocus
-            onChange={(event) => edit.onTextChange(event.target.value)}
-            maxLength={MAX_ITEM_TEXT_LENGTH}
-            onKeyDown={handleEditKeys}
-            aria-label="Edit item text"
-          />
-          <input
-            className="item-edit-input item-edit-meta"
-            value={edit.quantity}
-            onChange={(event) => edit.onQuantityChange(event.target.value)}
-            maxLength={MAX_QUANTITY_LENGTH}
-            onKeyDown={handleEditKeys}
-            placeholder="Qty"
-            aria-label="Edit item quantity"
-          />
-          <input
-            className="item-edit-input item-edit-meta"
-            value={edit.category}
-            onChange={(event) => edit.onCategoryChange(event.target.value)}
-            maxLength={MAX_CATEGORY_LENGTH}
-            onKeyDown={handleEditKeys}
-            placeholder="Aisle"
-            aria-label="Edit item category"
-            list={CATEGORY_DATALIST_ID}
-          />
-          <input
-            className="item-edit-input item-edit-note"
-            value={edit.note}
-            onChange={(event) => edit.onNoteChange(event.target.value)}
-            maxLength={MAX_NOTE_LENGTH}
-            onKeyDown={handleEditKeys}
-            placeholder="Note (optional)"
-            aria-label="Edit item note"
-          />
-        </div>
+        <EditFields edit={edit} />
       ) : (
         <button
           className="item-content"
           type="button"
-          onClick={() => onToggle(item.id, item.completed, item)}
+          onClick={() => {
+            if (actionsOpen) onActionsOpenChange(null);
+            else onToggle(item);
+          }}
           aria-label={`${item.completed ? "Mark as needed" : "Mark as completed"}: ${item.text}${item.note ? ` — ${item.note}` : ""}`}
         >
           <span className="item-main-line">
             <span className="item-text">{item.text}</span>
             {item.quantity && (
               <span className="item-qty">{formatQuantity(item.quantity)}</span>
+            )}
+            {isImportant && onToggleImportant && (
+              <Star className="item-important-mark" size={12} fill="currentColor" aria-hidden="true" />
             )}
           </span>
           {item.note && (
@@ -312,97 +383,60 @@ export const ItemRow: React.FC<ItemRowProps> = ({
         </button>
       )}
 
-      {!isEditing && onToggleImportant && (
-        <button
-          className={`important-btn ${isImportant ? "is-active" : ""}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleImportant(item.id, isImportant);
-          }}
-          title={isImportant ? "Remove important" : "Mark important"}
-          type="button"
-          aria-label={
-            isImportant
-              ? `Unmark "${item.text}" as important`
-              : `Mark "${item.text}" as important`
-          }
-          aria-pressed={isImportant}
-        >
-          <Star
-            size={13}
-            strokeWidth={2.25}
-            fill={isImportant ? "currentColor" : "none"}
-          />
-        </button>
-      )}
-
       {!isEditing && (
-        <button
-          className="edit-btn"
-          onClick={(event) => {
-            event.stopPropagation();
-            edit.onStart(item);
-          }}
-          title="Edit item"
-          type="button"
-          aria-label={`Edit "${item.text}"`}
-        >
-          <Pencil size={13} />
-        </button>
+        <>
+          <div className="item-actions">
+            {onToggleImportant && (
+              <button
+                className={`row-action important-btn ${isImportant ? "is-active" : ""}`}
+                onClick={act(() => onToggleImportant(item))}
+                title={isImportant ? "Remove important" : "Mark important"}
+                type="button"
+                aria-label={
+                  isImportant
+                    ? `Unmark "${item.text}" as important`
+                    : `Mark "${item.text}" as important`
+                }
+                aria-pressed={isImportant}
+              >
+                <Star size={15} strokeWidth={2.25} fill={isImportant ? "currentColor" : "none"} />
+              </button>
+            )}
+            <button
+              className="row-action edit-btn"
+              onClick={act(() => edit.onStart(item))}
+              title="Edit item"
+              type="button"
+              aria-label={`Edit "${item.text}"`}
+            >
+              <Pencil size={15} />
+            </button>
+            <button
+              className="row-action delete-btn"
+              onClick={act(() => onDelete(item))}
+              title="Remove item"
+              type="button"
+              aria-label={`Remove "${item.text}"`}
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+          <button
+            className="item-more-btn"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onActionsOpenChange(actionsOpen ? null : item.id);
+            }}
+            aria-expanded={actionsOpen}
+            aria-label={actionsOpen ? "Close item actions" : `Actions for "${item.text}"`}
+          >
+            {actionsOpen ? <X size={16} /> : <MoreHorizontal size={18} />}
+          </button>
+        </>
       )}
-
-      <button
-        className="delete-btn"
-        onClick={(event) => {
-          event.stopPropagation();
-          onDelete(item.id);
-        }}
-        title="Remove item"
-        type="button"
-        aria-label={`Remove "${item.text}"`}
-      >
-        <Trash2 size={14} />
-      </button>
     </div>
   );
 };
-
-interface CategoryGroupProps {
-  group: { category: string; items: ShoppingItem[] };
-  showHeading: boolean;
-  edit: ItemEditState;
-  reorder?: ItemReorderState;
-  onToggle: (id: string, completed: boolean, item?: ShoppingItem) => void;
-  onToggleImportant?: (id: string, important: boolean) => void;
-  onDelete: (id: string) => void;
-}
-
-export const CategoryGroup: React.FC<CategoryGroupProps> = ({
-  group,
-  showHeading,
-  edit,
-  reorder,
-  onToggle,
-  onToggleImportant,
-  onDelete,
-}) => (
-  <div className="category-group">
-    {showHeading && (
-      <h3 className="category-heading">{group.category}</h3>
-    )}
-    {group.items.map((item, index) => (
-      <ItemRow
-        key={item.id}
-        item={item}
-        index={index}
-        edit={edit}
-        reorder={reorder}
-        onToggle={onToggle}
-        onToggleImportant={onToggleImportant}
-        onDelete={onDelete}
-      />
-    ))}
-  </div>
-);
 
 export default ItemRow;

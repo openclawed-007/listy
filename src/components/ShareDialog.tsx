@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useDialogFocus } from "../hooks/useDialogFocus";
-import { db } from "../firebase";
+import { useTransientMessage } from "../hooks/useTransientMessage";
+import { db } from "../firestore";
 import { resolveValidatedShareCode } from "../lib/allocateShareCode";
 import {
   SHARE_CODE_LENGTH,
@@ -43,11 +44,10 @@ interface ShareDialogProps {
   sharedListName?: string;
   /** When true, clarify that other personal lists are not shared. */
   hasOtherLists?: boolean;
+  /** Shown as the title when sending the list through the share sheet. */
+  ownerName: string;
   onClose: () => void;
   onStartSharing: () => void;
-  onCopyLink: () => void;
-  onCopyCode: () => void;
-  onSystemShare: () => void;
   onTogglePermission: (key: keyof SharePermissions, next: boolean) => void;
   onToggleAnonymousEdits: (next: boolean) => void;
   onRequestStopSharing: () => void;
@@ -91,16 +91,14 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
   initialTab = "share",
   sharedListName = "My List",
   hasOtherLists = false,
+  ownerName,
   onClose,
   onStartSharing,
-  onCopyLink,
-  onCopyCode,
-  onSystemShare,
   onTogglePermission,
   onToggleAnonymousEdits,
   onRequestStopSharing,
 }) => {
-  const dialogRef = useDialogFocus<HTMLElement>();
+  const dialogRef = useDialogFocus<HTMLElement>(onClose);
   const navigate = useNavigate();
   const [tab, setTab] = React.useState<ShareDialogTab>(initialTab);
   const [showQr, setShowQr] = React.useState(false);
@@ -112,9 +110,50 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
     setTab(initialTab);
   }, [initialTab]);
 
+  // Brief feedback ("Link copied") that falls back to the live-sync status.
+  const [flash, setFlash] = useTransientMessage(2500);
+  const status = flash || shareStatus;
+
   const canSystemShare =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
   const displayCode = shareCode ? formatShareCode(shareCode) : "";
+
+  const copy = async (value: string, done: string, fallback: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setFlash(done);
+    } catch {
+      // Clipboard needs a secure context and permission. The value is shown
+      // in full in the dialog, so this is a nudge, not a dead end.
+      setFlash(fallback);
+    }
+  };
+  const onCopyLink = () => {
+    if (shareUrl) void copy(shareUrl, "Link copied", "Press and hold the link to copy it");
+  };
+  const onCopyCode = () => {
+    if (displayCode) void copy(displayCode, "Code copied", "Long-press the code to copy it");
+  };
+
+  // Phones have a proper share sheet; sending a list is one tap instead of
+  // copy-then-find-an-app.
+  const onSystemShare = async () => {
+    if ((!shareUrl && !displayCode) || !canSystemShare) return;
+    try {
+      await navigator.share({
+        title: `${ownerName}'s shopping list`,
+        text: displayCode
+          ? `My CartLink list code: ${displayCode}${shareUrl ? `\n${shareUrl}` : ""}`
+          : "Here's my shopping list on CartLink",
+        url: shareUrl || undefined,
+      });
+    } catch (error) {
+      // A cancelled share sheet is a normal outcome, not a failure.
+      if ((error as { name?: string })?.name === "AbortError") return;
+      console.error("System share error:", error);
+      setFlash("Couldn't open the share sheet");
+    }
+  };
   const canEdit = hasAnyPermission(permissions);
   const joinRaw = normalizeShareCodeInput(joinValue);
   const canJoin = isValidShareCode(joinRaw) && !joinBusy;
@@ -170,7 +209,7 @@ const ShareDialog: React.FC<ShareDialogProps> = ({
             {tab === "share" && isSharing ? (
               <p className="share-live-line" role="status">
                 <span className="share-live-dot" aria-hidden="true" />
-                {shareStatus || "Live — updates automatically"}
+                {status || "Live — updates automatically"}
               </p>
             ) : (
               <p>

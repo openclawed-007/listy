@@ -42,7 +42,7 @@ const WHEN_OPTIONS: Array<{ id: RemindWhen; label: string }> = [
 const SAVE_DEBOUNCE_MS = 400;
 
 const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
-  const dialogRef = useDialogFocus<HTMLDivElement>();
+  const dialogRef = useDialogFocus<HTMLDivElement>(onClose);
   const {
     interfacePrefs,
     reminderSettings: storedReminders,
@@ -90,17 +90,6 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ onClose }) => {
       String(iface.displayScale / 100),
     );
   }, [iface.displayScale]);
-
-  // Self-contained Escape so the sheet closes the same way from every host.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
 
   const preview = useMemo(() => nextReminderPreview(reminders), [reminders]);
   const block = notificationBlockReason();

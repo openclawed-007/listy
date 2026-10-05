@@ -1121,9 +1121,12 @@ body.dark .modal-backdrop {
   outline: none;
 }
 
+/* Example codes stay clearly "example": light and thin, never mistaken for
+   a code that has already been typed. */
 .share-join-input::placeholder {
   color: var(--ink-faint);
-  font-weight: 600;
+  opacity: 0.55;
+  font-weight: 400;
   letter-spacing: 0.08em;
 }
 
@@ -1250,8 +1253,9 @@ body.dark .modal-backdrop {
 
 .join-input::placeholder {
   color: var(--ink-faint);
+  opacity: 0.55;
   letter-spacing: 0.1em;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .join-input::selection {

@@ -1,19 +1,26 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import BrandMark from "./BrandMark";
-import ConfirmDialog from "./ConfirmDialog";
-import NavOverflowMenu from "./NavOverflowMenu";
-import SettingsDialog from "./SettingsDialog";
 import { useAuth } from "../context/useAuth";
+import { usePreferences } from "../context/usePreferences";
+import { useAddFieldShortcut } from "../hooks/useAddFieldShortcut";
 import { useDarkMode } from "../hooks/useDarkMode";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useItemActions } from "../hooks/useItemActions";
+import { useItemReorder } from "../hooks/useItemReorder";
+import { useItemSuggestions } from "../hooks/useItemSuggestions";
+import { useListDisplayPrefs } from "../hooks/useListDisplayPrefs";
+import { useListView } from "../hooks/useListView";
+import { useShoppingReminders } from "../hooks/useShoppingReminders";
+import { useTransientMessage } from "../hooks/useTransientMessage";
+import { useUndoDelete } from "../hooks/useUndoDelete";
 import {
-  startReminderWatch,
-  syncReminderSchedule,
-} from "../lib/reminderNotifications";
-import { shoppingDayBanner } from "../lib/shoppingReminders";
-import { usePreferences } from "../context/usePreferences";
+  createGuestId,
+  readGuestItems,
+  writeGuestItems,
+  type GuestItem,
+} from "../lib/guestItems";
 import {
+  AISLES,
   formatQuantity,
   getDuplicateKey,
   MAX_CATEGORY_LENGTH,
@@ -21,34 +28,25 @@ import {
   MAX_NOTE_LENGTH,
   MAX_QUANTITY_LENGTH,
   mergeQuantities,
-  AISLES,
-  parseItemInput,
 } from "../lib/itemInput";
-import {
-  createGuestId,
-  readGuestItems,
-  writeGuestItems,
-  type GuestItem,
-} from "../lib/guestItems";
-import { groupItemsByCategory } from "../lib/shoppingItem";
-import {
-  LIST_SORT_MODES,
-  nextTopSortOrder,
-  readDoneCollapsed,
-  readListSortMode,
-  writeDoneCollapsed,
-  writeListSortMode,
-  type ListSortMode,
-} from "../lib/listOrder";
-import { CATEGORY_DATALIST_ID, type ItemEditState } from "./ItemRow";
+import { nextTopSortOrder } from "../lib/listOrder";
+import { groupItemsByCategory, type ShoppingItem } from "../lib/shoppingItem";
+import AddFab from "./AddFab";
+import AddHint from "./AddHint";
 import AddItemField from "./AddItemField";
-import { useItemSuggestions } from "../hooks/useItemSuggestions";
-import { useItemReorder } from "../hooks/useItemReorder";
-import { useListView } from "../hooks/useListView";
-import type { ShoppingItem } from "../lib/shoppingItem";
+import AppNavbar from "./AppNavbar";
+import ConfirmDialog from "./ConfirmDialog";
+import { CATEGORY_DATALIST_ID } from "./ItemRow";
+import { DismissibleMessage, ReminderBanner, UndoToast } from "./ListStatus";
+import ListSummary from "./ListSummary";
+import NavOverflowMenu from "./NavOverflowMenu";
+import SettingsDialog from "./SettingsDialog";
 import ShoppingListItems from "./ShoppingListItems";
 
-function asShoppingItem(item: GuestItem): ShoppingItem {
+const LIST_NAME = "My List";
+
+/** Rows share the signed-in list's renderer, which speaks ShoppingItem. */
+function toRow(item: GuestItem): ShoppingItem {
   return {
     id: item.id,
     text: item.text,
@@ -62,60 +60,38 @@ function asShoppingItem(item: GuestItem): ShoppingItem {
   };
 }
 
+const toRowGroups = (groups: Array<{ category: string; items: GuestItem[] }>) =>
+  groups.map((group) => ({ category: group.category, items: group.items.map(toRow) }));
+
+/**
+ * A private list kept only in this browser — no account, no sync. Same
+ * features as the signed-in list where they make sense without a server.
+ */
 const GuestList: React.FC = () => {
   const { user, loading } = useAuth();
   const { dark, toggle } = useDarkMode();
-  const [items, setItems] = useState<GuestItem[]>(readGuestItems);
-  const [value, setValue] = useState("");
-  const history = useItemSuggestions(value);
-  const [message, setMessage] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState("");
-  const [editQuantity, setEditQuantity] = useState("");
-  const [editCategory, setEditCategory] = useState("");
-  const [editNote, setEditNote] = useState("");
-  const [sortMode, setSortMode] = useState<ListSortMode>(readListSortMode);
-  const [doneCollapsed, setDoneCollapsed] = useState(readDoneCollapsed);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<{
-    item: GuestItem;
-    timeoutId: number;
-  } | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
   const { interfacePrefs, reminderSettings } = usePreferences();
-  const preview = useMemo(() => parseItemInput(value), [value]);
+  const reminderBanner = useShoppingReminders();
   useDocumentTitle("Guest list");
 
+  const [items, setItems] = useState<GuestItem[]>(readGuestItems);
+  const [value, setValue] = useState("");
+  const [message, setMessage] = useTransientMessage(4000);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const addInputRef = useRef<HTMLInputElement | null>(null);
+  useAddFieldShortcut(addInputRef);
+
+  const history = useItemSuggestions(value);
+  const undo = useUndoDelete<GuestItem>();
+  const { sortMode, setSortMode, doneCollapsed, toggleDoneCollapsed } = useListDisplayPrefs();
+
   useEffect(() => writeGuestItems(items), [items]);
-  useEffect(() => {
-    return () => {
-      if (pendingDelete) window.clearTimeout(pendingDelete.timeoutId);
-    };
-  }, [pendingDelete]);
-  useEffect(() => {
-    if (!message) return undefined;
-    const timer = window.setTimeout(() => setMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
 
-  // Reminders and preferences live in local storage while signed out, so
-  // guests get the same Settings sheet as everyone else.
-  useEffect(() => {
-    void syncReminderSchedule(reminderSettings);
-    return startReminderWatch(() => reminderSettings);
-  }, [reminderSettings]);
+  const updateItem = (id: string, change: (item: GuestItem) => GuestItem) =>
+    setItems((current) => current.map((item) => (item.id === id ? change(item) : item)));
 
-  const reminderBanner = useMemo(() => {
-    if (!interfacePrefs.shoppingBanners) return null;
-    return shoppingDayBanner(reminderSettings);
-  }, [interfacePrefs.shoppingBanners, reminderSettings]);
-
-  const commitAdd = (input: {
-    text: string;
-    quantity?: string;
-    category?: string;
-    note?: string;
-  }) => {
+  const commitAdd = (input: { text: string; quantity?: string; category?: string; note?: string }) => {
     const text = input.text.trim();
     if (!text) return;
     const key = getDuplicateKey(text);
@@ -123,19 +99,13 @@ const GuestList: React.FC = () => {
 
     if (duplicate) {
       const quantity = mergeQuantities(duplicate.quantity, input.quantity);
-      setItems((current) =>
-        current.map((item) =>
-          item.id === duplicate.id
-            ? {
-                ...item,
-                completed: false,
-                quantity,
-                category: item.category ?? input.category,
-                note: item.note ?? input.note,
-              }
-            : item,
-        ),
-      );
+      updateItem(duplicate.id, (item) => ({
+        ...item,
+        completed: false,
+        quantity,
+        category: item.category ?? input.category,
+        note: item.note ?? input.note,
+      }));
       history.remember({
         text: duplicate.text,
         category: duplicate.category ?? input.category,
@@ -147,9 +117,7 @@ const GuestList: React.FC = () => {
           : `${duplicate.text} is already on your list.`,
       );
     } else {
-      const sortOrder = nextTopSortOrder(
-        items.filter((item) => !item.completed),
-      );
+      const sortOrder = nextTopSortOrder(items.filter((item) => !item.completed));
       setItems((current) => [
         {
           id: createGuestId(),
@@ -163,74 +131,35 @@ const GuestList: React.FC = () => {
         },
         ...current,
       ]);
-      history.remember({
-        text,
-        category: input.category,
-        note: input.note,
-      });
+      history.remember({ text, category: input.category, note: input.note });
     }
     setValue("");
   };
 
-  const startEdit = (item: GuestItem | ShoppingItem) => {
-    setEditingId(item.id);
-    setEditText(item.text);
-    setEditQuantity(item.quantity ?? "");
-    setEditCategory(item.category ?? "");
-    setEditNote(item.note ?? "");
-  };
-
-  const commitEdit = () => {
-    if (!editingId) return;
-    const text = editText.trim().slice(0, MAX_ITEM_TEXT_LENGTH);
-    if (!text) {
+  const { edit } = useItemActions(async (id, text, quantity, category, note) => {
+    const trimmed = text.trim().slice(0, MAX_ITEM_TEXT_LENGTH);
+    if (!trimmed) {
       setMessage("Item text cannot be empty.");
-      return;
+      return false;
     }
+    updateItem(id, (item) => ({
+      ...item,
+      text: trimmed,
+      quantity: quantity.trim().slice(0, MAX_QUANTITY_LENGTH) || undefined,
+      category: category.trim().slice(0, MAX_CATEGORY_LENGTH) || undefined,
+      note: note.trim().slice(0, MAX_NOTE_LENGTH) || undefined,
+    }));
+    return true;
+  });
 
-    const quantity = editQuantity.trim().slice(0, MAX_QUANTITY_LENGTH);
-    const category = editCategory.trim().slice(0, MAX_CATEGORY_LENGTH);
-    const note = editNote.trim().slice(0, MAX_NOTE_LENGTH);
-
-    setItems((current) =>
-      current.map((item) =>
-        item.id === editingId
-          ? {
-              ...item,
-              text,
-              quantity: quantity || undefined,
-              category: category || undefined,
-              note: note || undefined,
-            }
-          : item,
-      ),
-    );
-    setEditingId(null);
-  };
-
-  const {
-    activeItems,
-    doneItems,
-    doneGroups,
-    filteredCount,
-    isSearching,
-    progress,
-  } = useListView(items, value, sortMode);
-
-  const active = activeItems;
-  const done = doneItems;
-
-  const reorderEnabled =
-    !isSearching && sortMode !== "alpha" && active.length > 1;
-
+  const view = useListView(items, value, sortMode);
+  const reorderEnabled = !view.isSearching && sortMode !== "alpha" && view.activeCount > 1;
   const { reorderState, displayActiveItems, resetDrag } = useItemReorder<GuestItem>({
-    activeItems,
+    activeItems: view.activeItems,
     sortMode,
     enabled: reorderEnabled,
     onCommitOrder: ({ nextActive }) => {
-      const orderById = new Map(
-        nextActive.map((item) => [item.id, item.sortOrder]),
-      );
+      const orderById = new Map(nextActive.map((item) => [item.id, item.sortOrder]));
       setItems((current) =>
         current.map((item) => {
           const sortOrder = orderById.get(item.id);
@@ -239,14 +168,18 @@ const GuestList: React.FC = () => {
       );
     },
   });
-
-  const displayActiveGroups = useMemo(
-    () => groupItemsByCategory(displayActiveItems),
-    [displayActiveItems],
+  const rows = useMemo(
+    () => ({
+      active: displayActiveItems.map(toRow),
+      done: view.doneItems.map(toRow),
+      activeGroups: toRowGroups(groupItemsByCategory(displayActiveItems)),
+      doneGroups: toRowGroups(view.doneGroups),
+    }),
+    [displayActiveItems, view.doneGroups, view.doneItems],
   );
 
-  // Early returns must come after every hook — a conditional hook count
-  // crashes React when the auth state resolves.
+  // Every hook runs before these returns: a conditional hook count crashes
+  // React when the auth state resolves.
   if (loading) {
     return (
       <div className="loading-screen">
@@ -259,143 +192,61 @@ const GuestList: React.FC = () => {
   // Anonymous share-page sessions are not accounts, so they stay here.
   if (user && !user.isAnonymous) return <Navigate to="/" replace />;
 
-  const edit: ItemEditState = {
-    editingId,
-    text: editText,
-    quantity: editQuantity,
-    category: editCategory,
-    note: editNote,
-    onStart: startEdit,
-    onTextChange: setEditText,
-    onQuantityChange: setEditQuantity,
-    onCategoryChange: setEditCategory,
-    onNoteChange: setEditNote,
-    onCommit: commitEdit,
-    onCancel: () => setEditingId(null),
-  };
-
-  const toggleItem = (id: string) => {
-    const entry = items.find((item) => item.id === id);
-    if (!entry) return;
+  const toggleItem = (row: ShoppingItem) => {
     // Checking off reinforces staples for typeahead.
-    if (!entry.completed) {
-      history.remember({
-        text: entry.text,
-        category: entry.category,
-        note: entry.note,
-      });
-    }
-    setItems((current) =>
-      current.map((item) =>
-        item.id === id ? { ...item, completed: !item.completed } : item,
-      ),
-    );
+    if (!row.completed) history.remember(row);
+    updateItem(row.id, (item) => ({ ...item, completed: !item.completed }));
   };
 
-  const deleteItem = (id: string) => {
-    const item = items.find((entry) => entry.id === id);
+  const toggleImportant = (row: ShoppingItem) =>
+    updateItem(row.id, ({ important, ...item }) => (important ? item : { ...item, important: true }));
+
+  const deleteItem = (row: ShoppingItem) => {
+    const item = items.find((entry) => entry.id === row.id);
     if (!item) return;
-    if (pendingDelete) window.clearTimeout(pendingDelete.timeoutId);
-
-    setItems((current) => current.filter((entry) => entry.id !== id));
-    const timeoutId = window.setTimeout(() => {
-      setPendingDelete((current) => (current?.item.id === id ? null : current));
-    }, 6000);
-    setPendingDelete({ item, timeoutId });
+    setItems((current) => current.filter((entry) => entry.id !== row.id));
+    undo.hold(item);
   };
 
-  const undoDeleteItem = () => {
-    if (!pendingDelete) return;
-    window.clearTimeout(pendingDelete.timeoutId);
-    const { item } = pendingDelete;
-    setPendingDelete(null);
+  const undoDelete = () => {
+    const item = undo.take();
+    if (!item) return;
     setItems((current) =>
       current.some((entry) => entry.id === item.id) ? current : [item, ...current],
     );
   };
 
-  const toggleImportant = (id: string, important: boolean) => {
-    setItems((current) =>
-      current.map((entry) => {
-        if (entry.id !== id) return entry;
-        if (important) {
-          const { important: _drop, ...rest } = entry;
-          void _drop;
-          return rest;
-        }
-        return { ...entry, important: true };
-      }),
-    );
-  };
-
-  const shoppingActive = displayActiveItems.map(asShoppingItem);
-  const shoppingDone = doneItems.map(asShoppingItem);
-  const shoppingActiveGroups = displayActiveGroups.map((group) => ({
-    category: group.category,
-    items: group.items.map(asShoppingItem),
-  }));
-  const shoppingDoneGroups = doneGroups.map((group) => ({
-    category: group.category,
-    items: group.items.map(asShoppingItem),
-  }));
-
   return (
     <div className="app-wrapper">
-      <header className="navbar">
-        <div className="navbar-content">
-          <div
-            className={`nav-brand ${interfacePrefs.brandLogo ? "" : "is-text-only"}`}
-          >
-            {interfacePrefs.brandLogo && (
-              <div className="nav-brand-icon">
-                <BrandMark className="brand-mark" />
-              </div>
-            )}
-            <span className="nav-brand-name">
-              Cart<em>Link</em>
-            </span>
-          </div>
-          <div className="user-actions">
-            <span className="guest-badge">Guest</span>
-            <NavOverflowMenu
-              dark={dark}
-              onToggleDark={toggle}
-              showSettings
-              settingsActive={reminderSettings.enabled}
-              onOpenSettings={() => setSettingsOpen(true)}
-              signInTo="/login"
-            />
-          </div>
-        </div>
-      </header>
+      <AppNavbar>
+        <span className="guest-badge">Guest</span>
+        <NavOverflowMenu
+          dark={dark}
+          onToggleDark={toggle}
+          showSettings
+          settingsActive={reminderSettings.enabled}
+          onOpenSettings={() => setSettingsOpen(true)}
+          signInTo="/login"
+        />
+      </AppNavbar>
 
       <main className="container">
         <div className="page-heading">
-          <h1 className="page-title">My List</h1>
+          <h1 className="page-title">{LIST_NAME}</h1>
           {interfacePrefs.onboardingCopy && (
             <p className="guest-note">
-              Saved only on this device.{" "}
-              <Link to="/login">Sign in</Link> to share and sync —
-              your items come with you.{" "}
-              <Link to="/join">Have a share code?</Link>
+              Saved only on this device. <Link to="/login">Sign in</Link> to share and
+              sync — your items come with you. <Link to="/join">Have a share code?</Link>
             </p>
           )}
           {message && (
-            <p className="form-success inline-error" role="status">
-              {message}
-            </p>
+            <DismissibleMessage kind="success" message={message} onDismiss={() => setMessage("")} />
           )}
           {reminderBanner && (
-            <div className="reminder-banner" role="status">
-              <span>{reminderBanner.message}</span>
-              <button
-                type="button"
-                className="reminder-banner-action"
-                onClick={() => setSettingsOpen(true)}
-              >
-                Settings
-              </button>
-            </div>
+            <ReminderBanner
+              message={reminderBanner.message}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
           )}
         </div>
 
@@ -405,32 +256,19 @@ const GuestList: React.FC = () => {
           onValueChange={setValue}
           onCommit={commitAdd}
           suggestions={history}
+          inputRef={addInputRef}
+          describedBy="add-hint"
           autoFocus={
-            typeof window !== "undefined" &&
-            !window.matchMedia("(pointer: coarse)").matches
+            typeof window !== "undefined" && !window.matchMedia("(pointer: coarse)").matches
           }
-          hintHidden={!interfacePrefs.addHints && !isSearching}
+          hintHidden={!interfacePrefs.addHints && !view.isSearching}
           hint={
-            isSearching && items.length > 0 ? (
-              <span className="add-hint-search">
-                {filteredCount === 0
-                  ? "No matches — press + to add it"
-                  : `${filteredCount} match${filteredCount === 1 ? "" : "es"} · press + to add`}
-              </span>
-            ) : interfacePrefs.addHints &&
-              (preview.quantity || preview.category) ? (
-              <>
-                <strong>{preview.text}</strong>
-                {preview.quantity && (
-                  <span className="add-hint-chip">
-                    {formatQuantity(preview.quantity)}
-                  </span>
-                )}
-                {preview.category && (
-                  <span className="add-hint-chip">{preview.category}</span>
-                )}
-              </>
-            ) : null
+            <AddHint
+              value={value}
+              items={items}
+              isSearching={view.isSearching}
+              filteredCount={view.filteredCount}
+            />
           }
         />
 
@@ -441,129 +279,61 @@ const GuestList: React.FC = () => {
         </datalist>
 
         {items.length > 0 && (
-          <div className="list-summary">
-            <div className="list-meta-row">
-              <span className="stats-text">
-                {isSearching ? (
-                  <>
-                    <strong>{filteredCount}</strong> match
-                    {filteredCount === 1 ? "" : "es"}
-                    {done.length > 0 && ` · ${done.length} done`}
-                  </>
-                ) : (
-                  <>
-                    <strong>{active.length}</strong> left
-                    {done.length > 0 && ` · ${done.length} done`}
-                  </>
-                )}
-              </span>
-
-              <div className="sort-toggle" role="group" aria-label="Sort list">
-                {LIST_SORT_MODES.map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    className={`sort-toggle-btn ${sortMode === mode.id ? "active" : ""}`}
-                    aria-pressed={sortMode === mode.id}
-                    title={
-                      reorderEnabled && interfacePrefs.sortHints
-                        ? `${mode.label}${
-                            mode.id === "manual"
-                              ? " — drag to reorder"
-                              : mode.id === "aisle"
-                                ? " — drag within aisle"
-                                : ""
-                          }`
-                        : mode.label
-                    }
-                    onClick={() => {
-                      setSortMode(mode.id);
-                      writeListSortMode(mode.id);
-                      resetDrag();
-                    }}
-                  >
-                    {mode.shortLabel}
-                  </button>
-                ))}
-              </div>
-
-              <div className="stats-actions">
-                {done.length > 0 && (
-                  <button
-                    className="clear-done-btn"
-                    type="button"
-                    onClick={() => setConfirmClear(true)}
-                  >
-                    Clear done
-                  </button>
-                )}
-              </div>
+          <ListSummary
+            view={view}
+            sortMode={sortMode}
+            onSortChange={(mode) => {
+              setSortMode(mode);
+              resetDrag();
+            }}
+            reorderEnabled={reorderEnabled}
+          >
+            <div className="stats-actions">
+              {view.allDoneCount > 0 && !view.isSearching && (
+                <button className="clear-done-btn" type="button" onClick={() => setConfirmClear(true)}>
+                  Clear done
+                </button>
+              )}
             </div>
-            {interfacePrefs.progressBar && (
-              <div
-                className="progress-track"
-                role="progressbar"
-                aria-label={`${done.length} of ${items.length} items picked up`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progress}
-              >
-                <div
-                  className="progress-fill"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-            )}
-          </div>
+          </ListSummary>
         )}
 
         <div className="items-section">
           <ShoppingListItems
-            activeItems={shoppingActive}
-            doneItems={shoppingDone}
-            activeGroups={shoppingActiveGroups}
-            doneGroups={shoppingDoneGroups}
+            activeItems={rows.active}
+            doneItems={rows.done}
+            activeGroups={rows.activeGroups}
+            doneGroups={rows.doneGroups}
             sortMode={sortMode}
             edit={edit}
             reorder={reorderState}
             doneCollapsed={doneCollapsed}
-            isSearching={isSearching}
-            totalCount={items.length}
-            activeListName="My List"
-            emptyTips={interfacePrefs.emptyTips}
-            importantStars={interfacePrefs.importantStars}
-            customList={false}
-            sharedList={false}
-            onToggleDone={() => {
-              setDoneCollapsed((current) => {
-                const next = !current;
-                writeDoneCollapsed(next);
-                return next;
-              });
-            }}
-            onToggle={(id) => toggleItem(id)}
-            onImportant={toggleImportant}
+            onToggleDoneCollapsed={toggleDoneCollapsed}
+            isSearching={view.isSearching}
+            activeListName={LIST_NAME}
+            onToggle={toggleItem}
+            onToggleImportant={interfacePrefs.importantStars ? toggleImportant : undefined}
             onDelete={deleteItem}
-            onDeleteList={() => undefined}
-            onRemoveList={() => undefined}
+            emptyExtra={
+              interfacePrefs.emptyTips ? (
+                <p className="empty-tip">
+                  Try <code>2 milk</code> to add a quantity and aisle automatically.
+                </p>
+              ) : null
+            }
           />
         </div>
       </main>
 
-      {pendingDelete && (
-        <div className="undo-toast" role="status">
-          <span>Removed “{pendingDelete.item.text}”.</span>
-          <button type="button" onClick={undoDeleteItem}>
-            Undo
-          </button>
-        </div>
-      )}
+      <AddFab inputRef={addInputRef} raised={Boolean(undo.pending)} />
+
+      {undo.pending && <UndoToast text={undo.pending.text} onUndo={undoDelete} />}
 
       {confirmClear && (
         <ConfirmDialog
           action="clearCompleted"
-          itemCount={items.filter((item) => item.completed).length}
-          listName="My List"
+          itemCount={view.allDoneCount}
+          listName={LIST_NAME}
           busy={false}
           onCancel={() => setConfirmClear(false)}
           onConfirm={() => {
@@ -573,12 +343,7 @@ const GuestList: React.FC = () => {
         />
       )}
 
-      {settingsOpen && (
-        <SettingsDialog
-          userId={null}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
+      {settingsOpen && <SettingsDialog userId={null} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 };

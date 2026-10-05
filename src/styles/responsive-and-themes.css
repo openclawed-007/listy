@@ -660,6 +660,14 @@ body.dark .add-hint-chip {
   color: var(--sage-light);
 }
 
+/* --cream-dark equals the row surface in dark mode, so chips need a tint of
+   their own or they vanish into the row. */
+html.dark .item-qty,
+html.dark .category-count {
+  background: rgba(127, 185, 138, 0.14);
+  color: var(--sage-light);
+}
+
 html.dark .empty-tip code,
 body.dark .empty-tip code {
   color: var(--sage-light);

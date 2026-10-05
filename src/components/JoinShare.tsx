@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowRight, KeyRound } from "lucide-react";
-import { db } from "../firebase";
+import { db } from "../firestore";
 import { resolveValidatedShareCode } from "../lib/allocateShareCode";
 import {
   SHARE_CODE_LENGTH,

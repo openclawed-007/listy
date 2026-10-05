@@ -6,9 +6,10 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // Dot-directories hold tooling checkouts and caches, not app code.
+  globalIgnores(['dist', 'android', '.*/']),
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}', '*.ts'],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,

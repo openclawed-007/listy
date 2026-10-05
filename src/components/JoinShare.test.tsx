@@ -10,7 +10,7 @@ const { mockResolve } = vi.hoisted(() => ({
   mockResolve: vi.fn(),
 }));
 
-vi.mock("../firebase", () => ({
+vi.mock("../firestore", () => ({
   db: { app: "test" },
 }));
 

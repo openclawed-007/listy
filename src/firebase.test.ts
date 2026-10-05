@@ -40,7 +40,7 @@ beforeEach(() => {
 });
 
 describe("Firebase initialization", () => {
-  it("enables persistent multi-tab Firestore cache when configured", async () => {
+  it("loads Firestore separately, with a persistent multi-tab cache", async () => {
     vi.stubEnv("VITE_FIREBASE_API_KEY", "key");
     vi.stubEnv("VITE_FIREBASE_AUTH_DOMAIN", "cartlink.firebaseapp.com");
     vi.stubEnv("VITE_FIREBASE_PROJECT_ID", "cartlink");
@@ -49,8 +49,11 @@ describe("Firebase initialization", () => {
     vi.stubEnv("VITE_FIREBASE_APP_ID", "app-id");
 
     const firebase = await import("./firebase");
-
     expect(firebase.isFirebaseConfigured).toBe(true);
+    // Auth alone must never pull in Firestore: it is the bulk of the bundle.
+    expect(mockInitializeFirestore).not.toHaveBeenCalled();
+
+    await import("./firestore");
     expect(mockInitializeFirestore).toHaveBeenCalledWith(
       { type: "app" },
       {
@@ -73,9 +76,10 @@ describe("Firebase initialization", () => {
     vi.stubEnv("VITE_FIREBASE_APP_ID", "");
 
     const firebase = await import("./firebase");
+    const { db } = await import("./firestore");
 
     expect(firebase.isFirebaseConfigured).toBe(false);
-    expect(firebase.db).toBeNull();
+    expect(db).toBeNull();
     expect(mockInitializeApp).not.toHaveBeenCalled();
     expect(mockInitializeFirestore).not.toHaveBeenCalled();
   });

@@ -7,7 +7,7 @@ const { mockOnSnapshot } = vi.hoisted(() => ({
   mockOnSnapshot: vi.fn(),
 }));
 
-vi.mock("../firebase", () => ({
+vi.mock("../firestore", () => ({
   db: { app: "test" },
 }));
 

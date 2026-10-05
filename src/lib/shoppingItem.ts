@@ -4,12 +4,7 @@
 // one definition of what a valid item looks like, and so anything read back
 // from Firestore is sanitised in exactly one place.
 
-import {
-  writeBatch,
-  type Firestore,
-  type Timestamp,
-  type WriteBatch,
-} from "firebase/firestore";
+import type { Timestamp } from "firebase/firestore";
 import {
   DEFAULT_CATEGORY,
   MAX_CATEGORY_LENGTH,
@@ -20,7 +15,6 @@ import {
 
 export const PERSONAL_LIST_ID = "personal";
 export const PERSONAL_LIST_NAME = "My List";
-const MAX_FIRESTORE_BATCH_WRITES = 450;
 
 export interface ShoppingItem {
   id: string;
@@ -235,22 +229,4 @@ export function groupItemsByCategory<T extends { category?: string }>(
     if (b.category === DEFAULT_CATEGORY) return -1;
     return a.category.localeCompare(b.category);
   });
-}
-
-/** Run write operations in chunks that stay inside Firestore's batch limit. */
-export async function commitBatchOperations(
-  firestore: Firestore,
-  operations: Array<(batch: WriteBatch) => void>,
-) {
-  for (
-    let index = 0;
-    index < operations.length;
-    index += MAX_FIRESTORE_BATCH_WRITES
-  ) {
-    const batch = writeBatch(firestore);
-    operations
-      .slice(index, index + MAX_FIRESTORE_BATCH_WRITES)
-      .forEach((operation) => operation(batch));
-    await batch.commit();
-  }
 }

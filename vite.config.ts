@@ -43,20 +43,25 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        // Long-lived vendor chunks cache across deploys. Firestore (and the
+        // re2js engine only it uses) gets its own chunk so pages that never
+        // touch the database — landing, sign-in, guest list — skip ~600 kB.
         manualChunks: (id) => {
           if (!id.includes('node_modules')) return undefined
-          if (id.includes('firebase')) return 'firebase'
-          if (id.includes('react-router') || id.includes('react-dom') || id.includes('/react/')) {
-            return 'react'
+          if (/@?firebase[\\/](firestore|webchannel-wrapper)|[\\/]re2js[\\/]/.test(id)) {
+            return 'firestore'
           }
-          if (id.includes('qrcode.react')) return 'qrcode'
-          if (id.includes('lucide-react')) return 'icons'
-          return 'vendor'
+          if (/[\\/](@?firebase|idb)[\\/]/.test(id)) return 'firebase'
+          if (/[\\/](react|react-dom|react-router|scheduler)[\\/]/.test(id)) return 'react'
+          return undefined
         },
       },
     },
   },
   test: {
+    include: ['src/**/*.test.{ts,tsx}'],
+    // Rules tests need the Firestore emulator (`npm run test:rules` sets this host).
+    exclude: process.env.FIRESTORE_EMULATOR_HOST ? [] : ['src/firestore.rules.test.ts'],
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     globals: true,

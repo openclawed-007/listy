@@ -5,11 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "start": "npm install && vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "test": "vitest run --exclude src/firestore.rules.test.ts",
+    "test": "vitest run",
     "test:rules": "firebase emulators:exec --only firestore --project cartlink-rules-test 'vitest run src/firestore.rules.test.ts'",
     "preview": "vite preview"
   },

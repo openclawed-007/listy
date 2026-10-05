@@ -1,12 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
-import {
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  type Firestore,
-} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? "",
@@ -23,7 +17,7 @@ const appCheckDebugToken = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN ?? "";
 export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
 export const isAppCheckEnabled = Boolean(recaptchaSiteKey);
 
-const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
+export const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 
 if (app && recaptchaSiteKey && typeof window !== "undefined") {
   if (appCheckDebugToken && !import.meta.env.PROD) {
@@ -43,10 +37,3 @@ if (app && recaptchaSiteKey && typeof window !== "undefined") {
 
 export const auth: Auth | null = app ? getAuth(app) : null;
 export const googleProvider = isFirebaseConfigured ? new GoogleAuthProvider() : null;
-export const db: Firestore | null = app
-  ? initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
-    })
-  : null;
